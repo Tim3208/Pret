@@ -1,0 +1,218 @@
+﻿body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-height: 100vh;
+  background-color: #0d0d0d;
+  color: #bfbfbf;
+  font-family: "Courier New", Courier, monospace;
+}
+
+.game-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+.scene-text {
+  max-width: 600px;
+  line-height: 1.8;
+  font-size: 1.2rem;
+  text-shadow: 0 0 5px rgba(255,255,255,0.2);
+  margin-bottom: 2rem;
+}
+
+.input-form {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.prompt {
+  color: #ffaa00;
+  font-weight: bold;
+}
+
+input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #555;
+  color: #ffaa00;
+  font-family: inherit;
+  font-size: 1.2rem;
+  outline: none;
+  width: 200px;
+}
+
+.ascii-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ascii-art {
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 13px;
+  letter-spacing: 0.35em;
+  white-space: pre;
+  text-align: center;
+  margin: 0;
+  animation: fadeInText 3s ease-in-out;
+}
+
+.ascii-canvas {
+  image-rendering: pixelated;
+  animation: fadeInText 3s ease-in-out;
+  cursor: crosshair;
+}
+
+.ascii-fire {
+  color: #ff8c00;
+  text-shadow: 0 0 10px #ff4500, 0 0 20px #ff0000;
+}
+
+.ascii-wood {
+  color: #8b5a2b;
+  text-shadow: 0 0 5px #4a2810;
+}
+
+.after-text {
+  margin-top: 3rem;
+  font-size: 1.2rem;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse 280px 100px at center -20px,
+    #bfbfbf 0%,
+    #bfbfbfcc 30%,
+    #bfbfbf63 55%,
+    #bfbfbf3b 80%,
+    #bfbfbf21 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #1a0500;
+}
+
+.fadeIn {
+  animation: fade 3s forwards;
+  animation-delay: 2s;
+}
+
+@keyframes fadeInText {
+  from { opacity: 0; filter: blur(5px); transform: scale(0.95); }
+  to { opacity: 1; filter: blur(0); transform: scale(1); }
+}
+
+@keyframes fade {
+  to { opacity: 1; }
+}
+
+/* Proceed button */
+.proceed-btn {
+  margin-top: 2rem;
+  background: transparent;
+  border: 1px solid rgba(180, 180, 180, 0.3);
+  color: rgba(180, 180, 180, 0.6);
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.95rem;
+  padding: 0.5rem 1.5rem;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  transition: color 0.3s, border-color 0.3s;
+  opacity: 0;
+  animation: fade 1s 3s forwards;
+}
+
+.proceed-btn:hover {
+  color: #ffaa00;
+  border-color: #ffaa00;
+}
+
+/* ===== CRT Monitor Effect ===== */
+.crt {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  padding: 2rem;
+  /* 약간의 barrel distortion 느낌 */
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.6),
+    0 0 40px rgba(0, 0, 0, 0.8);
+}
+
+/* 스캔라인 */
+.crt-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  z-index: 10;
+}
+
+/* 노이즈 오버레이 */
+.crt-noise {
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+  filter: url(#noise);
+  opacity: 0.04;
+  z-index: 11;
+  animation: noiseShift 0.2s steps(3) infinite;
+}
+
+@keyframes noiseShift {
+  0%   { transform: translate(0, 0); }
+  33%  { transform: translate(-5%, -5%); }
+  66%  { transform: translate(3%, 2%); }
+  100% { transform: translate(-2%, 4%); }
+}
+
+/* 비네트 (가장자리 어둡게) */
+.crt-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgba(0, 0, 0, 0.55) 85%,
+    rgba(0, 0, 0, 0.85) 100%
+  );
+  z-index: 12;
+}
+
+/* 화면 깜빡임 */
+.crt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 13;
+  animation: crtFlicker 0.15s infinite;
+  background: transparent;
+}
+
+@keyframes crtFlicker {
+  0%   { opacity: 0; }
+  5%   { opacity: 0.015; background: rgba(200, 255, 200, 0.015); }
+  10%  { opacity: 0; }
+  92%  { opacity: 0; }
+  95%  { opacity: 0.01; background: rgba(255, 255, 255, 0.01); }
+  100% { opacity: 0; }
+}
