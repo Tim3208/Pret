@@ -9,6 +9,9 @@ import {
 import { layoutWithLines, prepareWithSegments } from "@chenglou/pretext";
 import CrtOverlay from "./CrtOverlay";
 
+/**
+ * 화면을 가로지르는 투사체의 렌더링 상태를 정의한다.
+ */
 interface Projectile {
   chars: string[];
   x: number;
@@ -20,6 +23,9 @@ interface Projectile {
   offsets: { dx: number; dy: number; rot: number }[];
 }
 
+/**
+ * 전투 캔버스 컴포넌트가 받는 속성 목록이다.
+ */
 interface BattleCombatProps {
   monsterName: string;
   monsterAscii: string[];
@@ -31,10 +37,24 @@ interface BattleCombatProps {
   onTurnEnd: () => void;
 }
 
+/**
+ * 전투 내레이션을 렌더링할 때 사용할 캔버스 폰트다.
+ */
 const FONT = "500 15px 'Courier New', Courier, monospace";
+/**
+ * 한 줄의 텍스트가 차지하는 세로 간격이다.
+ */
 const LINE_HEIGHT = 24;
+/**
+ * Pretext 줄바꿈 계산에 사용할 최대 텍스트 폭이다.
+ */
 const TEXT_WIDTH = 380;
 
+/**
+ * 전투 텍스트, 입력, 투사체, CRT 효과를 모두 담당하는 컴포넌트다.
+ *
+ * @param props 전투 상태와 이벤트 핸들러 모음
+ */
 export default function BattleCombat({
   monsterName,
   monsterAscii,
@@ -45,20 +65,59 @@ export default function BattleCombat({
   turn,
   onTurnEnd,
 }: BattleCombatProps) {
+  /**
+   * 현재 출력 중인 내레이션 인덱스다.
+   */
   const [narrativeIndex, setNarrativeIndex] = useState(0);
+  /**
+   * 플레이어가 입력창에 입력 중인 공격 단어다.
+   */
   const [input, setInput] = useState("");
+  /**
+   * 플레이어 스프라이트 흔들림 애니메이션 활성 여부다.
+   */
   const [shakePlayer, setShakePlayer] = useState(false);
+  /**
+   * 몬스터 스프라이트 흔들림 애니메이션 활성 여부다.
+   */
   const [shakeMonster, setShakeMonster] = useState(false);
+  /**
+   * CRT 글리치 효과 활성 여부다.
+   */
   const [glitchActive, setGlitchActive] = useState(false);
+  /**
+   * 전투 캔버스 DOM 요소를 참조한다.
+   */
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * 현재 애니메이션 루프의 requestAnimationFrame ID를 저장한다.
+   */
   const rafRef = useRef<number>(0);
+  /**
+   * 화면 위에 존재하는 투사체 목록을 보관한다.
+   */
   const projectilesRef = useRef<Projectile[]>([]);
+  /**
+   * 이전 프레임의 글리치 활성 상태를 기억한다.
+   */
   const glitchStateRef = useRef(false);
 
+  /**
+   * 현재 순번에 해당하는 원본 내레이션 문장이다.
+   */
   const rawNarrative = narratives[narrativeIndex % narratives.length];
+  /**
+   * 대괄호로 감싼 입력 키워드만 추출한 목록이다.
+   */
   const keywords = [...rawNarrative.matchAll(/\[(\w+)\]/g)].map((match) => match[1]);
+  /**
+   * 키워드용 대괄호를 제거한 실제 표시용 내레이션 문장이다.
+   */
   const cleanNarrative = rawNarrative.replace(/\[|\]/g, "");
 
+  /**
+   * Pretext로 줄바꿈 계산을 마친 내레이션 레이아웃 결과다.
+   */
   const layoutLines = useMemo(() => {
     try {
       const prepared = prepareWithSegments(cleanNarrative, FONT);
@@ -70,25 +129,46 @@ export default function BattleCombat({
   }, [cleanNarrative]);
 
   useEffect(() => {
+    /**
+     * 전투 텍스트와 투사체를 매 프레임 다시 그린다.
+     */
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
+    /**
+     * 전투 캔버스의 실제 픽셀 너비다.
+     */
     const width = 480;
+    /**
+     * 전투 캔버스의 실제 픽셀 높이다.
+     */
     const height = 320;
     canvas.width = width;
     canvas.height = height;
 
+    /**
+     * 전투 텍스트, 투사체, 피격 효과를 한 프레임 단위로 그린다.
+     */
     const animate = () => {
       context.clearRect(0, 0, width, height);
+      /**
+       * 현재 프레임에 살아 있는 투사체 목록이다.
+       */
       const projectiles = projectilesRef.current;
 
       context.font = FONT;
       context.textBaseline = "alphabetic";
 
+      /**
+       * 전체 내레이션 블록의 총 높이다.
+       */
       const totalTextHeight = layoutLines.length * LINE_HEIGHT;
+      /**
+       * 내레이션을 세로 중앙에 배치하기 위한 시작 Y 좌표다.
+       */
       const textStartY = Math.max(40, (height - totalTextHeight) / 2);
 
       for (let lineIndex = 0; lineIndex < layoutLines.length; lineIndex += 1) {
@@ -139,6 +219,9 @@ export default function BattleCombat({
         }
       }
 
+      /**
+       * 현재 프레임에 투사체가 CRT 영역 내부를 지나는지 여부다.
+       */
       let anyProjectileCrossing = false;
 
       for (const projectile of projectiles) {
@@ -212,10 +295,19 @@ export default function BattleCombat({
   }, [cleanNarrative, keywords, layoutLines, onMonsterHit, onPlayerHit]);
 
   useEffect(() => {
+    /**
+     * 몬스터 차례일 때 자동 공격을 예약한다.
+     */
     if (turn !== "monster") return;
 
     const timeoutId = window.setTimeout(() => {
+      /**
+       * 몬스터가 사용할 공격 단어 후보군이다.
+       */
       const attacks = ["CLAW", "BITE", "HEX", "DARK"];
+      /**
+       * 이번 공격에 선택된 단어다.
+       */
       const word = attacks[Math.floor(Math.random() * attacks.length)];
       const canvas = canvasRef.current;
       const width = canvas?.width ?? 480;
@@ -241,6 +333,11 @@ export default function BattleCombat({
     return () => window.clearTimeout(timeoutId);
   }, [turn, onTurnEnd]);
 
+  /**
+   * 플레이어가 입력한 단어를 투사체로 발사한다.
+   *
+   * @param event 폼 제출 이벤트
+   */
   const handleSubmit = useCallback(
     (event: FormEvent) => {
       event.preventDefault();

@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
+/**
+ * 하트 HP 컴포넌트가 받는 현재/최대 체력 값이다.
+ */
 interface HeartHPProps {
   current: number;
   max: number;
 }
 
+/**
+ * 하트 외곽선과 내부 영역을 정의하는 ASCII 마스크다.
+ */
 const HEART_MASK = [
   " .#. .#. ",
   ".#####.#.",
@@ -16,20 +22,60 @@ const HEART_MASK = [
   "    .    ",
 ];
 
+/**
+ * 하트 마스크의 총 행 수다.
+ */
 const ROWS = HEART_MASK.length;
+/**
+ * 하트 마스크의 총 열 수다.
+ */
 const COLS = HEART_MASK[0].length;
+/**
+ * 수면 경계에서 사용할 문자 목록이다.
+ */
 const WATER_SURFACE = ["~", "-"];
+/**
+ * 하트 내부를 채우는 물결 밀도 문자 목록이다.
+ */
 const WATER_BODY = ["=", "+", "*", "#"];
+/**
+ * 비어 있는 공간을 표현할 문자 목록이다.
+ */
 const EMPTY_CHARS = [".", " "];
+/**
+ * 하트 애니메이션 갱신 간격이다.
+ */
 const FRAME_INTERVAL = 1000 / 24;
 
+/**
+ * 체력 비율을 물결치는 ASCII 하트로 표현하는 컴포넌트다.
+ *
+ * @param props 현재 체력과 최대 체력
+ */
 export default function HeartHP({ current, max }: HeartHPProps) {
+  /**
+   * 마우스 hover 여부를 저장한다.
+   */
   const [hovered, setHovered] = useState(false);
+  /**
+   * 물결 애니메이션 진행 시간을 저장한다.
+   */
   const [time, setTime] = useState(0);
+  /**
+   * requestAnimationFrame ID를 저장한다.
+   */
   const rafRef = useRef<number>(0);
+  /**
+   * 이전 프레임 타임스탬프를 저장한다.
+   */
   const lastFrameRef = useRef(0);
 
   useEffect(() => {
+    /**
+     * 일정 간격으로 시간값을 증가시켜 파도 애니메이션을 만든다.
+     *
+     * @param now 현재 프레임 타임스탬프
+     */
     const tick = (now: number) => {
       if (now - lastFrameRef.current >= FRAME_INTERVAL) {
         lastFrameRef.current = now;
@@ -43,7 +89,13 @@ export default function HeartHP({ current, max }: HeartHPProps) {
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
+  /**
+   * 현재 체력을 0~1 범위의 비율로 정규화한 값이다.
+   */
   const fillRatio = Math.max(0, Math.min(1, current / max));
+  /**
+   * 최종적으로 렌더링할 ASCII 하트 줄 목록이다.
+   */
   const lines: string[] = [];
 
   for (let row = 0; row < ROWS; row += 1) {

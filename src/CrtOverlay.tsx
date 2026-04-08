@@ -2,6 +2,11 @@ interface CrtOverlayProps {
   glitchActive?: boolean;
 }
 
+/**
+ * CRT 스캔라인, 노이즈, 비네트, 깜빡임 효과를 겹쳐 그리는 오버레이 컴포넌트다.
+ *
+ * @param props 글리치 활성 여부
+ */
 export default function CrtOverlay({
   glitchActive = false,
 }: CrtOverlayProps) {

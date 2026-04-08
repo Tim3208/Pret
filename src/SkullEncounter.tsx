@@ -1,23 +1,70 @@
 import { useEffect, useRef } from "react";
 
+/**
+ * 밝기 값을 아스키 문자로 치환할 때 사용할 문자 램프다.
+ */
 const ASCII_RAMP = " .:-=+*#%@";
+/**
+ * 조우 애니메이션 전체 지속 시간이다.
+ */
 const DISPLAY_DURATION = 4000;
+/**
+ * WebP 프레임 샘플링 FPS다.
+ */
 const FPS = 12;
+/**
+ * ASCII 출력의 가로 문자 수다.
+ */
 const COLS = 120;
+/**
+ * ASCII 한 글자의 가로 픽셀 크기다.
+ */
 const CHAR_W = 8;
+/**
+ * ASCII 한 글자의 세로 픽셀 크기다.
+ */
 const CHAR_H = 12;
+/**
+ * 문자 비율 보정을 위한 아스키 글자 종횡비다.
+ */
 const CHAR_ASPECT = 0.55;
+/**
+ * 조우 연출 시작 시 줌 배율이다.
+ */
 const ZOOM_START = 2.0;
+/**
+ * 조우 연출 종료 직전 줌 배율이다.
+ */
 const ZOOM_END = 15.0;
+/**
+ * 줌의 중심이 되는 X 정규화 좌표다.
+ */
 const FOCUS_X = 0.5;
+/**
+ * 줌의 중심이 되는 Y 정규화 좌표다.
+ */
 const FOCUS_Y = 0.75;
 
+/**
+ * 해골 조우 연출이 종료되면 호출할 콜백이다.
+ */
 interface SkullEncounterProps {
   onComplete: () => void;
 }
 
+/**
+ * animated WebP를 확대하며 ASCII로 보여 주는 조우 연출 컴포넌트다.
+ *
+ * @param props 종료 콜백
+ */
 export default function SkullEncounter({ onComplete }: SkullEncounterProps) {
+  /**
+   * ASCII 해골을 그릴 캔버스 요소를 참조한다.
+   */
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * 현재 렌더 루프의 requestAnimationFrame ID다.
+   */
   const rafRef = useRef<number>(0);
 
   useEffect(() => {

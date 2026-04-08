@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
+/**
+ * 교차한 검 모양을 표현하는 ASCII 아트다.
+ */
 const CROSSED = [
   "         /|    |\\         ",
   "        / |    | \\        ",
@@ -20,15 +23,38 @@ const CROSSED = [
   "       |___|___|         ",
 ];
 
+/**
+ * 검 조우 연출 종료 후 호출할 콜백이다.
+ */
 interface SwordEncounterProps {
   onComplete: () => void;
 }
 
+/**
+ * 간단한 검 조우 ASCII 연출을 출력하는 컴포넌트다.
+ *
+ * @param props 종료 콜백
+ */
 export default function SwordEncounter({ onComplete }: SwordEncounterProps) {
+  /**
+   * 연출의 현재 단계를 저장한다.
+   */
   const [phase, setPhase] = useState<"clash" | "sparks" | "idle">("clash");
+  /**
+   * 불꽃 프레임 번호를 저장한다.
+   */
   const [sparkFrame, setSparkFrame] = useState(0);
+  /**
+   * 연출 컨테이너의 투명도 값을 저장한다.
+   */
   const [opacity, setOpacity] = useState(0);
+  /**
+   * 페이드아웃 진행 여부를 저장한다.
+   */
   const [fadingOut, setFadingOut] = useState(false);
+  /**
+   * 불꽃 점멸용 interval ID를 저장한다.
+   */
   const intervalRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -71,7 +97,13 @@ export default function SwordEncounter({ onComplete }: SwordEncounterProps) {
     };
   }, [phase]);
 
+  /**
+   * 충돌 불꽃에 순환 적용할 문자 목록이다.
+   */
   const sparkChars = ["*", "+", "x", ".", "o", "#"];
+  /**
+   * 현재 프레임에서 보여 줄 불꽃 문자다.
+   */
   const sparkOverlay =
     phase === "sparks" || phase === "idle"
       ? sparkFrame % 2 === 0
@@ -79,6 +111,9 @@ export default function SwordEncounter({ onComplete }: SwordEncounterProps) {
         : ""
       : "";
 
+  /**
+   * idle 단계에서 클릭되면 연출을 닫고 부모에게 완료를 알린다.
+   */
   const handleClick = () => {
     if (phase !== "idle") return;
     setFadingOut(true);
