@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface HeartHPProps {
   current: number;
-  max: number; // 24
+  max: number;
 }
 
-// Heart shape mask (9 wide × 8 tall)  # = inside, · = border
 const HEART_MASK = [
   " .#. .#. ",
   ".#####.#.",
@@ -19,100 +18,98 @@ const HEART_MASK = [
 
 const ROWS = HEART_MASK.length;
 const COLS = HEART_MASK[0].length;
-
-// Characters for water surface / body (light → dense)
-const WATER_SURFACE = ["~", "≈"];
-const WATER_BODY = ["░", "▒", "▓", "█"];
-const EMPTY_CHARS = ["·", " "];
-
-const FRAME_INTERVAL = 1000 / 128; // 24fps
+const WATER_SURFACE = ["~", "-"];
+const WATER_BODY = ["=", "+", "*", "#"];
+const EMPTY_CHARS = [".", " "];
+const FRAME_INTERVAL = 1000 / 24;
 
 export default function HeartHP({ current, max }: HeartHPProps) {
   const [hovered, setHovered] = useState(false);
-  const [, setTick] = useState(0);
+  const [time, setTime] = useState(0);
   const rafRef = useRef<number>(0);
-  const timeRef = useRef(0);
   const lastFrameRef = useRef(0);
 
   useEffect(() => {
-    function tick(now: number) {
+    const tick = (now: number) => {
       if (now - lastFrameRef.current >= FRAME_INTERVAL) {
         lastFrameRef.current = now;
-        timeRef.current += 0.08;
-        setTick((f) => f + 1);
+        setTime((value) => value + 0.08);
       }
+
       rafRef.current = requestAnimationFrame(tick);
-    }
+    };
+
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
   const fillRatio = Math.max(0, Math.min(1, current / max));
-  const t = timeRef.current;
-
-  // Build the ASCII grid
   const lines: string[] = [];
-  for (let r = 0; r < ROWS; r++) {
+
+  for (let row = 0; row < ROWS; row += 1) {
     let line = "";
-    for (let c = 0; c < COLS; c++) {
-      const cell = HEART_MASK[r][c];
+
+    for (let column = 0; column < COLS; column += 1) {
+      const cell = HEART_MASK[row][column];
+
       if (cell !== "#" && cell !== ".") {
         line += " ";
         continue;
       }
+
       if (cell === ".") {
-        line += "·";
+        line += ".";
         continue;
       }
 
-      // Inside heart — determine if water or empty
-      const rowRatio = r / (ROWS - 1); // 0 at top, 1 at bottom
-      const waterLine = 1 - fillRatio; // 0 = full, 1 = empty
-
-      // Wave offset at this column
+      const rowRatio = row / (ROWS - 1);
+      const waterLine = 1 - fillRatio;
       const wave =
-        Math.sin(c * 0.7 + t * 1.3) * 0.06 +
-        Math.sin(c * 1.2 + t * 0.8 + 1.5) * 0.03;
+        Math.sin(column * 0.7 + time * 1.3) * 0.06 +
+        Math.sin(column * 1.2 + time * 0.8 + 1.5) * 0.03;
       const adjustedWaterLine = waterLine + wave;
 
       if (rowRatio < adjustedWaterLine) {
-        // Above water — empty
-        const ei = Math.floor(
-          (Math.sin(c * 0.5 + r * 0.3 + t * 0.4) * 0.5 + 0.5) *
+        const emptyIndex = Math.floor(
+          (Math.sin(column * 0.5 + row * 0.3 + time * 0.4) * 0.5 + 0.5) *
             EMPTY_CHARS.length
         );
-        line += EMPTY_CHARS[Math.min(ei, EMPTY_CHARS.length - 1)];
+        line += EMPTY_CHARS[Math.min(emptyIndex, EMPTY_CHARS.length - 1)];
       } else if (rowRatio < adjustedWaterLine + 0.08) {
-        // Surface
-        const si = Math.floor(
-          (Math.sin(c * 0.9 + t * 2) * 0.5 + 0.5) * WATER_SURFACE.length
+        const surfaceIndex = Math.floor(
+          (Math.sin(column * 0.9 + time * 2) * 0.5 + 0.5) * WATER_SURFACE.length
         );
-        line += WATER_SURFACE[Math.min(si, WATER_SURFACE.length - 1)];
+        line += WATER_SURFACE[Math.min(surfaceIndex, WATER_SURFACE.length - 1)];
       } else {
-        // Below surface — water body
         const depth = (rowRatio - adjustedWaterLine) / (1 - adjustedWaterLine);
-        const bi = Math.min(
+        const bodyIndex = Math.min(
           Math.floor(depth * WATER_BODY.length),
           WATER_BODY.length - 1
         );
-        const shimmer = Math.sin(c * 1.1 + r * 0.7 + t * 1.5) > 0.7;
-        line +=
-          shimmer && bi < WATER_BODY.length - 1
-            ? WATER_BODY[bi + 1]
-            : WATER_BODY[bi];
+        const shimmer = Math.sin(column * 1.1 + row * 0.7 + time * 1.5) > 0.7;
+        line += shimmer && bodyIndex < WATER_BODY.length - 1
+          ? WATER_BODY[bodyIndex + 1]
+          : WATER_BODY[bodyIndex];
       }
     }
+
     lines.push(line);
   }
 
   return (
     <div
-      className="heart-hp-ascii"
+      className="relative inline-flex cursor-default flex-col items-center"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <pre className="heart-pre">{lines.join("\n")}</pre>
-      <span className={`heart-hp-number ${hovered ? "visible" : ""}`}>
+      <pre className="m-0 whitespace-pre text-[9px] leading-[1.1] text-heart select-none [text-shadow:0_0_4px_rgba(200,40,50,0.3)]">
+        {lines.join("\n")}
+      </pre>
+      <span
+        className={`pointer-events-none absolute right-[-2.8rem] top-1/2 -translate-y-1/2 whitespace-nowrap text-[0.65rem] text-[rgba(200,60,60,0.8)] transition-opacity duration-300 ${
+          hovered ? "opacity-100" : "opacity-0"
+        }`}
+      >
         {current}/{max}
       </span>
     </div>

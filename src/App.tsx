@@ -1,380 +1,406 @@
-﻿import { useState, useRef, useEffect, FormEvent } from "react";
-import "./App.css";
-import "./Battle.css";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import BattleScene from "./BattleScene";
+import CrtOverlay from "./CrtOverlay";
 
 const STORY_TEXT = `A bitter wind cuts through your coat, chilling you to the bone. Before you lies a crude fire pit with a few dry logs left behind by a forgotten traveler. Wolves howl in the surrounding darkness, their cries echoing closer with every passing moment. Without fire you will surely freeze to death or become prey to the beasts. Will you light the bonfire?`;
 
-// ASCII density ramp: sparse -> dense
 const ASCII_RAMP = " .:-=+*#%@";
 
-function App() {
+export default function App() {
   const [phase, setPhase] = useState<"text" | "transition" | "battle">("text");
   const [input, setInput] = useState("");
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number | null>(null);
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (phase === "transition") {
-      const displayCanvas = displayCanvasRef.current;
-      if (!displayCanvas) return;
-      const displayCtx = displayCanvas.getContext("2d");
-      if (!displayCtx) return;
+    if (phase !== "transition") return;
 
-      // 오프스크린 캔버스 (불꽃 시뮬레이션용)
-      const simCanvas = document.createElement("canvas");
-      const simCtx = simCanvas.getContext("2d");
-      if (!simCtx) return;
+    const displayCanvas = displayCanvasRef.current;
+    if (!displayCanvas) return;
 
-      const cw = 80;
-      const ch = 40;
-      simCanvas.width = cw;
-      simCanvas.height = ch;
+    const displayContext = displayCanvas.getContext("2d");
+    if (!displayContext) return;
 
-      // 디스플레이 캔버스 크기 설정
-      const charW = 10;
-      const charH = 14;
-      displayCanvas.width = cw * charW;
-      displayCanvas.height = ch * charH;
+    const simCanvas = document.createElement("canvas");
+    const simContext = simCanvas.getContext("2d");
+    if (!simContext) return;
 
-      let time = 0;
-      let mouseGridX = -1000;
-      let mouseGridY = -1000;
+    const columns = 80;
+    const rows = 40;
+    simCanvas.width = columns;
+    simCanvas.height = rows;
 
-      const handleMouseMove = (e: MouseEvent) => {
-        const rect = displayCanvas.getBoundingClientRect();
-        if (
-          e.clientX >= rect.left && e.clientX <= rect.right &&
-          e.clientY >= rect.top && e.clientY <= rect.bottom
-        ) {
-          mouseGridX = ((e.clientX - rect.left) / rect.width) * cw;
-          mouseGridY = ((e.clientY - rect.top) / rect.height) * ch;
-        } else {
-          mouseGridX = -1000;
-          mouseGridY = -1000;
+    const charWidth = 10;
+    const charHeight = 14;
+    displayCanvas.width = columns * charWidth;
+    displayCanvas.height = rows * charHeight;
+
+    let time = 0;
+    let mouseGridX = -1000;
+    let mouseGridY = -1000;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const rect = displayCanvas.getBoundingClientRect();
+      const withinX = event.clientX >= rect.left && event.clientX <= rect.right;
+      const withinY = event.clientY >= rect.top && event.clientY <= rect.bottom;
+
+      if (withinX && withinY) {
+        mouseGridX = ((event.clientX - rect.left) / rect.width) * columns;
+        mouseGridY = ((event.clientY - rect.top) / rect.height) * rows;
+        return;
+      }
+
+      mouseGridX = -1000;
+      mouseGridY = -1000;
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+
+    const outerRadius = 8;
+    const innerRadius = 4;
+    const sparks: {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      life: number;
+      maxLife: number;
+    }[] = [];
+
+    const fps = 12;
+    const frameDuration = 1000 / fps;
+    let lastFrameTime = 0;
+
+    const animate = (now: number) => {
+      if (now - lastFrameTime < frameDuration) {
+        requestRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      lastFrameTime = now;
+      time += 1;
+
+      simContext.fillStyle = "rgb(255, 255, 255)";
+      simContext.fillRect(0, 0, columns, rows);
+
+      const centerX = columns / 2;
+      const centerY = rows - 6;
+      const windSway = Math.sin(time * 0.07) * 2 + Math.sin(time * 0.13);
+
+      simContext.fillStyle = "rgb(100, 180, 0)";
+
+      simContext.save();
+      simContext.translate(centerX, centerY + 2);
+      simContext.rotate(-0.35);
+      simContext.beginPath();
+      simContext.ellipse(0, 0, 3, 16, 0, 0, Math.PI * 2);
+      simContext.fill();
+      simContext.restore();
+
+      simContext.save();
+      simContext.translate(centerX, centerY + 2);
+      simContext.rotate(0.35);
+      simContext.beginPath();
+      simContext.ellipse(0, 0, 3, 16, 0, 0, Math.PI * 2);
+      simContext.fill();
+      simContext.restore();
+
+      simContext.save();
+      simContext.translate(centerX, centerY + 4);
+      simContext.rotate(-0.25);
+      simContext.beginPath();
+      simContext.ellipse(0, 0, 2.5, 14, 0, 0, Math.PI * 2);
+      simContext.fill();
+      simContext.restore();
+
+      simContext.save();
+      simContext.translate(centerX, centerY + 4);
+      simContext.rotate(0.25);
+      simContext.beginPath();
+      simContext.ellipse(0, 0, 2.5, 14, 0, 0, Math.PI * 2);
+      simContext.fill();
+      simContext.restore();
+
+      const emberPulse =
+        0.5 + 0.5 * Math.sin(time * 0.08 + 1.3) * Math.sin(time * 0.13);
+      const emberBrightness = Math.floor(100 + emberPulse * 100);
+      simContext.fillStyle = `rgb(120, ${emberBrightness}, 0)`;
+      simContext.beginPath();
+      simContext.ellipse(centerX + windSway * 0.3, centerY - 1, 10, 4, 0, 0, Math.PI * 2);
+      simContext.fill();
+
+      for (let index = 0; index < 3; index += 1) {
+        const emberX = centerX + Math.sin(index * 2.1 + time * 0.05) * 7;
+        const emberT = 0.5 + 0.5 * Math.sin(time * 0.1 + index * 1.7);
+
+        simContext.fillStyle = `rgb(120, ${Math.floor(80 + emberT * 150)}, 0)`;
+        simContext.beginPath();
+        simContext.arc(emberX, centerY + 0.5 + index * 0.3, 2.5, 0, Math.PI * 2);
+        simContext.fill();
+      }
+
+      const breathe = Math.sin(time * 0.12) * 1.5 + Math.sin(time * 0.19);
+
+      simContext.fillStyle = "rgb(80, 200, 0)";
+      for (let index = 0; index < 4; index += 1) {
+        const offset = index * 1.5;
+        const sway = Math.sin(time * 0.08 + offset) * 4 + windSway;
+        const flameHeight = 8 + breathe + Math.sin(time * 0.14 + offset) * 2;
+        const flameWidth = 7 - (index % 2);
+
+        simContext.beginPath();
+        simContext.ellipse(
+          centerX + Math.sin(offset) * 5 + sway,
+          centerY - 3 - flameHeight / 2,
+          flameWidth,
+          flameHeight,
+          0,
+          0,
+          Math.PI * 2
+        );
+        simContext.fill();
+      }
+
+      simContext.fillStyle = "rgb(40, 160, 0)";
+      for (let index = 0; index < 3; index += 1) {
+        const offset = index * 2 + 0.5;
+        const sway = Math.sin(time * 0.1 + offset) * 3 + windSway * 0.7;
+        const flameHeight =
+          6 + breathe * 0.7 + Math.sin(time * 0.16 + offset) * 1.5;
+
+        simContext.beginPath();
+        simContext.ellipse(
+          centerX + Math.sin(offset) * 3 + sway,
+          centerY - 3 - flameHeight / 2,
+          5 - (index % 2) * 0.5,
+          flameHeight,
+          0,
+          0,
+          Math.PI * 2
+        );
+        simContext.fill();
+      }
+
+      simContext.fillStyle = "rgb(0, 80, 0)";
+      {
+        const sway = Math.sin(time * 0.12) * 1.5 + windSway * 0.4;
+        const flameHeight = 4 + breathe * 0.3 + Math.sin(time * 0.2);
+        simContext.beginPath();
+        simContext.ellipse(centerX + sway, centerY - 3 - flameHeight / 2, 3.5, flameHeight, 0, 0, Math.PI * 2);
+        simContext.fill();
+      }
+
+      if (time % 4 === 0 && sparks.length < 15) {
+        sparks.push({
+          x: centerX + (Math.random() - 0.5) * 12 + windSway,
+          y: centerY - 6 - Math.random() * 4,
+          vx: (Math.random() - 0.5) * 0.8 + windSway * 0.1,
+          vy: -(0.3 + Math.random() * 0.5),
+          life: 0,
+          maxLife: 20 + Math.random() * 30,
+        });
+      }
+
+      for (let index = sparks.length - 1; index >= 0; index -= 1) {
+        const spark = sparks[index];
+        spark.x += spark.vx + Math.sin(time * 0.15 + index) * 0.2;
+        spark.y += spark.vy;
+        spark.life += 1;
+
+        if (spark.life > spark.maxLife || spark.y < 0) {
+          sparks.splice(index, 1);
+          continue;
         }
-      };
 
-      window.addEventListener("mousemove", handleMouseMove);
+        const fade = 1 - spark.life / spark.maxLife;
+        const sparkRed = Math.floor(40 + fade * 40);
 
-      const outerRadius = 8;
-      const innerRadius = 4;
+        simContext.fillStyle = `rgb(${sparkRed}, ${Math.floor(fade * 200)}, 0)`;
+        simContext.beginPath();
+        simContext.arc(spark.x, spark.y, 0.8 + fade * 0.5, 0, Math.PI * 2);
+        simContext.fill();
+      }
 
-      // 불티(Sparks) 파티클 시스템
-      const sparks: { x: number; y: number; vx: number; vy: number; life: number; maxLife: number }[] = [];
+      const imageData = simContext.getImageData(0, 0, columns, rows);
+      const data = imageData.data;
 
-      const FPS = 12;
-      const frameDuration = 1000 / FPS;
-      let lastFrameTime = 0;
+      displayContext.fillStyle = "#0d0d0d";
+      displayContext.fillRect(0, 0, displayCanvas.width, displayCanvas.height);
+      displayContext.textBaseline = "top";
 
-      const animate = (now: number) => {
-        if (now - lastFrameTime < frameDuration) {
-          requestRef.current = requestAnimationFrame(animate);
-          return;
-        }
-        lastFrameTime = now;
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < columns; x += 1) {
+          const offset = (y * columns + x) * 4;
+          const red = data[offset];
+          const green = data[offset + 1];
 
-        time += 1;
+          let type = "space";
+          let zone = 0;
 
-        // --- 시뮬레이션 캔버스: RGB 채널로 영역 인코딩 ---
-        // R 채널: 0=불 중심, 40=불 중간, 80=불 외곽, 100=나무, 120=달아오른 숯, 255=빈공간
-        // G 채널: 밝기 힌트 (0=가장 밝음, 255=어두움)
-        simCtx.fillStyle = "rgb(255, 255, 255)";
-        simCtx.fillRect(0, 0, cw, ch);
-
-        const cx = cw / 2;
-        const cy = ch - 6;
-
-        // 전체 바람 흔들림 (유기적인 좌우 흔들림)
-        const windSway = Math.sin(time * 0.07) * 2 + Math.sin(time * 0.13) * 1;
-
-        // ===== 1. 장작 (X자 교차, 이미지처럼 크고 굵은 통나무) =====
-        simCtx.fillStyle = "rgb(100, 180, 0)"; // R=100 → wood
-        
-        // 뒤쪽 X자 장작 (큰 통나무 2개)
-        simCtx.save();
-        simCtx.translate(cx, cy + 2);
-        simCtx.rotate(-0.35);
-        simCtx.beginPath();
-        simCtx.ellipse(0, 0, 3, 16, 0, 0, Math.PI * 2);
-        simCtx.fill();
-        simCtx.restore();
-
-        simCtx.save();
-        simCtx.translate(cx, cy + 2);
-        simCtx.rotate(0.35);
-        simCtx.beginPath();
-        simCtx.ellipse(0, 0, 3, 16, 0, 0, Math.PI * 2);
-        simCtx.fill();
-        simCtx.restore();
-
-        // 앞쪽 X자 장작 (약간 아래쪽, 2개)
-        simCtx.save();
-        simCtx.translate(cx, cy + 4);
-        simCtx.rotate(-0.25);
-        simCtx.beginPath();
-        simCtx.ellipse(0, 0, 2.5, 14, 0, 0, Math.PI * 2);
-        simCtx.fill();
-        simCtx.restore();
-
-        simCtx.save();
-        simCtx.translate(cx, cy + 4);
-        simCtx.rotate(0.25);
-        simCtx.beginPath();
-        simCtx.ellipse(0, 0, 2.5, 14, 0, 0, Math.PI * 2);
-        simCtx.fill();
-        simCtx.restore();
-
-        // ===== 1b. 장작 밑동의 달아오른 숯 (Embers / Pulsing) =====
-        const emberPulse = 0.5 + 0.5 * Math.sin(time * 0.08 + 1.3) * Math.sin(time * 0.13);
-        const emberBright = Math.floor(100 + emberPulse * 100);
-        simCtx.fillStyle = `rgb(120, ${emberBright}, 0)`;
-        simCtx.beginPath();
-        simCtx.ellipse(cx + windSway * 0.3, cy - 1, 10, 4, 0, 0, Math.PI * 2);
-        simCtx.fill();
-        for (let i = 0; i < 3; i++) {
-          const ex = cx + Math.sin(i * 2.1 + time * 0.05) * 7;
-          const ep = 0.5 + 0.5 * Math.sin(time * 0.1 + i * 1.7);
-          simCtx.fillStyle = `rgb(120, ${Math.floor(80 + ep * 150)}, 0)`;
-          simCtx.beginPath();
-          simCtx.arc(ex, cy + 0.5 + i * 0.3, 2.5, 0, Math.PI * 2);
-          simCtx.fill();
-        }
-
-        // ===== 2. 불꽃 — 3층 (낮고 넓게, 아늑한 모닥불) =====
-        const breathe = Math.sin(time * 0.12) * 1.5 + Math.sin(time * 0.19) * 1;
-
-        // --- 외곽부 (짙은 붉은색, R=80) — 넓고 낮게 ---
-        simCtx.fillStyle = "rgb(80, 200, 0)";
-        for (let i = 0; i < 4; i++) {
-          const phase = i * 1.5;
-          const sw = Math.sin(time * 0.08 + phase) * 4 + windSway;
-          const h = 8 + breathe + Math.sin(time * 0.14 + phase) * 2;
-          const w = 7 - (i % 2);
-          simCtx.beginPath();
-          simCtx.ellipse(
-            cx + Math.sin(phase) * 5 + sw,
-            cy - 3 - h / 2,
-            w,
-            h,
-            0, 0, Math.PI * 2
-          );
-          simCtx.fill();
-        }
-
-        // --- 중간부 (주황색, R=40) ---
-        simCtx.fillStyle = "rgb(40, 160, 0)";
-        for (let i = 0; i < 3; i++) {
-          const phase = i * 2.0 + 0.5;
-          const sw = Math.sin(time * 0.1 + phase) * 3 + windSway * 0.7;
-          const h = 6 + breathe * 0.7 + Math.sin(time * 0.16 + phase) * 1.5;
-          simCtx.beginPath();
-          simCtx.ellipse(
-            cx + Math.sin(phase) * 3 + sw,
-            cy - 3 - h / 2,
-            5 - (i % 2) * 0.5,
-            h,
-            0, 0, Math.PI * 2
-          );
-          simCtx.fill();
-        }
-
-        // --- 중심부 (밝은 흰노랑, R=0) ---
-        simCtx.fillStyle = "rgb(0, 80, 0)";
-        {
-          const sw = Math.sin(time * 0.12) * 1.5 + windSway * 0.4;
-          const h = 4 + breathe * 0.3 + Math.sin(time * 0.2) * 1;
-          simCtx.beginPath();
-          simCtx.ellipse(cx + sw, cy - 3 - h / 2, 3.5, h, 0, 0, Math.PI * 2);
-          simCtx.fill();
-        }
-
-        // ===== 3. 불티 (Sparks) 파티클 =====
-        if (time % 4 === 0 && sparks.length < 15) {
-          sparks.push({
-            x: cx + (Math.random() - 0.5) * 12 + windSway,
-            y: cy - 6 - Math.random() * 4,
-            vx: (Math.random() - 0.5) * 0.8 + windSway * 0.1,
-            vy: -(0.3 + Math.random() * 0.5),
-            life: 0,
-            maxLife: 20 + Math.random() * 30,
-          });
-        }
-        // 불티 업데이트 & 그리기
-        for (let i = sparks.length - 1; i >= 0; i--) {
-          const s = sparks[i];
-          s.x += s.vx + Math.sin(time * 0.15 + i) * 0.2;
-          s.y += s.vy;
-          s.life += 1;
-          if (s.life > s.maxLife || s.y < 0) {
-            sparks.splice(i, 1);
-            continue;
+          if (red <= 10) {
+            type = "fire";
+            zone = 0;
+          } else if (red <= 50) {
+            type = "fire";
+            zone = 1;
+          } else if (red <= 90) {
+            type = "fire";
+            zone = 2;
+          } else if (red <= 105) {
+            type = "wood";
+            zone = 3;
+          } else if (red <= 130) {
+            type = "ember";
+            zone = 4;
           }
-          const sparkFade = 1 - s.life / s.maxLife;
-          const sparkR = Math.floor(40 + sparkFade * 40); // 40~80 범위
-          simCtx.fillStyle = `rgb(${sparkR}, ${Math.floor(sparkFade * 200)}, 0)`;
-          simCtx.beginPath();
-          simCtx.arc(s.x, s.y, 0.8 + sparkFade * 0.5, 0, Math.PI * 2);
-          simCtx.fill();
-        }
 
-        // --- 디스플레이 캔버스: ASCII 문자 직접 그리기 ---
-        const imgData = simCtx.getImageData(0, 0, cw, ch);
-        const data = imgData.data;
+          const dx = x - mouseGridX;
+          const dy = (y - mouseGridY) * 1.8;
+          const distance = Math.sqrt(dx * dx + dy * dy);
 
-        displayCtx.fillStyle = "#0d0d0d";
-        displayCtx.fillRect(0, 0, displayCanvas.width, displayCanvas.height);
-        displayCtx.textBaseline = "top";
+          let opacity = 1;
+          let weight = 900;
 
-        for (let y = 0; y < ch; y++) {
-          for (let x = 0; x < cw; x++) {
-            const offset = (y * cw + x) * 4;
-            const r = data[offset];
-            const g = data[offset + 1];
+          if (distance < innerRadius && type !== "space") {
+            const innerT = distance / innerRadius;
+            opacity = 0.05 + innerT * 0.35;
+            weight = 100;
+          } else if (distance < outerRadius && type !== "space") {
+            const edgeT = Math.max(
+              0,
+              Math.min(1, (distance - innerRadius) / (outerRadius - innerRadius))
+            );
 
-            // R 채널로 영역 판별
-            let type = "space";
-            let zone = 0; // 0=core, 1=mid, 2=outer, 3=wood, 4=ember
-            if (r <= 10) { type = "fire"; zone = 0; }       // 중심 (흰노랑)
-            else if (r <= 50) { type = "fire"; zone = 1; }   // 중간 (주황)
-            else if (r <= 90) { type = "fire"; zone = 2; }   // 외곽 (붉은색)
-            else if (r <= 105) { type = "wood"; zone = 3; }  // 장작
-            else if (r <= 130) { type = "ember"; zone = 4; } // 숯/달아오른 부분
-            // r > 130 → space
+            weight = Math.round(100 + edgeT * 800);
+            weight = Math.round(weight / 100) * 100;
+            weight = Math.max(100, Math.min(900, weight));
+          }
 
-            // 마우스 인터랙션
-            const dx = x - mouseGridX;
-            const dy = (y - mouseGridY) * 1.8;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+          if (type === "space") continue;
 
-            let opacity = 1;
-            let weight = 900;
+          const brightness = 1 - Math.min(green, 255) / 255;
+          let rampIndex: number;
 
-            if (dist < innerRadius && type !== "space") {
-              const innerT = dist / innerRadius;
-              opacity = 0.05 + innerT * 0.35;
-              weight = 100;
-            } else if (dist < outerRadius && type !== "space") {
-              const t = Math.max(0, Math.min(1, (dist - innerRadius) / (outerRadius - innerRadius)));
-              weight = Math.round(100 + t * 800);
-              weight = Math.round(weight / 100) * 100;
-              weight = Math.max(100, Math.min(900, weight));
-            }
+          if (type === "fire") {
+            const zoneBase = zone === 0 ? 0.9 : zone === 1 ? 0.7 : 0.5;
+            rampIndex = Math.floor((zoneBase + brightness * 0.1) * (ASCII_RAMP.length - 1));
+          } else if (type === "ember") {
+            rampIndex = Math.floor((brightness * 0.4 + 0.4) * (ASCII_RAMP.length - 1));
+          } else {
+            rampIndex = Math.floor(0.55 * (ASCII_RAMP.length - 1));
+          }
 
-            if (type === "space") continue;
+          const character =
+            ASCII_RAMP[Math.max(1, Math.min(rampIndex, ASCII_RAMP.length - 1))];
+          const fontWeight = weight >= 700 ? "bold" : "normal";
+          const fontSize = weight >= 500 ? 13 : weight >= 300 ? 11 : 10;
 
-            // ASCII ramp 문자 선택 (밝기 기반)
-            const gNorm = 1 - Math.min(g, 255) / 255; // G 채널로 밝기 보정
-            let rampIdx: number;
-            if (type === "fire") {
-              // 불: zone에 따라 밀도 차등
-              const zoneBase = zone === 0 ? 0.9 : zone === 1 ? 0.7 : 0.5;
-              rampIdx = Math.floor((zoneBase + gNorm * 0.1) * (ASCII_RAMP.length - 1));
-            } else if (type === "ember") {
-              // 숯: G채널 맥박에 따라
-              rampIdx = Math.floor((gNorm * 0.4 + 0.4) * (ASCII_RAMP.length - 1));
-            } else {
-              // 나무: 중간 밀도
-              rampIdx = Math.floor(0.55 * (ASCII_RAMP.length - 1));
-            }
-            const asciiChar = ASCII_RAMP[Math.max(1, Math.min(rampIdx, ASCII_RAMP.length - 1))];
+          displayContext.font = `${fontWeight} ${fontSize}px monospace`;
 
-            // 색상 & font 설정
-            const fontWeight = weight >= 700 ? "bold" : "normal";
-            const fontSize = weight >= 500 ? 13 : weight >= 300 ? 11 : 10;
-            displayCtx.font = `${fontWeight} ${fontSize}px monospace`;
+          let color: string;
+          if (zone === 0) {
+            color = `rgba(255, 255, 200, ${opacity})`;
+          } else if (zone === 1) {
+            color = `rgba(255, 160, 30, ${opacity})`;
+          } else if (zone === 2) {
+            color = `rgba(220, 50, 20, ${opacity})`;
+          } else if (zone === 4) {
+            const emberT = Math.min(green / 255, 1);
+            color = `rgba(${Math.floor(180 + emberT * 75)}, ${Math.floor(
+              40 + emberT * 50
+            )}, 10, ${opacity})`;
+          } else {
+            color = `rgba(90, 55, 25, ${opacity})`;
+          }
 
-            let color: string;
-            if (zone === 0) {
-              // 중심: 밝은 흰노랑
-              color = `rgba(255, 255, 200, ${opacity})`;
-            } else if (zone === 1) {
-              // 중간: 선명한 주황
-              color = `rgba(255, 160, 30, ${opacity})`;
-            } else if (zone === 2) {
-              // 외곽: 짙은 붉은색
-              color = `rgba(220, 50, 20, ${opacity})`;
-            } else if (zone === 4) {
-              // 숯/달아오른 부분: 은은한 붉은 + 맥박
-              const ep = Math.min(g / 255, 1);
-              color = `rgba(${Math.floor(180 + ep * 75)}, ${Math.floor(40 + ep * 50)}, 10, ${opacity})`;
-            } else {
-              // 나무: 짙은 갈색~검은색
-              color = `rgba(90, 55, 25, ${opacity})`;
-            }
-            displayCtx.fillStyle = color;
-            displayCtx.fillText(asciiChar, x * charW, y * charH);
+          displayContext.fillStyle = color;
+          displayContext.fillText(character, x * charWidth, y * charHeight);
 
-            // glow 효과 (불 영역만)
-            if (type === "fire" && opacity > 0.4) {
-              const glowAlpha = opacity * (zone === 0 ? 0.4 : 0.2);
-              displayCtx.fillStyle = zone === 0
+          if (type === "fire" && opacity > 0.4) {
+            const glowAlpha = opacity * (zone === 0 ? 0.4 : 0.2);
+            displayContext.fillStyle =
+              zone === 0
                 ? `rgba(255, 240, 150, ${glowAlpha})`
                 : `rgba(255, 80, 10, ${glowAlpha})`;
-              displayCtx.fillText(asciiChar, x * charW + 0.5, y * charH + 0.5);
-            }
+            displayContext.fillText(character, x * charWidth + 0.5, y * charHeight + 0.5);
           }
         }
-
-        requestRef.current = requestAnimationFrame(animate);
-      };
+      }
 
       requestRef.current = requestAnimationFrame(animate);
+    };
 
-      return () => {
-        window.removeEventListener("mousemove", handleMouseMove);
-        if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      };
-    }
+    requestRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+    };
   }, [phase]);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    const ans = input.trim().toLowerCase();
-    if (ans.includes("light") || ans.includes("피운다") || ans === "y" || ans === "yes") {
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const answer = input.trim().toLowerCase();
+
+    if (
+      answer.includes("light") ||
+      answer.includes("ignite") ||
+      answer === "y" ||
+      answer === "yes"
+    ) {
       setPhase("transition");
     }
   };
 
   return (
-    <div className="game-container">
-      {/* SVG noise filter (shared) */}
-      <svg style={{ position: "absolute", width: 0, height: 0 }}>
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-void px-4 py-8 sm:px-8">
+      <svg className="absolute h-0 w-0">
         <filter id="noise">
-          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.65"
+            numOctaves="3"
+            stitchTiles="stitch"
+          />
           <feColorMatrix type="saturate" values="0" />
         </filter>
       </svg>
 
-      {phase !== "battle" && (
-        <div className="crt">
+      {phase !== "battle" ? (
+        <div className="relative w-full max-w-[min(92vw,920px)] overflow-hidden rounded-[18px] px-4 py-8 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-8">
           {phase === "text" && (
-            <div className="scene-text">
-              {STORY_TEXT.split("\n").map((line, i) => <p key={i}>{line}</p>)}
-              <form onSubmit={handleSubmit} className="input-form">
-                <span className="prompt">{">"}</span>
+            <div className="relative z-0 max-w-[600px] text-[1.05rem] leading-[1.8] sm:text-[1.2rem] [text-shadow:0_0_5px_rgba(255,255,255,0.2)]">
+              {STORY_TEXT.split("\n").map((line, index) => (
+                <p key={index}>{line}</p>
+              ))}
+              <form onSubmit={handleSubmit} className="mt-4 flex items-center gap-2">
+                <span className="font-bold text-ember">{">"}</span>
                 <input
                   type="text"
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(event) => setInput(event.target.value)}
                   placeholder="(light / Y)"
                   autoFocus
+                  className="w-[200px] border-0 border-b border-white/30 bg-transparent text-[1.05rem] text-ember outline-none placeholder:text-white/35 focus:border-ember sm:text-[1.2rem]"
                 />
               </form>
             </div>
           )}
 
           {phase === "transition" && (
-            <div className="ascii-wrapper">
+            <div className="relative z-0 flex flex-col items-center">
               <canvas
-                className="ascii-canvas"
                 ref={displayCanvasRef}
+                className="h-auto w-full max-w-[800px] cursor-crosshair [image-rendering:pixelated] animate-fade-in-text"
               />
-              <p className="after-text fadeIn">
+              <p className="mt-12 text-center text-[1.05rem] opacity-0 sm:text-[1.2rem] [animation:fade_3s_forwards] [animation-delay:2s] [background:radial-gradient(ellipse_280px_100px_at_center_-20px,#bfbfbf_0%,rgba(191,191,191,0.8)_30%,rgba(191,191,191,0.39)_55%,rgba(191,191,191,0.23)_80%,rgba(191,191,191,0.13)_100%)] bg-clip-text text-transparent [-webkit-background-clip:text] [-webkit-text-fill-color:transparent]">
                 The bonfire crackles to life, its warmth wrapping around you...
               </p>
               <button
-                className="proceed-btn fadeIn"
+                type="button"
+                className="mt-8 cursor-pointer border border-white/30 bg-transparent px-6 py-2 text-[0.95rem] tracking-[0.1em] text-white/60 opacity-0 transition-colors duration-300 hover:border-ember hover:text-ember [animation:fade_1s_3s_forwards]"
                 onClick={() => setPhase("battle")}
               >
                 {"[ venture forth ]"}
@@ -382,17 +408,11 @@ function App() {
             </div>
           )}
 
-          {/* CRT overlay layers */}
-          <div className="crt-scanlines" />
-          <div className="crt-noise" />
-          <div className="crt-vignette" />
+          <CrtOverlay />
         </div>
+      ) : (
+        <BattleScene />
       )}
-
-      {phase === "battle" && <BattleScene />}
     </div>
   );
 }
-
-export default App;
-

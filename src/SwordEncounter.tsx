@@ -1,42 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-// Two crossed swords ASCII art
-const SWORD_LEFT = [
-  "        /|",
-  "       / |",
-  "      /  |",
-  "     /   |",
-  "    /    |",
-  "   /     |",
-  "  /______|",
-  "  \\      /",
-  "   \\    / ",
-  "    \\  /  ",
-  "     \\/   ",
-  "     ||   ",
-  "     ||   ",
-  "     /\\   ",
-  "    /  \\  ",
-];
-
-const SWORD_RIGHT = [
-  "  |\\      ",
-  "  | \\     ",
-  "  |  \\    ",
-  "  |   \\   ",
-  "  |    \\  ",
-  "  |     \\ ",
-  "  |______\\",
-  "  \\      /",
-  "   \\    / ",
-  "    \\  /  ",
-  "     \\/   ",
-  "     ||   ",
-  "     ||   ",
-  "     /\\   ",
-  "    /  \\  ",
-];
-
 const CROSSED = [
   "         /|    |\\         ",
   "        / |    | \\        ",
@@ -65,36 +28,50 @@ export default function SwordEncounter({ onComplete }: SwordEncounterProps) {
   const [phase, setPhase] = useState<"clash" | "sparks" | "idle">("clash");
   const [sparkFrame, setSparkFrame] = useState(0);
   const [opacity, setOpacity] = useState(0);
-  const intervalRef = useRef<number>();
+  const [fadingOut, setFadingOut] = useState(false);
+  const intervalRef = useRef<number | null>(null);
 
-  // Fade in
   useEffect(() => {
     const start = performance.now();
-    function fadeIn(now: number) {
-      const t = Math.min((now - start) / 800, 1);
-      setOpacity(t);
-      if (t < 1) requestAnimationFrame(fadeIn);
-      else setPhase("sparks");
-    }
+
+    const fadeIn = (now: number) => {
+      const progress = Math.min((now - start) / 800, 1);
+      setOpacity(progress);
+
+      if (progress < 1) {
+        requestAnimationFrame(fadeIn);
+      } else {
+        setPhase("sparks");
+      }
+    };
+
     requestAnimationFrame(fadeIn);
   }, []);
 
-  // Spark flicker animation
   useEffect(() => {
     if (phase !== "sparks") return;
+
     let frame = 0;
     intervalRef.current = window.setInterval(() => {
-      frame++;
+      frame += 1;
       setSparkFrame(frame);
+
       if (frame > 12) {
         setPhase("idle");
-        clearInterval(intervalRef.current);
+        if (intervalRef.current) {
+          window.clearInterval(intervalRef.current);
+        }
       }
     }, 120);
-    return () => clearInterval(intervalRef.current);
+
+    return () => {
+      if (intervalRef.current) {
+        window.clearInterval(intervalRef.current);
+      }
+    };
   }, [phase]);
 
-  const sparkChars = ["*", "+", "✦", "·", "⚡", "×"];
+  const sparkChars = ["*", "+", "x", ".", "o", "#"];
   const sparkOverlay =
     phase === "sparks" || phase === "idle"
       ? sparkFrame % 2 === 0
@@ -104,37 +81,33 @@ export default function SwordEncounter({ onComplete }: SwordEncounterProps) {
 
   const handleClick = () => {
     if (phase !== "idle") return;
-    // Fade out and notify parent
-    const el = document.querySelector(".sword-container") as HTMLElement;
-    if (el) {
-      el.style.transition = "opacity 0.6s, filter 0.6s";
-      el.style.opacity = "0";
-      el.style.filter = "blur(4px)";
-      setTimeout(onComplete, 650);
-    } else {
-      onComplete();
-    }
+    setFadingOut(true);
+    window.setTimeout(onComplete, 650);
   };
 
   return (
     <div
-      className="sword-container"
+      className={`flex flex-col items-center transition-[opacity,filter] duration-700 ${
+        fadingOut ? "opacity-0 blur-[4px]" : ""
+      }`}
       style={{ opacity, cursor: phase === "idle" ? "pointer" : "default" }}
       onClick={handleClick}
     >
-      <pre className="sword-ascii">
-        {CROSSED.map((line, i) => (
-          <span key={i}>
+      <pre className="m-0 whitespace-pre text-center text-[0.95rem] leading-[1.1] text-ash [text-shadow:0_0_6px_rgba(255,255,255,0.12)]">
+        {CROSSED.map((line, index) => (
+          <span key={index}>
             {line}
-            {i === 6 && sparkOverlay ? (
-              <span className="sword-spark">{` ${sparkOverlay}`}</span>
+            {index === 6 && sparkOverlay ? (
+              <span className="text-ember">{` ${sparkOverlay}`}</span>
             ) : null}
             {"\n"}
           </span>
         ))}
       </pre>
       {phase === "idle" && (
-        <p className="sword-hint fadeIn">{"[ click to engage ]"}</p>
+        <p className="mt-4 text-sm tracking-[0.12em] text-white/50 opacity-0 [animation:fade_1s_0.6s_forwards]">
+          {"[ click to engage ]"}
+        </p>
       )}
     </div>
   );

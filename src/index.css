@@ -1,1 +1,185 @@
+@import "tailwindcss";
 
+@theme {
+  --font-crt: "Courier New", Courier, monospace;
+
+  --color-void: #0d0d0d;
+  --color-ash: #bfbfbf;
+  --color-ember: #ffaa00;
+  --color-heart: #cc3344;
+
+  --animate-fade-in-text: fade-in-text 3s ease-in-out;
+  --animate-fade-in-quick: fade-in-quick 0.8s ease-out;
+  --animate-noise-shift: noise-shift 0.2s steps(3) infinite;
+  --animate-crt-flicker: crt-flicker 0.15s infinite;
+  --animate-cursor-blink: blink 0.7s step-end infinite;
+  --animate-wait-blink: blink 1.2s step-end infinite;
+  --animate-sprite-shake: sprite-shake 0.3s ease-out;
+  --animate-crt-glitch: crt-glitch 0.12s steps(2) infinite;
+
+  @keyframes fade-in-text {
+    from {
+      opacity: 0;
+      filter: blur(5px);
+      transform: scale(0.95);
+    }
+
+    to {
+      opacity: 1;
+      filter: blur(0);
+      transform: scale(1);
+    }
+  }
+
+  @keyframes fade-in-quick {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade {
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes noise-shift {
+    0% {
+      transform: translate(0, 0);
+    }
+
+    33% {
+      transform: translate(-5%, -5%);
+    }
+
+    66% {
+      transform: translate(3%, 2%);
+    }
+
+    100% {
+      transform: translate(-2%, 4%);
+    }
+  }
+
+  @keyframes crt-flicker {
+    0% {
+      opacity: 0;
+    }
+
+    5% {
+      opacity: 0.015;
+      background: rgba(200, 255, 200, 0.015);
+    }
+
+    10% {
+      opacity: 0;
+    }
+
+    92% {
+      opacity: 0;
+    }
+
+    95% {
+      opacity: 0.01;
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes sprite-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+
+    15% {
+      transform: translateX(-5px) translateY(-2px);
+    }
+
+    30% {
+      transform: translateX(4px) translateY(1px);
+    }
+
+    45% {
+      transform: translateX(-3px) translateY(-1px);
+    }
+
+    60% {
+      transform: translateX(2px);
+    }
+
+    75% {
+      transform: translateX(-1px);
+    }
+  }
+
+  @keyframes crt-glitch {
+    0% {
+      clip-path: inset(0 0 0 0);
+      transform: translate(0);
+    }
+
+    25% {
+      clip-path: inset(20% 0 30% 0);
+      transform: translate(-2px, 1px);
+      filter: hue-rotate(90deg);
+    }
+
+    50% {
+      clip-path: inset(50% 0 10% 0);
+      transform: translate(3px, -1px);
+    }
+
+    75% {
+      clip-path: inset(10% 0 60% 0);
+      transform: translate(-1px, 2px);
+      filter: hue-rotate(-60deg);
+    }
+
+    100% {
+      clip-path: inset(0 0 0 0);
+      transform: translate(0);
+    }
+  }
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-void text-ash font-crt antialiased;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}

@@ -1,21 +1,16 @@
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import BattleCombat from "./BattleCombat";
 import HeartHP from "./HeartHP";
 import SkullEncounter from "./SkullEncounter";
-import BattleCombat from "./BattleCombat";
 import { useImageToAscii } from "./useImageToAscii";
-
-interface BattleSceneProps {
-  onBattleEnd?: () => void;
-}
 
 type BattlePhase = "encounter" | "intro" | "combat";
 
 const ENCOUNTER_TEXT =
-  "A twisted figure emerges from the shadows — its body a mass of writhing dark tendrils, " +
+  "A twisted figure emerges from the shadows, its body a mass of writhing dark tendrils, " +
   "two pale eyes burning with cold malice. The Hollow Wraith lets out a guttural screech " +
   "that rattles your bones. The air thickens, and the temperature drops.";
 
-// Narratives with [keywords] the player can type to attack
 const BATTLE_NARRATIVES = [
   "The wraith [lunges] forward, dark tendrils [slashing] through the frigid air. You grip your weapon tightly, searching for an opening.",
   "Shadows coil around the creature as it lets out a hollow [scream]. The ground beneath you [cracks] with unholy energy.",
@@ -24,8 +19,7 @@ const BATTLE_NARRATIVES = [
   "The creature [howls] in fury, summoning a wave of darkness. Frost [spreads] across the ground toward your feet.",
 ];
 
-export default function BattleScene({ onBattleEnd }: BattleSceneProps) {
-  // Load and convert sprites to ASCII (flipped horizontally)
+export default function BattleScene() {
   const { lines: playerAscii, loading: playerLoading } = useImageToAscii(
     "/assets/hero.png",
     55,
@@ -39,7 +33,7 @@ export default function BattleScene({ onBattleEnd }: BattleSceneProps) {
 
   const [phase, setPhase] = useState<BattlePhase>("encounter");
   const [playerHp, setPlayerHp] = useState(24);
-  const [monsterHp, setMonsterHp] = useState(30);
+  const [, setMonsterHp] = useState(30);
   const [turn, setTurn] = useState<"player" | "monster">("player");
   const maxHp = 24;
 
@@ -51,35 +45,34 @@ export default function BattleScene({ onBattleEnd }: BattleSceneProps) {
     setPhase("combat");
   }, []);
 
-  const handlePlayerHit = useCallback((dmg: number) => {
-    setPlayerHp((hp) => Math.max(0, hp - dmg));
+  const handlePlayerHit = useCallback((damage: number) => {
+    setPlayerHp((value) => Math.max(0, value - damage));
   }, []);
 
-  const handleMonsterHit = useCallback((dmg: number) => {
-    setMonsterHp((hp) => Math.max(0, hp - dmg));
+  const handleMonsterHit = useCallback((damage: number) => {
+    setMonsterHp((value) => Math.max(0, value - damage));
   }, []);
 
   const handleTurnEnd = useCallback(() => {
-    setTurn((t) => (t === "player" ? "monster" : "player"));
+    setTurn((value) => (value === "player" ? "monster" : "player"));
   }, []);
 
   return (
-    <div className="battle-root">
-      {/* ─── HP Heart (top) ─── */}
-      <div className="battle-hp-bar">
+    <div className="flex min-h-screen w-full flex-col items-center justify-center gap-6">
+      <div className="pointer-events-none fixed left-1/2 top-4 z-50 -translate-x-1/2">
         <HeartHP current={playerHp} max={maxHp} />
       </div>
 
-      {/* ─── Main content area ─── */}
-      <div className="battle-stage">
-        {phase === "encounter" && (
-          <SkullEncounter onComplete={handleEncounterDone} />
-        )}
+      <div className="flex w-full flex-1 items-center justify-center">
+        {phase === "encounter" && <SkullEncounter onComplete={handleEncounterDone} />}
 
         {phase === "intro" && (
-          <div className="battle-intro" onClick={handleIntroDone}>
+          <div
+            className="max-w-[500px] cursor-pointer px-6 py-8 animate-fade-in-quick"
+            onClick={handleIntroDone}
+          >
             <TypewriterText text={ENCOUNTER_TEXT} speed={30} />
-            <p className="battle-intro-hint fadeIn">
+            <p className="mt-6 text-center text-[0.9rem] tracking-[0.15em] text-white/40 opacity-0 [animation:fade_1s_4s_forwards]">
               {"[ click to fight ]"}
             </p>
           </div>
@@ -93,22 +86,20 @@ export default function BattleScene({ onBattleEnd }: BattleSceneProps) {
             narratives={BATTLE_NARRATIVES}
             onPlayerHit={handlePlayerHit}
             onMonsterHit={handleMonsterHit}
-            monsterHp={monsterHp}
-            playerHp={playerHp}
             turn={turn}
             onTurnEnd={handleTurnEnd}
           />
         )}
+
         {phase === "combat" && (playerLoading || monsterLoading) && (
-          <p className="typewriter-text">Loading combatants...</p>
+          <p className="px-6 text-[1.15rem] leading-[1.9] text-ash [text-shadow:0_0_4px_rgba(255,255,255,0.1)]">
+            Loading combatants...
+          </p>
         )}
       </div>
     </div>
   );
 }
-
-/* ── Simple typewriter for encounter description ── */
-import { useEffect, useRef } from "react";
 
 function TypewriterText({
   text,
@@ -117,24 +108,28 @@ function TypewriterText({
   text: string;
   speed?: number;
 }) {
-  const [displayed, setDisplayed] = useState("");
-  const idx = useRef(0);
+  const [charCount, setCharCount] = useState(0);
 
   useEffect(() => {
-    idx.current = 0;
-    setDisplayed("");
-    const iv = setInterval(() => {
-      idx.current++;
-      setDisplayed(text.slice(0, idx.current));
-      if (idx.current >= text.length) clearInterval(iv);
+    const intervalId = window.setInterval(() => {
+      setCharCount((value) => {
+        const nextValue = Math.min(value + 1, text.length);
+        if (nextValue >= text.length) {
+          window.clearInterval(intervalId);
+        }
+        return nextValue;
+      });
     }, speed);
-    return () => clearInterval(iv);
+
+    return () => window.clearInterval(intervalId);
   }, [text, speed]);
 
   return (
-    <p className="typewriter-text">
-      {displayed}
-      <span className="cursor-blink">▌</span>
+    <p className="text-[1.05rem] leading-[1.9] text-ash sm:text-[1.15rem] [text-shadow:0_0_4px_rgba(255,255,255,0.1)]">
+      {text.slice(0, charCount)}
+      <span className="ml-[2px] inline-block animate-cursor-blink text-ember">
+        |
+      </span>
     </p>
   );
 }

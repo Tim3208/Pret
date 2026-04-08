@@ -1,18 +1,15 @@
 import {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
   type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
-import { prepareWithSegments, layoutWithLines } from "@chenglou/pretext";
-
-/* ──────────────────────────────────────────────
-   Types
-   ────────────────────────────────────────────── */
+import { layoutWithLines, prepareWithSegments } from "@chenglou/pretext";
+import CrtOverlay from "./CrtOverlay";
 
 interface Projectile {
-  id: number;
   chars: string[];
   x: number;
   y: number;
@@ -28,10 +25,8 @@ interface BattleCombatProps {
   monsterAscii: string[];
   playerAscii: string[];
   narratives: string[];
-  onPlayerHit: (dmg: number) => void;
-  onMonsterHit: (dmg: number) => void;
-  monsterHp: number;
-  playerHp: number;
+  onPlayerHit: (damage: number) => void;
+  onMonsterHit: (damage: number) => void;
   turn: "player" | "monster";
   onTurnEnd: () => void;
 }
@@ -47,12 +42,10 @@ export default function BattleCombat({
   narratives,
   onPlayerHit,
   onMonsterHit,
-  monsterHp,
-  playerHp,
   turn,
   onTurnEnd,
 }: BattleCombatProps) {
-  const [narrativeIdx, setNarrativeIdx] = useState(0);
+  const [narrativeIndex, setNarrativeIndex] = useState(0);
   const [input, setInput] = useState("");
   const [shakePlayer, setShakePlayer] = useState(false);
   const [shakeMonster, setShakeMonster] = useState(false);
@@ -60,274 +53,294 @@ export default function BattleCombat({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const projectilesRef = useRef<Projectile[]>([]);
-  const nextProjId = useRef(0);
+  const glitchStateRef = useRef(false);
 
-  // Parse narrative
-  const rawNarrative = narratives[narrativeIdx % narratives.length];
-  const keywords = [...rawNarrative.matchAll(/\[(\w+)\]/g)].map((m) => m[1]);
+  const rawNarrative = narratives[narrativeIndex % narratives.length];
+  const keywords = [...rawNarrative.matchAll(/\[(\w+)\]/g)].map((match) => match[1]);
   const cleanNarrative = rawNarrative.replace(/\[|\]/g, "");
 
-  // Layout narrative text with pretext
-  const [layoutLines, setLayoutLines] = useState<
-    { text: string; width: number }[]
-  >([]);
-
-  useEffect(() => {
+  const layoutLines = useMemo(() => {
     try {
       const prepared = prepareWithSegments(cleanNarrative, FONT);
       const result = layoutWithLines(prepared, TEXT_WIDTH, LINE_HEIGHT);
-      setLayoutLines(
-        result.lines.map((l) => ({ text: l.text, width: l.width }))
-      );
+      return result.lines.map((line) => ({ text: line.text, width: line.width }));
     } catch {
-      setLayoutLines([{ text: cleanNarrative, width: TEXT_WIDTH }]);
+      return [{ text: cleanNarrative, width: TEXT_WIDTH }];
     }
   }, [cleanNarrative]);
 
-  // ─── Canvas: narrative text + projectiles (inside CRT area) ───
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d")!;
 
-    const W = 480;
-    const H = 320;
-    canvas.width = W;
-    canvas.height = H;
+    const context = canvas.getContext("2d");
+    if (!context) return;
 
-    function animate() {
-      ctx.clearRect(0, 0, W, H);
-      const projs = projectilesRef.current;
+    const width = 480;
+    const height = 320;
+    canvas.width = width;
+    canvas.height = height;
 
-      // ── Center narrative text ──
-      ctx.font = FONT;
-      ctx.textBaseline = "alphabetic";
+    const animate = () => {
+      context.clearRect(0, 0, width, height);
+      const projectiles = projectilesRef.current;
 
-      // Center text block vertically
-      const totalTextH = layoutLines.length * LINE_HEIGHT;
-      const textStartY = Math.max(40, (H - totalTextH) / 2);
+      context.font = FONT;
+      context.textBaseline = "alphabetic";
 
-      for (let li = 0; li < layoutLines.length; li++) {
-        const line = layoutLines[li];
-        const baseY = textStartY + li * LINE_HEIGHT;
-        // Center each line horizontally
-        const lineStartX = (W - line.width) / 2;
+      const totalTextHeight = layoutLines.length * LINE_HEIGHT;
+      const textStartY = Math.max(40, (height - totalTextHeight) / 2);
 
-        let cx = lineStartX;
-        for (let ci = 0; ci < line.text.length; ci++) {
-          const ch = line.text[ci];
-          const charW = ctx.measureText(ch).width;
+      for (let lineIndex = 0; lineIndex < layoutLines.length; lineIndex += 1) {
+        const line = layoutLines[lineIndex];
+        const baseY = textStartY + lineIndex * LINE_HEIGHT;
+        const lineStartX = (width - line.width) / 2;
+        let currentX = lineStartX;
 
-          let offsetY = 0;
+        for (let charIndex = 0; charIndex < line.text.length; charIndex += 1) {
+          const char = line.text[charIndex];
+          const charWidth = context.measureText(char).width;
           let offsetX = 0;
+          let offsetY = 0;
           let alpha = 0.75;
-          for (const p of projs) {
-            if (!p.alive) continue;
-            const dx = cx - p.x;
-            const dy = baseY - p.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 90) {
-              const force = (90 - dist) / 90;
+
+          for (const projectile of projectiles) {
+            if (!projectile.alive) continue;
+
+            const dx = currentX - projectile.x;
+            const dy = baseY - projectile.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < 90) {
+              const force = (90 - distance) / 90;
               offsetY += (dy > 0 ? 1 : -1) * force * 20;
               offsetX += (dx > 0 ? 1 : -1) * force * 12;
               alpha = Math.max(0.1, alpha - force * 0.5);
             }
           }
 
-          // Highlight keywords
-          const isKeyword = keywords.some((kw) => {
-            const idx = cleanNarrative.indexOf(kw);
-            let charCount = 0;
-            for (let l = 0; l < li; l++)
-              charCount += layoutLines[l].text.length;
-            charCount += ci;
-            return charCount >= idx && charCount < idx + kw.length;
+          const isKeyword = keywords.some((keyword) => {
+            const keywordIndex = cleanNarrative.indexOf(keyword);
+            let characterCount = 0;
+
+            for (let prevLine = 0; prevLine < lineIndex; prevLine += 1) {
+              characterCount += layoutLines[prevLine].text.length;
+            }
+
+            characterCount += charIndex;
+            return characterCount >= keywordIndex && characterCount < keywordIndex + keyword.length;
           });
 
-          ctx.fillStyle = isKeyword
+          context.fillStyle = isKeyword
             ? `rgba(255, 200, 60, ${alpha})`
             : `rgba(190, 190, 190, ${alpha})`;
-          ctx.fillText(ch, cx + offsetX, baseY + offsetY);
-          cx += charW;
+          context.fillText(char, currentX + offsetX, baseY + offsetY);
+          currentX += charWidth;
         }
       }
 
-      // ── Projectiles ──
       let anyProjectileCrossing = false;
-      for (const p of projs) {
-        if (!p.alive) continue;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.offsets.forEach((o) => {
-          o.dx += (Math.random() - 0.5) * 0.4;
-          o.dy += (Math.random() - 0.5) * 0.4;
-          o.rot += (Math.random() - 0.5) * 0.03;
+
+      for (const projectile of projectiles) {
+        if (!projectile.alive) continue;
+
+        projectile.x += projectile.vx;
+        projectile.y += projectile.vy;
+
+        projectile.offsets.forEach((offset) => {
+          offset.dx += (Math.random() - 0.5) * 0.4;
+          offset.dy += (Math.random() - 0.5) * 0.4;
+          offset.rot += (Math.random() - 0.5) * 0.03;
         });
 
-        // Is projectile inside the CRT text area?
-        if (p.x > 0 && p.x < W) {
+        if (projectile.x > 0 && projectile.x < width) {
           anyProjectileCrossing = true;
         }
 
-        ctx.save();
-        ctx.font = "bold 18px 'Courier New', monospace";
-        const projColor = p.fromPlayer
+        context.save();
+        context.font = "bold 18px 'Courier New', monospace";
+        context.fillStyle = projectile.fromPlayer
           ? "rgba(100, 220, 255, 0.9)"
           : "rgba(255, 80, 60, 0.9)";
-        const glowColor = p.fromPlayer
+        context.shadowColor = projectile.fromPlayer
           ? "rgba(100, 220, 255, 0.4)"
           : "rgba(255, 80, 60, 0.4)";
-        ctx.shadowColor = glowColor;
-        ctx.shadowBlur = 16;
-        ctx.fillStyle = projColor;
+        context.shadowBlur = 16;
 
-        for (let i = 0; i < p.chars.length; i++) {
-          const o = p.offsets[i];
-          const charX = p.x + i * 14 + o.dx;
-          const charY = p.y + o.dy;
-          ctx.save();
-          ctx.translate(charX, charY);
-          ctx.rotate(o.rot);
-          ctx.fillText(p.chars[i], 0, 0);
-          ctx.restore();
+        for (let charIndex = 0; charIndex < projectile.chars.length; charIndex += 1) {
+          const offset = projectile.offsets[charIndex];
+          const charX = projectile.x + charIndex * 14 + offset.dx;
+          const charY = projectile.y + offset.dy;
+
+          context.save();
+          context.translate(charX, charY);
+          context.rotate(offset.rot);
+          context.fillText(projectile.chars[charIndex], 0, 0);
+          context.restore();
         }
-        ctx.restore();
 
-        // Hit detection — projectile exits canvas
-        if (p.fromPlayer && p.x > W + 20) {
-          p.alive = false;
+        context.restore();
+
+        if (projectile.fromPlayer && projectile.x > width + 20) {
+          projectile.alive = false;
           onMonsterHit(3 + Math.floor(Math.random() * 3));
           setShakeMonster(true);
-          setTimeout(() => setShakeMonster(false), 300);
-        } else if (!p.fromPlayer && p.x < -20) {
-          p.alive = false;
+          window.setTimeout(() => setShakeMonster(false), 300);
+        } else if (!projectile.fromPlayer && projectile.x < -20) {
+          projectile.alive = false;
           onPlayerHit(2 + Math.floor(Math.random() * 3));
           setShakePlayer(true);
-          setTimeout(() => setShakePlayer(false), 300);
+          window.setTimeout(() => setShakePlayer(false), 300);
         }
 
-        if (p.x < -200 || p.x > W + 200) p.alive = false;
+        if (projectile.x < -200 || projectile.x > width + 200) {
+          projectile.alive = false;
+        }
       }
 
-      // Trigger CRT glitch when projectile crosses
-      setGlitchActive(anyProjectileCrossing);
+      if (glitchStateRef.current !== anyProjectileCrossing) {
+        glitchStateRef.current = anyProjectileCrossing;
+        setGlitchActive(anyProjectileCrossing);
+      }
 
-      projectilesRef.current = projs.filter((p) => p.alive);
+      projectilesRef.current = projectiles.filter((projectile) => projectile.alive);
       rafRef.current = requestAnimationFrame(animate);
-    }
+    };
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [
-    layoutLines,
-    shakePlayer,
-    shakeMonster,
-    keywords,
-    cleanNarrative,
-    onPlayerHit,
-    onMonsterHit,
-  ]);
+  }, [cleanNarrative, keywords, layoutLines, onMonsterHit, onPlayerHit]);
 
-  // ─── Monster auto-attack ───
   useEffect(() => {
     if (turn !== "monster") return;
-    const timer = setTimeout(() => {
-      const attackWords = ["CLAW", "BITE", "HEX", "DARK"];
-      const word = attackWords[Math.floor(Math.random() * attackWords.length)];
+
+    const timeoutId = window.setTimeout(() => {
+      const attacks = ["CLAW", "BITE", "HEX", "DARK"];
+      const word = attacks[Math.floor(Math.random() * attacks.length)];
       const canvas = canvasRef.current;
-      const W = canvas?.width ?? 480;
-      const H = canvas?.height ?? 320;
-      const proj: Projectile = {
-        id: nextProjId.current++,
+      const width = canvas?.width ?? 480;
+      const height = canvas?.height ?? 320;
+
+      projectilesRef.current.push({
         chars: word.split(""),
-        x: W + 40,
-        y: H / 2 + (Math.random() - 0.5) * 80,
+        x: width + 40,
+        y: height / 2 + (Math.random() - 0.5) * 80,
         vx: -5 - Math.random() * 2,
         vy: (Math.random() - 0.5) * 1.5,
         alive: true,
         fromPlayer: false,
         offsets: word.split("").map(() => ({ dx: 0, dy: 0, rot: 0 })),
-      };
-      projectilesRef.current.push(proj);
-      setTimeout(() => {
-        setNarrativeIdx((i) => i + 1);
+      });
+
+      window.setTimeout(() => {
+        setNarrativeIndex((value) => value + 1);
         onTurnEnd();
       }, 1400);
     }, 800);
-    return () => clearTimeout(timer);
+
+    return () => window.clearTimeout(timeoutId);
   }, [turn, onTurnEnd]);
 
-  // ─── Player submit ───
   const handleSubmit = useCallback(
-    (e: FormEvent) => {
-      e.preventDefault();
+    (event: FormEvent) => {
+      event.preventDefault();
       if (turn !== "player") return;
+
       const word = input.trim().toUpperCase();
       if (!word) return;
 
       const canvas = canvasRef.current;
-      const H = canvas?.height ?? 320;
-      const proj: Projectile = {
-        id: nextProjId.current++,
+      const height = canvas?.height ?? 320;
+
+      projectilesRef.current.push({
         chars: word.split(""),
         x: -40,
-        y: H / 2 + (Math.random() - 0.5) * 80,
+        y: height / 2 + (Math.random() - 0.5) * 80,
         vx: 5 + Math.random() * 2,
         vy: (Math.random() - 0.5) * 1.5,
         alive: true,
         fromPlayer: true,
         offsets: word.split("").map(() => ({ dx: 0, dy: 0, rot: 0 })),
-      };
-      projectilesRef.current.push(proj);
+      });
+
       setInput("");
 
-      setTimeout(() => {
-        setNarrativeIdx((i) => i + 1);
+      window.setTimeout(() => {
+        setNarrativeIndex((value) => value + 1);
         onTurnEnd();
       }, 1400);
     },
-    [input, turn, onTurnEnd]
+    [input, onTurnEnd, turn]
   );
 
   return (
-    <div className="battle-combat-layout">
-      {/* ── Player sprite (outside CRT, left) ── */}
-      <div className={`sprite-column sprite-left ${shakePlayer ? "sprite-shake" : ""}`}>
-        <pre className="sprite-pre">{playerAscii.join("\n")}</pre>
+    <div className="flex w-full max-w-[1200px] flex-col items-center justify-center gap-8 px-4 animate-fade-in-quick lg:flex-row lg:gap-8">
+      <div
+        className={`flex shrink-0 items-end transition-transform duration-100 ${
+          shakePlayer ? "animate-sprite-shake" : ""
+        }`}
+      >
+        <pre
+          className={`m-0 whitespace-pre text-[4px] leading-[5px] select-none sm:text-[5px] sm:leading-[6px] ${
+            shakePlayer
+              ? "text-[rgba(255,80,80,0.9)]"
+              : "text-[rgba(200,200,200,0.85)]"
+          }`}
+        >
+          {playerAscii.join("\n")}
+        </pre>
       </div>
 
-      {/* ── CRT center panel ── */}
-      <div className="battle-crt-wrapper">
-        <div className={`battle-crt ${glitchActive ? "crt-glitch" : ""}`}>
-          <canvas ref={canvasRef} className="battle-canvas" />
-          <div className="crt-scanlines" />
-          <div className="crt-noise" />
-          <div className="crt-vignette" />
+      <div className="flex min-w-0 flex-col items-center gap-5">
+        <div
+          className={`relative overflow-hidden rounded-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5),0_0_30px_rgba(0,0,0,0.6)] ${
+            glitchActive ? "animate-crt-glitch" : ""
+          }`}
+        >
+          <canvas
+            ref={canvasRef}
+            className="block h-auto w-[min(92vw,480px)] max-w-full"
+          />
+          <CrtOverlay glitchActive={glitchActive} />
         </div>
+
         {turn === "player" && (
-          <form onSubmit={handleSubmit} className="input-form battle-input-row">
-            <span className="prompt">{">"}</span>
+          <form onSubmit={handleSubmit} className="flex w-full max-w-[480px] items-center gap-2">
+            <span className="font-bold text-ember">{">"}</span>
             <input
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(event) => setInput(event.target.value)}
               placeholder={
-                keywords.length > 0
-                  ? keywords.join(", ") + "..."
-                  : "type to attack..."
+                keywords.length > 0 ? `${keywords.join(", ")}...` : "type to attack..."
               }
               autoFocus
+              className="min-w-0 flex-1 border-0 border-b border-white/30 bg-transparent text-[1.05rem] text-ember outline-none placeholder:text-white/35 focus:border-ember sm:text-[1.2rem]"
             />
           </form>
         )}
+
         {turn === "monster" && (
-          <p className="battle-wait">The {monsterName} retaliates...</p>
+          <p className="m-0 text-center text-[0.95rem] tracking-[0.1em] text-[rgba(255,100,80,0.5)] animate-wait-blink">
+            The {monsterName} retaliates...
+          </p>
         )}
       </div>
 
-      {/* ── Monster sprite (outside CRT, right) ── */}
-      <div className={`sprite-column sprite-right ${shakeMonster ? "sprite-shake" : ""}`}>
-        <pre className="sprite-pre">{monsterAscii.join("\n")}</pre>
+      <div
+        className={`flex shrink-0 items-end transition-transform duration-100 ${
+          shakeMonster ? "animate-sprite-shake" : ""
+        }`}
+      >
+        <pre
+          className={`m-0 whitespace-pre text-[4px] leading-[5px] select-none sm:text-[5px] sm:leading-[6px] ${
+            shakeMonster
+              ? "text-[rgba(255,80,80,0.9)]"
+              : "text-[rgba(200,200,200,0.85)]"
+          }`}
+        >
+          {monsterAscii.join("\n")}
+        </pre>
       </div>
     </div>
   );
