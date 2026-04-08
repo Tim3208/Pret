@@ -23,12 +23,12 @@ export default function BattleScene() {
   const { lines: playerAscii, loading: playerLoading } = useImageToAscii(
     "/assets/hero.png",
     55,
-    { flip: true, brightnessThreshold: 40 }
+    { flip: true, brightnessThreshold: 40 },
   );
   const { lines: monsterAscii, loading: monsterLoading } = useImageToAscii(
     "/assets/enemy.png",
     55,
-    { flip: true, brightnessThreshold: 40 }
+    { flip: true, brightnessThreshold: 40 },
   );
 
   const [phase, setPhase] = useState<BattlePhase>("encounter");
@@ -59,12 +59,14 @@ export default function BattleScene() {
 
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-center gap-6">
-      <div className="pointer-events-none fixed left-1/2 top-4 z-50 -translate-x-1/2">
+      <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2">
         <HeartHP current={playerHp} max={maxHp} />
       </div>
 
       <div className="flex w-full flex-1 items-center justify-center">
-        {phase === "encounter" && <SkullEncounter onComplete={handleEncounterDone} />}
+        {phase === "encounter" && (
+          <SkullEncounter onComplete={handleEncounterDone} />
+        )}
 
         {phase === "intro" && (
           <div
