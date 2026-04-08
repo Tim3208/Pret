@@ -1,5 +1,5 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
-import BattleScene from "./BattleScene";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import BattleScene, { type BattleResult } from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
 
 /**
@@ -20,6 +20,11 @@ export default function App() {
    * 현재 게임 진행 단계를 저장한다.
    */
   const [phase, setPhase] = useState<"text" | "transition" | "battle">("text");
+
+  const handleBattleEnd = useCallback((_result: BattleResult) => {
+    setPhase("transition");
+  }, []);
+
   /**
    * 플레이어가 입력창에 입력한 명령어를 저장한다.
    */
@@ -590,7 +595,7 @@ export default function App() {
           <CrtOverlay />
         </div>
       ) : (
-        <BattleScene />
+        <BattleScene onBattleEnd={handleBattleEnd} />
       )}
     </div>
   );

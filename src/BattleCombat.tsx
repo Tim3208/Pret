@@ -1,17 +1,22 @@
 import {
   type FormEvent,
+  type MutableRefObject,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import { layoutWithLines, prepareWithSegments } from "@chenglou/pretext";
 import CrtOverlay from "./CrtOverlay";
+import {
+  type BattleLogEntry,
+  type MonsterIntent,
+  type PlayerAction,
+  type PlayerStats,
+  SPELLS,
+  findSpell,
+  getLiteracyTier,
+} from "./battleTypes";
 
-/**
- * 화면을 가로지르는 투사체의 렌더링 상태를 정의한다.
- */
 interface Projectile {
   chars: string[];
   x: number;
@@ -23,205 +28,115 @@ interface Projectile {
   offsets: { dx: number; dy: number; rot: number }[];
 }
 
-/**
- * 전투 캔버스 컴포넌트가 받는 속성 목록이다.
- */
 interface BattleCombatProps {
   monsterName: string;
   monsterAscii: string[];
   playerAscii: string[];
-  narratives: string[];
-  onPlayerHit: (damage: number) => void;
-  onMonsterHit: (damage: number) => void;
+  monsterHp: number;
+  monsterMaxHp: number;
+  monsterShield: number;
+  nextIntent: MonsterIntent;
+  battleLog: BattleLogEntry[];
   turn: "player" | "monster";
-  onTurnEnd: () => void;
+  playerMana: number;
+  playerStats: PlayerStats;
+  onAction: (action: PlayerAction) => void;
+  projectileCallbackRef: MutableRefObject<
+    ((word: string, fromPlayer: boolean) => void) | null
+  >;
 }
 
-/**
- * 전투 내레이션을 렌더링할 때 사용할 캔버스 폰트다.
- */
-const FONT = "500 15px 'Courier New', Courier, monospace";
-/**
- * 한 줄의 텍스트가 차지하는 세로 간격이다.
- */
-const LINE_HEIGHT = 24;
-/**
- * Pretext 줄바꿈 계산에 사용할 최대 텍스트 폭이다.
- */
-const TEXT_WIDTH = 380;
-
-/**
- * 전투 텍스트, 입력, 투사체, CRT 효과를 모두 담당하는 컴포넌트다.
- *
- * @param props 전투 상태와 이벤트 핸들러 모음
- */
 export default function BattleCombat({
   monsterName,
   monsterAscii,
   playerAscii,
-  narratives,
-  onPlayerHit,
-  onMonsterHit,
+  monsterHp,
+  monsterMaxHp,
+  monsterShield,
+  nextIntent,
+  battleLog,
   turn,
-  onTurnEnd,
+  playerMana,
+  playerStats,
+  onAction,
+  projectileCallbackRef,
 }: BattleCombatProps) {
-  /**
-   * 현재 출력 중인 내레이션 인덱스다.
-   */
-  const [narrativeIndex, setNarrativeIndex] = useState(0);
-  /**
-   * 플레이어가 입력창에 입력 중인 공격 단어다.
-   */
-  const [input, setInput] = useState("");
-  /**
-   * 플레이어 스프라이트 흔들림 애니메이션 활성 여부다.
-   */
+  const [spellInput, setSpellInput] = useState("");
+  const [showSpellInput, setShowSpellInput] = useState(false);
   const [shakePlayer, setShakePlayer] = useState(false);
-  /**
-   * 몬스터 스프라이트 흔들림 애니메이션 활성 여부다.
-   */
   const [shakeMonster, setShakeMonster] = useState(false);
-  /**
-   * CRT 글리치 효과 활성 여부다.
-   */
   const [glitchActive, setGlitchActive] = useState(false);
-  /**
-   * 전투 캔버스 DOM 요소를 참조한다.
-   */
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  /**
-   * 현재 애니메이션 루프의 requestAnimationFrame ID를 저장한다.
-   */
   const rafRef = useRef<number>(0);
-  /**
-   * 화면 위에 존재하는 투사체 목록을 보관한다.
-   */
   const projectilesRef = useRef<Projectile[]>([]);
-  /**
-   * 이전 프레임의 글리치 활성 상태를 기억한다.
-   */
   const glitchStateRef = useRef(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * 현재 순번에 해당하는 원본 내레이션 문장이다.
-   */
-  const rawNarrative = narratives[narrativeIndex % narratives.length];
-  /**
-   * 대괄호로 감싼 입력 키워드만 추출한 목록이다.
-   */
-  const keywords = [...rawNarrative.matchAll(/\[(\w+)\]/g)].map((match) => match[1]);
-  /**
-   * 키워드용 대괄호를 제거한 실제 표시용 내레이션 문장이다.
-   */
-  const cleanNarrative = rawNarrative.replace(/\[|\]/g, "");
+  // ── Monster HP → color ──
+  const hpRatio = monsterMaxHp > 0 ? monsterHp / monsterMaxHp : 1;
+  const monsterColor =
+    hpRatio > 0.75
+      ? "text-[rgba(200,200,200,0.85)]"
+      : hpRatio > 0.5
+        ? "text-[rgba(220,160,140,0.85)]"
+        : hpRatio > 0.25
+          ? "text-[rgba(255,100,80,0.9)]"
+          : "text-[rgba(200,30,30,0.95)]";
 
-  /**
-   * Pretext로 줄바꿈 계산을 마친 내레이션 레이아웃 결과다.
-   */
-  const layoutLines = useMemo(() => {
-    try {
-      const prepared = prepareWithSegments(cleanNarrative, FONT);
-      const result = layoutWithLines(prepared, TEXT_WIDTH, LINE_HEIGHT);
-      return result.lines.map((line) => ({ text: line.text, width: line.width }));
-    } catch {
-      return [{ text: cleanNarrative, width: TEXT_WIDTH }];
-    }
-  }, [cleanNarrative]);
-
+  // ── Register projectile callback so BattleScene can trigger animations ──
   useEffect(() => {
-    /**
-     * 전투 텍스트와 투사체를 매 프레임 다시 그린다.
-     */
+    projectileCallbackRef.current = (word: string, fromPlayer: boolean) => {
+      if (!word) return;
+      const canvas = canvasRef.current;
+      const width = canvas?.width ?? 480;
+      const height = canvas?.height ?? 200;
+
+      projectilesRef.current.push({
+        chars: word.split(""),
+        x: fromPlayer ? -40 : width + 40,
+        y: height / 2 + (Math.random() - 0.5) * 60,
+        vx: fromPlayer ? 5 + Math.random() * 2 : -5 - Math.random() * 2,
+        vy: (Math.random() - 0.5) * 1.5,
+        alive: true,
+        fromPlayer,
+        offsets: word.split("").map(() => ({ dx: 0, dy: 0, rot: 0 })),
+      });
+
+      if (fromPlayer) {
+        window.setTimeout(() => {
+          setShakeMonster(true);
+          window.setTimeout(() => setShakeMonster(false), 300);
+        }, 600);
+      } else {
+        window.setTimeout(() => {
+          setShakePlayer(true);
+          window.setTimeout(() => setShakePlayer(false), 300);
+        }, 600);
+      }
+    };
+
+    return () => {
+      projectileCallbackRef.current = null;
+    };
+  }, [projectileCallbackRef]);
+
+  // ── Canvas animation loop ──
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
-    /**
-     * 전투 캔버스의 실제 픽셀 너비다.
-     */
     const width = 480;
-    /**
-     * 전투 캔버스의 실제 픽셀 높이다.
-     */
-    const height = 320;
+    const height = 200;
     canvas.width = width;
     canvas.height = height;
 
-    /**
-     * 전투 텍스트, 투사체, 피격 효과를 한 프레임 단위로 그린다.
-     */
     const animate = () => {
       context.clearRect(0, 0, width, height);
-      /**
-       * 현재 프레임에 살아 있는 투사체 목록이다.
-       */
       const projectiles = projectilesRef.current;
 
-      context.font = FONT;
-      context.textBaseline = "alphabetic";
-
-      /**
-       * 전체 내레이션 블록의 총 높이다.
-       */
-      const totalTextHeight = layoutLines.length * LINE_HEIGHT;
-      /**
-       * 내레이션을 세로 중앙에 배치하기 위한 시작 Y 좌표다.
-       */
-      const textStartY = Math.max(40, (height - totalTextHeight) / 2);
-
-      for (let lineIndex = 0; lineIndex < layoutLines.length; lineIndex += 1) {
-        const line = layoutLines[lineIndex];
-        const baseY = textStartY + lineIndex * LINE_HEIGHT;
-        const lineStartX = (width - line.width) / 2;
-        let currentX = lineStartX;
-
-        for (let charIndex = 0; charIndex < line.text.length; charIndex += 1) {
-          const char = line.text[charIndex];
-          const charWidth = context.measureText(char).width;
-          let offsetX = 0;
-          let offsetY = 0;
-          let alpha = 0.75;
-
-          for (const projectile of projectiles) {
-            if (!projectile.alive) continue;
-
-            const dx = currentX - projectile.x;
-            const dy = baseY - projectile.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance < 90) {
-              const force = (90 - distance) / 90;
-              offsetY += (dy > 0 ? 1 : -1) * force * 20;
-              offsetX += (dx > 0 ? 1 : -1) * force * 12;
-              alpha = Math.max(0.1, alpha - force * 0.5);
-            }
-          }
-
-          const isKeyword = keywords.some((keyword) => {
-            const keywordIndex = cleanNarrative.indexOf(keyword);
-            let characterCount = 0;
-
-            for (let prevLine = 0; prevLine < lineIndex; prevLine += 1) {
-              characterCount += layoutLines[prevLine].text.length;
-            }
-
-            characterCount += charIndex;
-            return characterCount >= keywordIndex && characterCount < keywordIndex + keyword.length;
-          });
-
-          context.fillStyle = isKeyword
-            ? `rgba(255, 200, 60, ${alpha})`
-            : `rgba(190, 190, 190, ${alpha})`;
-          context.fillText(char, currentX + offsetX, baseY + offsetY);
-          currentX += charWidth;
-        }
-      }
-
-      /**
-       * 현재 프레임에 투사체가 CRT 영역 내부를 지나는지 여부다.
-       */
       let anyProjectileCrossing = false;
 
       for (const projectile of projectiles) {
@@ -250,7 +165,11 @@ export default function BattleCombat({
           : "rgba(255, 80, 60, 0.4)";
         context.shadowBlur = 16;
 
-        for (let charIndex = 0; charIndex < projectile.chars.length; charIndex += 1) {
+        for (
+          let charIndex = 0;
+          charIndex < projectile.chars.length;
+          charIndex += 1
+        ) {
           const offset = projectile.offsets[charIndex];
           const charX = projectile.x + charIndex * 14 + offset.dx;
           const charY = projectile.y + offset.dy;
@@ -264,19 +183,12 @@ export default function BattleCombat({
 
         context.restore();
 
-        if (projectile.fromPlayer && projectile.x > width + 20) {
-          projectile.alive = false;
-          onMonsterHit(3 + Math.floor(Math.random() * 3));
-          setShakeMonster(true);
-          window.setTimeout(() => setShakeMonster(false), 300);
-        } else if (!projectile.fromPlayer && projectile.x < -20) {
-          projectile.alive = false;
-          onPlayerHit(2 + Math.floor(Math.random() * 3));
-          setShakePlayer(true);
-          window.setTimeout(() => setShakePlayer(false), 300);
-        }
-
-        if (projectile.x < -200 || projectile.x > width + 200) {
+        if (
+          (projectile.fromPlayer && projectile.x > width + 20) ||
+          (!projectile.fromPlayer && projectile.x < -20) ||
+          projectile.x < -200 ||
+          projectile.x > width + 200
+        ) {
           projectile.alive = false;
         }
       }
@@ -286,92 +198,57 @@ export default function BattleCombat({
         setGlitchActive(anyProjectileCrossing);
       }
 
-      projectilesRef.current = projectiles.filter((projectile) => projectile.alive);
+      projectilesRef.current = projectiles.filter((p) => p.alive);
       rafRef.current = requestAnimationFrame(animate);
     };
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [cleanNarrative, keywords, layoutLines, onMonsterHit, onPlayerHit]);
+  }, []);
 
+  // Auto-scroll log
   useEffect(() => {
-    /**
-     * 몬스터 차례일 때 자동 공격을 예약한다.
-     */
-    if (turn !== "monster") return;
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [battleLog]);
 
-    const timeoutId = window.setTimeout(() => {
-      /**
-       * 몬스터가 사용할 공격 단어 후보군이다.
-       */
-      const attacks = ["CLAW", "BITE", "HEX", "DARK"];
-      /**
-       * 이번 공격에 선택된 단어다.
-       */
-      const word = attacks[Math.floor(Math.random() * attacks.length)];
-      const canvas = canvasRef.current;
-      const width = canvas?.width ?? 480;
-      const height = canvas?.height ?? 320;
-
-      projectilesRef.current.push({
-        chars: word.split(""),
-        x: width + 40,
-        y: height / 2 + (Math.random() - 0.5) * 80,
-        vx: -5 - Math.random() * 2,
-        vy: (Math.random() - 0.5) * 1.5,
-        alive: true,
-        fromPlayer: false,
-        offsets: word.split("").map(() => ({ dx: 0, dy: 0, rot: 0 })),
-      });
-
-      window.setTimeout(() => {
-        setNarrativeIndex((value) => value + 1);
-        onTurnEnd();
-      }, 1400);
-    }, 800);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [turn, onTurnEnd]);
-
-  /**
-   * 플레이어가 입력한 단어를 투사체로 발사한다.
-   *
-   * @param event 폼 제출 이벤트
-   */
-  const handleSubmit = useCallback(
+  // ── Spell submit ──
+  const handleSpellSubmit = useCallback(
     (event: FormEvent) => {
       event.preventDefault();
       if (turn !== "player") return;
+      const found = findSpell(spellInput);
+      if (!found) {
+        setSpellInput("");
+        return;
+      }
 
-      const word = input.trim().toUpperCase();
-      if (!word) return;
+      // If spell supports defend, let user choose mode
+      if (found.modes.length > 1) {
+        // For simplicity: if spell has defend mode, default to attack. 
+        // User can prefix with "방어:" to choose defend mode.
+        const isDefend = spellInput.trim().toLowerCase().startsWith("방어:");
+        onAction({
+          type: "spell",
+          spell: found,
+          mode: isDefend ? "defend" : "attack",
+        });
+      } else {
+        onAction({ type: "spell", spell: found, mode: found.modes[0] });
+      }
 
-      const canvas = canvasRef.current;
-      const height = canvas?.height ?? 320;
-
-      projectilesRef.current.push({
-        chars: word.split(""),
-        x: -40,
-        y: height / 2 + (Math.random() - 0.5) * 80,
-        vx: 5 + Math.random() * 2,
-        vy: (Math.random() - 0.5) * 1.5,
-        alive: true,
-        fromPlayer: true,
-        offsets: word.split("").map(() => ({ dx: 0, dy: 0, rot: 0 })),
-      });
-
-      setInput("");
-
-      window.setTimeout(() => {
-        setNarrativeIndex((value) => value + 1);
-        onTurnEnd();
-      }, 1400);
+      setSpellInput("");
+      setShowSpellInput(false);
     },
-    [input, onTurnEnd, turn]
+    [turn, spellInput, onAction],
   );
 
+  // Available spells for hints
+  const tier = getLiteracyTier(playerStats.literacy);
+  const availableSpells = SPELLS.filter((s) => s.tier <= tier);
+
   return (
-    <div className="flex w-full max-w-[1200px] flex-col items-center justify-center gap-8 px-4 animate-fade-in-quick lg:flex-row lg:gap-8">
+    <div className="flex w-full max-w-[1200px] flex-col items-center justify-center gap-6 px-4 animate-fade-in-quick lg:flex-row lg:gap-8">
+      {/* ── Player ASCII ── */}
       <div
         className={`flex shrink-0 items-end transition-transform duration-100 ${
           shakePlayer ? "animate-sprite-shake" : ""
@@ -388,7 +265,21 @@ export default function BattleCombat({
         </pre>
       </div>
 
-      <div className="flex min-w-0 flex-col items-center gap-5">
+      {/* ── Center panel ── */}
+      <div className="flex min-w-0 flex-1 flex-col items-center gap-4">
+        {/* Monster intent */}
+        <div className="w-full max-w-[480px] text-center">
+          <p className="text-[0.8rem] tracking-[0.08em] text-orange-400/70 italic">
+            {nextIntent.label}
+          </p>
+          {monsterShield > 0 && (
+            <span className="text-[0.7rem] text-blue-400/60">
+              🛡 {monsterShield}
+            </span>
+          )}
+        </div>
+
+        {/* Projectile canvas */}
         <div
           className={`relative overflow-hidden rounded-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5),0_0_30px_rgba(0,0,0,0.6)] ${
             glitchActive ? "animate-crt-glitch" : ""
@@ -401,44 +292,130 @@ export default function BattleCombat({
           <CrtOverlay glitchActive={glitchActive} />
         </div>
 
-        {turn === "player" && (
-          <form onSubmit={handleSubmit} className="flex w-full max-w-[480px] items-center gap-2">
-            <span className="font-bold text-ember">{">"}</span>
-            <input
-              type="text"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder={
-                keywords.length > 0 ? `${keywords.join(", ")}...` : "type to attack..."
-              }
-              autoFocus
-              className="min-w-0 flex-1 border-0 border-b border-white/30 bg-transparent text-[1.05rem] text-ember outline-none placeholder:text-white/35 focus:border-ember sm:text-[1.2rem]"
+        {/* Battle log */}
+        <div className="w-full max-w-[480px] h-[100px] overflow-y-auto rounded border border-white/10 bg-black/30 px-3 py-2 text-[0.75rem] leading-[1.6]">
+          {battleLog.map((entry, i) => (
+            <p key={i} className={`m-0 ${entry.color ?? "text-ash/70"}`}>
+              {entry.text}
+            </p>
+          ))}
+          <div ref={logEndRef} />
+        </div>
+
+        {/* ── Player actions ── */}
+        {turn === "player" && !showSpellInput && (
+          <div className="flex w-full max-w-[480px] flex-wrap items-center justify-center gap-2">
+            <ActionButton
+              label="⚔ 공격"
+              onClick={() => onAction({ type: "attack" })}
             />
-          </form>
+            <ActionButton
+              label="🛡 방어"
+              onClick={() => onAction({ type: "defend" })}
+            />
+            <ActionButton
+              label="💨 호흡"
+              onClick={() => onAction({ type: "heal" })}
+            />
+            <ActionButton
+              label="✦ 마법"
+              onClick={() => setShowSpellInput(true)}
+              accent
+            />
+          </div>
         )}
 
+        {/* ── Spell typing ── */}
+        {turn === "player" && showSpellInput && (
+          <div className="w-full max-w-[480px]">
+            <form
+              onSubmit={handleSpellSubmit}
+              className="flex items-center gap-2"
+            >
+              <span className="font-bold text-cyan-400">{"✦"}</span>
+              <input
+                type="text"
+                value={spellInput}
+                onChange={(e) => setSpellInput(e.target.value)}
+                placeholder="주문 이름을 입력... (방어:Stone 으로 방어 모드)"
+                autoFocus
+                className="min-w-0 flex-1 border-0 border-b border-cyan-400/30 bg-transparent text-[1rem] text-cyan-300 outline-none placeholder:text-white/25 focus:border-cyan-400 sm:text-[1.1rem]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowSpellInput(false)}
+                className="cursor-pointer border-0 bg-transparent text-[0.8rem] text-white/40 hover:text-white/70"
+              >
+                취소
+              </button>
+            </form>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {availableSpells.map((s) => (
+                <span
+                  key={s.name}
+                  className="cursor-pointer rounded bg-white/5 px-2 py-0.5 text-[0.65rem] text-white/40 hover:bg-white/10 hover:text-white/70"
+                  onClick={() => setSpellInput(s.name)}
+                >
+                  {s.name}{" "}
+                  <span className="text-cyan-400/40">({s.manaCost}mp)</span>
+                  {s.modes.includes("defend") && (
+                    <span className="text-teal-400/40"> 🛡</span>
+                  )}
+                </span>
+              ))}
+            </div>
+            <p className="mt-1 text-[0.6rem] text-white/20">
+              MP: {playerMana} | 방어 모드: "방어:주문이름" 입력
+            </p>
+          </div>
+        )}
+
+        {/* ── Monster turn ── */}
         {turn === "monster" && (
           <p className="m-0 text-center text-[0.95rem] tracking-[0.1em] text-[rgba(255,100,80,0.5)] animate-wait-blink">
-            The {monsterName} retaliates...
+            {monsterName}이(가) 행동한다...
           </p>
         )}
       </div>
 
+      {/* ── Monster ASCII ── */}
       <div
         className={`flex shrink-0 items-end transition-transform duration-100 ${
           shakeMonster ? "animate-sprite-shake" : ""
         }`}
       >
         <pre
-          className={`m-0 whitespace-pre text-[4px] leading-[5px] select-none sm:text-[5px] sm:leading-[6px] ${
-            shakeMonster
-              ? "text-[rgba(255,80,80,0.9)]"
-              : "text-[rgba(200,200,200,0.85)]"
+          className={`m-0 whitespace-pre text-[4px] leading-[5px] select-none sm:text-[5px] sm:leading-[6px] transition-colors duration-500 ${
+            shakeMonster ? "text-[rgba(255,80,80,0.9)]" : monsterColor
           }`}
         >
           {monsterAscii.join("\n")}
         </pre>
       </div>
     </div>
+  );
+}
+
+function ActionButton({
+  label,
+  onClick,
+  accent,
+}: {
+  label: string;
+  onClick: () => void;
+  accent?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`cursor-pointer rounded border px-4 py-1.5 text-[0.85rem] tracking-[0.08em] transition-colors duration-200 ${
+        accent
+          ? "border-cyan-400/40 bg-cyan-400/5 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-400/10"
+          : "border-white/20 bg-white/5 text-ash/80 hover:border-white/40 hover:bg-white/10 hover:text-ash"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
