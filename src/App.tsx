@@ -1,11 +1,13 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import BattleScene from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
-
-/**
- * 캠프파이어 장면에서 출력할 도입 내레이션이다.
- */
-const STORY_TEXT = `A bitter wind cuts through your coat, chilling you to the bone. Before you lies a crude fire pit with a few dry logs left behind by a forgotten traveler. Wolves howl in the surrounding darkness, their cries echoing closer with every passing moment. Without fire you will surely freeze to death or become prey to the beasts. Will you light the bonfire?`;
+import LanguageSelector from "./LanguageSelector";
+import {
+  LOCALE_STORAGE_KEY,
+  TRANSLATIONS,
+  getInitialLocale,
+  type Locale,
+} from "./i18n";
 
 /**
  * 밝기에 따라 아스키 문자 밀도를 매핑할 때 사용하는 문자 램프다.
@@ -16,6 +18,10 @@ const ASCII_RAMP = " .:-=+*#%@";
  * 게임의 텍스트 장면, 전환 장면, 전투 장면을 관리하는 루트 컴포넌트다.
  */
 export default function App() {
+  /**
+   * 현재 선택된 게임 언어다.
+   */
+  const [locale, setLocale] = useState<Locale>(() => getInitialLocale());
   /**
    * 현재 게임 진행 단계를 저장한다.
    */
@@ -32,6 +38,15 @@ export default function App() {
    * 모닥불 ASCII 결과를 렌더링할 캔버스 요소를 참조한다.
    */
   const displayCanvasRef = useRef<HTMLCanvasElement>(null);
+  /**
+   * 현재 선택된 언어에 대응하는 문구 사전이다.
+   */
+  const copy = TRANSLATIONS[locale];
+
+  useEffect(() => {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     if (phase !== "transition") return;
@@ -510,20 +525,23 @@ export default function App() {
    */
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    const answer = input.trim().toLowerCase();
+    /**
+     * 공백을 제거한 뒤 비교에 사용하는 정규화 입력값이다.
+     */
+    const answer = input.trim().toLowerCase().replace(/\s+/g, "");
 
-    if (
-      answer.includes("light") ||
-      answer.includes("ignite") ||
-      answer === "y" ||
-      answer === "yes"
-    ) {
+    if (copy.app.acceptedInputs.includes(answer)) {
       setPhase("transition");
     }
   };
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-void px-4 py-8 sm:px-8">
+      <LanguageSelector
+        currentLocale={locale}
+        label={copy.languageLabel}
+        onChange={setLocale}
+      />
       <svg className="absolute h-0 w-0">
         <filter id="noise">
           <feTurbulence
@@ -540,7 +558,7 @@ export default function App() {
         <div className="relative w-full max-w-[min(92vw,920px)] overflow-hidden rounded-[18px] px-4 py-8 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-8">
           {phase === "text" && (
             <div className="relative z-0 max-w-[600px] text-[1.05rem] leading-[1.8] sm:text-[1.2rem] [text-shadow:0_0_5px_rgba(255,255,255,0.2)]">
-              {STORY_TEXT.split("\n").map((line, index) => (
+              {copy.app.storyText.split("\n").map((line, index) => (
                 <p key={index}>{line}</p>
               ))}
               <form
@@ -552,7 +570,7 @@ export default function App() {
                   type="text"
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
-                  placeholder="(light / Y)"
+                  placeholder={copy.app.inputPlaceholder}
                   autoFocus
                   className="w-[200px] border-0 border-b border-white/30 bg-transparent text-[1.05rem] text-ember outline-none placeholder:text-white/35 focus:border-ember sm:text-[1.2rem]"
                 />
@@ -575,14 +593,14 @@ export default function App() {
                   WebkitTextFillColor: "transparent",
                 }}
               >
-                The bonfire crackles to life, its warmth wrapping around you...
+                {copy.app.fireReadyText}
               </p>
               <button
                 type="button"
                 className="mt-8 cursor-pointer border border-white/30 bg-transparent px-6 py-2 text-[0.95rem] tracking-[0.1em] text-white/60 opacity-0 transition-colors duration-300 hover:border-ember hover:text-ember [animation:fade_1s_3s_forwards]"
                 onClick={() => setPhase("battle")}
               >
-                {"[ venture forth ]"}
+                {copy.app.ventureForthLabel}
               </button>
             </div>
           )}
@@ -590,7 +608,7 @@ export default function App() {
           <CrtOverlay />
         </div>
       ) : (
-        <BattleScene />
+        <BattleScene copy={copy.battle} />
       )}
     </div>
   );

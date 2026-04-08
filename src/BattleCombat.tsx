@@ -27,12 +27,14 @@ interface Projectile {
  * 전투 캔버스 컴포넌트가 받는 속성 목록이다.
  */
 interface BattleCombatProps {
-  monsterName: string;
   monsterAscii: string[];
   playerAscii: string[];
   narratives: string[];
+  attackPlaceholderFallback: string;
+  monsterAttackWords: string[];
   onPlayerHit: (damage: number) => void;
   onMonsterHit: (damage: number) => void;
+  retaliatesText: string;
   turn: "player" | "monster";
   onTurnEnd: () => void;
 }
@@ -56,12 +58,14 @@ const TEXT_WIDTH = 380;
  * @param props 전투 상태와 이벤트 핸들러 모음
  */
 export default function BattleCombat({
-  monsterName,
   monsterAscii,
   playerAscii,
   narratives,
+  attackPlaceholderFallback,
+  monsterAttackWords,
   onPlayerHit,
   onMonsterHit,
+  retaliatesText,
   turn,
   onTurnEnd,
 }: BattleCombatProps) {
@@ -109,7 +113,9 @@ export default function BattleCombat({
   /**
    * 대괄호로 감싼 입력 키워드만 추출한 목록이다.
    */
-  const keywords = [...rawNarrative.matchAll(/\[(\w+)\]/g)].map((match) => match[1]);
+  const keywords = [...rawNarrative.matchAll(/\[([^[\]]+)\]/g)].map(
+    (match) => match[1],
+  );
   /**
    * 키워드용 대괄호를 제거한 실제 표시용 내레이션 문장이다.
    */
@@ -122,7 +128,10 @@ export default function BattleCombat({
     try {
       const prepared = prepareWithSegments(cleanNarrative, FONT);
       const result = layoutWithLines(prepared, TEXT_WIDTH, LINE_HEIGHT);
-      return result.lines.map((line) => ({ text: line.text, width: line.width }));
+      return result.lines.map((line) => ({
+        text: line.text,
+        width: line.width,
+      }));
     } catch {
       return [{ text: cleanNarrative, width: TEXT_WIDTH }];
     }
@@ -208,7 +217,10 @@ export default function BattleCombat({
             }
 
             characterCount += charIndex;
-            return characterCount >= keywordIndex && characterCount < keywordIndex + keyword.length;
+            return (
+              characterCount >= keywordIndex &&
+              characterCount < keywordIndex + keyword.length
+            );
           });
 
           context.fillStyle = isKeyword
@@ -250,7 +262,11 @@ export default function BattleCombat({
           : "rgba(255, 80, 60, 0.4)";
         context.shadowBlur = 16;
 
-        for (let charIndex = 0; charIndex < projectile.chars.length; charIndex += 1) {
+        for (
+          let charIndex = 0;
+          charIndex < projectile.chars.length;
+          charIndex += 1
+        ) {
           const offset = projectile.offsets[charIndex];
           const charX = projectile.x + charIndex * 14 + offset.dx;
           const charY = projectile.y + offset.dy;
@@ -286,7 +302,9 @@ export default function BattleCombat({
         setGlitchActive(anyProjectileCrossing);
       }
 
-      projectilesRef.current = projectiles.filter((projectile) => projectile.alive);
+      projectilesRef.current = projectiles.filter(
+        (projectile) => projectile.alive,
+      );
       rafRef.current = requestAnimationFrame(animate);
     };
 
@@ -302,13 +320,12 @@ export default function BattleCombat({
 
     const timeoutId = window.setTimeout(() => {
       /**
-       * 몬스터가 사용할 공격 단어 후보군이다.
-       */
-      const attacks = ["CLAW", "BITE", "HEX", "DARK"];
-      /**
        * 이번 공격에 선택된 단어다.
        */
-      const word = attacks[Math.floor(Math.random() * attacks.length)];
+      const word =
+        monsterAttackWords[
+          Math.floor(Math.random() * monsterAttackWords.length)
+        ];
       const canvas = canvasRef.current;
       const width = canvas?.width ?? 480;
       const height = canvas?.height ?? 320;
@@ -331,7 +348,7 @@ export default function BattleCombat({
     }, 800);
 
     return () => window.clearTimeout(timeoutId);
-  }, [turn, onTurnEnd]);
+  }, [monsterAttackWords, turn, onTurnEnd]);
 
   /**
    * 플레이어가 입력한 단어를 투사체로 발사한다.
@@ -367,7 +384,7 @@ export default function BattleCombat({
         onTurnEnd();
       }, 1400);
     },
-    [input, onTurnEnd, turn]
+    [input, onTurnEnd, turn],
   );
 
   return (
@@ -402,14 +419,19 @@ export default function BattleCombat({
         </div>
 
         {turn === "player" && (
-          <form onSubmit={handleSubmit} className="flex w-full max-w-[480px] items-center gap-2">
+          <form
+            onSubmit={handleSubmit}
+            className="flex w-full max-w-[480px] items-center gap-2"
+          >
             <span className="font-bold text-ember">{">"}</span>
             <input
               type="text"
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={
-                keywords.length > 0 ? `${keywords.join(", ")}...` : "type to attack..."
+                keywords.length > 0
+                  ? `${keywords.join(", ")}...`
+                  : attackPlaceholderFallback
               }
               autoFocus
               className="min-w-0 flex-1 border-0 border-b border-white/30 bg-transparent text-[1.05rem] text-ember outline-none placeholder:text-white/35 focus:border-ember sm:text-[1.2rem]"
@@ -419,7 +441,7 @@ export default function BattleCombat({
 
         {turn === "monster" && (
           <p className="m-0 text-center text-[0.95rem] tracking-[0.1em] text-[rgba(255,100,80,0.5)] animate-wait-blink">
-            The {monsterName} retaliates...
+            {retaliatesText}
           </p>
         )}
       </div>

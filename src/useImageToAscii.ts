@@ -16,7 +16,7 @@ const ASCII_RAMP = " .:-=+*#%@";
 export function useImageToAscii(
   src: string,
   cols: number = 50,
-  options?: { flip?: boolean; brightnessThreshold?: number }
+  options?: { flip?: boolean; brightnessThreshold?: number },
 ) {
   /**
    * 최종적으로 변환된 ASCII 줄 목록이다.
@@ -104,7 +104,9 @@ export function useImageToAscii(
           if (brightness < threshold || a < 50) {
             line += " ";
           } else {
-            const idx = Math.floor((brightness / 255) * (ASCII_RAMP.length - 1));
+            const idx = Math.floor(
+              (brightness / 255) * (ASCII_RAMP.length - 1),
+            );
             line += ASCII_RAMP[Math.min(idx, ASCII_RAMP.length - 1)];
           }
         }
