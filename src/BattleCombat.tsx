@@ -6,16 +6,26 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type LayoutLine,
+  type PreparedTextWithSegments,
+  layoutWithLines,
+  prepareWithSegments,
+} from "@chenglou/pretext";
 import CrtOverlay from "./CrtOverlay";
+import HeartHP from "./HeartHP";
+import ManaFlask from "./ManaFlask";
 import {
   type BattleLogEntry,
   type MonsterIntent,
   type PlayerAction,
   type PlayerStats,
-  SPELLS,
   findSpell,
-  getLiteracyTier,
 } from "./battleTypes";
+
+/* ================================================================
+   Types
+   ================================================================ */
 
 interface Projectile {
   chars: string[];
@@ -37,14 +47,148 @@ interface BattleCombatProps {
   monsterShield: number;
   nextIntent: MonsterIntent;
   battleLog: BattleLogEntry[];
+  ambientText: string;
   turn: "player" | "monster";
+  playerHp: number;
+  playerMaxHp: number;
   playerMana: number;
+  playerMaxMana: number;
+  playerShield: number;
   playerStats: PlayerStats;
   onAction: (action: PlayerAction) => void;
   projectileCallbackRef: MutableRefObject<
     ((word: string, fromPlayer: boolean) => void) | null
   >;
 }
+
+/* ================================================================
+   Pretext helpers — character-level physics displacement
+   ================================================================ */
+
+const CRT_FONT = "500 13px 'Courier New', Courier, monospace";
+const W = 480;
+const H = 320;
+const LINE_H = 18;
+const PAD = 14;
+const TEXT_W = W - PAD * 2;
+/** Radius within which a projectile displaces characters */
+const DISPLACE_RADIUS = 90;
+/** Maximum pixel push in Y */
+const DISPLACE_Y = 18;
+/** Maximum pixel push in X */
+const DISPLACE_X = 10;
+
+const preparedCache = new Map<string, PreparedTextWithSegments>();
+
+function getPrepared(text: string, font: string): PreparedTextWithSegments {
+  const key = font + "::" + text;
+  const cached = preparedCache.get(key);
+  if (cached) return cached;
+  const prepared = prepareWithSegments(text, font);
+  preparedCache.set(key, prepared);
+  if (preparedCache.size > 200) {
+    const first = preparedCache.keys().next().value;
+    if (first) preparedCache.delete(first);
+  }
+  return prepared;
+}
+
+function getLayoutLines(text: string): LayoutLine[] {
+  if (!text) return [];
+  try {
+    const prepared = getPrepared(text, CRT_FONT);
+    return layoutWithLines(prepared, TEXT_W, LINE_H).lines;
+  } catch {
+    return [{ text, width: TEXT_W, start: { segmentIndex: 0, graphemeIndex: 0 }, end: { segmentIndex: 0, graphemeIndex: 0 } }];
+  }
+}
+
+/**
+ * Render a text block character-by-character.
+ * Each character is displaced away from nearby projectiles
+ * using a smooth force falloff — producing the "water flowing
+ * around a rock" effect from the old version.
+ */
+function renderTextBlockPhysics(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fillStyle: string,
+  startY: number,
+  projectiles: Projectile[],
+): number {
+  const lines = getLayoutLines(text);
+  if (lines.length === 0) return startY;
+
+  ctx.font = CRT_FONT;
+
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    const baseY = startY + li * LINE_H;
+    let cx = PAD;
+
+    for (let ci = 0; ci < line.text.length; ci++) {
+      const ch = line.text[ci];
+      const charW = ctx.measureText(ch).width;
+
+      // Accumulate displacement from all nearby projectiles
+      let offsetX = 0;
+      let offsetY = 0;
+      let alpha = parseBaseAlpha(fillStyle);
+
+      for (const p of projectiles) {
+        if (!p.alive) continue;
+        const dx = cx - p.x;
+        const dy = baseY - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < DISPLACE_RADIUS) {
+          const force = (DISPLACE_RADIUS - dist) / DISPLACE_RADIUS;
+          const forceSquared = force * force; // smoother falloff
+          offsetY += (dy > 0 ? 1 : -1) * forceSquared * DISPLACE_Y;
+          offsetX += (dx > 0 ? 1 : -1) * forceSquared * DISPLACE_X;
+          alpha = Math.max(0.08, alpha - force * 0.45);
+        }
+      }
+
+      ctx.fillStyle = replaceAlpha(fillStyle, alpha);
+      ctx.fillText(ch, cx + offsetX, baseY + offsetY);
+      cx += charW;
+    }
+  }
+
+  return startY + lines.length * LINE_H;
+}
+
+/** Extract the alpha value from an rgba() string, default 0.75. */
+function parseBaseAlpha(rgba: string): number {
+  const m = rgba.match(/,\s*([\d.]+)\s*\)/);
+  return m ? Number(m[1]) : 0.75;
+}
+
+/** Replace the alpha in an rgba() string. */
+function replaceAlpha(rgba: string, alpha: number): string {
+  return rgba.replace(/,\s*[\d.]+\s*\)/, `, ${alpha.toFixed(2)})`);
+}
+
+/** Map tailwind color classes to approximate canvas RGBA */
+function classToCanvasColor(cls?: string): string {
+  if (!cls) return "rgba(180, 180, 180, 0.6)";
+  if (cls.includes("ember")) return "rgba(255, 170, 0, 0.85)";
+  if (cls.includes("sky")) return "rgba(100, 200, 255, 0.8)";
+  if (cls.includes("blue")) return "rgba(80, 160, 255, 0.75)";
+  if (cls.includes("cyan")) return "rgba(80, 220, 240, 0.8)";
+  if (cls.includes("teal")) return "rgba(80, 200, 180, 0.75)";
+  if (cls.includes("red")) return "rgba(255, 90, 70, 0.8)";
+  if (cls.includes("orange")) return "rgba(255, 170, 80, 0.8)";
+  if (cls.includes("green")) return "rgba(80, 220, 100, 0.75)";
+  if (cls.includes("purple")) return "rgba(180, 120, 255, 0.75)";
+  if (cls.includes("yellow")) return "rgba(255, 220, 80, 0.85)";
+  if (cls.includes("gray")) return "rgba(150, 150, 150, 0.5)";
+  return "rgba(180, 180, 180, 0.6)";
+}
+
+/* ================================================================
+   Component
+   ================================================================ */
 
 export default function BattleCombat({
   monsterName,
@@ -55,14 +199,20 @@ export default function BattleCombat({
   monsterShield,
   nextIntent,
   battleLog,
+  ambientText,
   turn,
+  playerHp,
+  playerMaxHp,
   playerMana,
+  playerMaxMana,
+  playerShield,
   playerStats,
   onAction,
   projectileCallbackRef,
 }: BattleCombatProps) {
-  const [spellInput, setSpellInput] = useState("");
-  const [showSpellInput, setShowSpellInput] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
+  const [promptInput, setPromptInput] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [shakePlayer, setShakePlayer] = useState(false);
   const [shakeMonster, setShakeMonster] = useState(false);
   const [glitchActive, setGlitchActive] = useState(false);
@@ -72,7 +222,10 @@ export default function BattleCombat({
   const glitchStateRef = useRef(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // ── Monster HP → color ──
+  /* Keep text data in a ref so the RAF loop never needs to restart */
+  const textRef = useRef({ nextIntent, monsterShield, ambientText, battleLog });
+  textRef.current = { nextIntent, monsterShield, ambientText, battleLog };
+
   const hpRatio = monsterMaxHp > 0 ? monsterHp / monsterMaxHp : 1;
   const monsterColor =
     hpRatio > 0.75
@@ -83,18 +236,18 @@ export default function BattleCombat({
           ? "text-[rgba(255,100,80,0.9)]"
           : "text-[rgba(200,30,30,0.95)]";
 
-  // ── Register projectile callback so BattleScene can trigger animations ──
+  // ── Projectile callback ──
   useEffect(() => {
     projectileCallbackRef.current = (word: string, fromPlayer: boolean) => {
       if (!word) return;
       const canvas = canvasRef.current;
-      const width = canvas?.width ?? 480;
-      const height = canvas?.height ?? 200;
+      const cw = canvas?.width ?? W;
+      const ch = canvas?.height ?? H;
 
       projectilesRef.current.push({
         chars: word.split(""),
-        x: fromPlayer ? -40 : width + 40,
-        y: height / 2 + (Math.random() - 0.5) * 60,
+        x: fromPlayer ? -40 : cw + 40,
+        y: ch / 2 + (Math.random() - 0.5) * 80,
         vx: fromPlayer ? 5 + Math.random() * 2 : -5 - Math.random() * 2,
         vy: (Math.random() - 0.5) * 1.5,
         alive: true,
@@ -114,88 +267,135 @@ export default function BattleCombat({
         }, 600);
       }
     };
-
     return () => {
       projectileCallbackRef.current = null;
     };
   }, [projectileCallbackRef]);
 
-  // ── Canvas animation loop ──
+  // ── Canvas loop — pretext dynamic layout + projectiles ──
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-    const context = canvas.getContext("2d");
-    if (!context) return;
-
-    const width = 480;
-    const height = 200;
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = W;
+    canvas.height = H;
 
     const animate = () => {
-      context.clearRect(0, 0, width, height);
+      ctx.clearRect(0, 0, W, H);
+      const {
+        nextIntent: intent,
+        monsterShield: mShield,
+        ambientText: ambient,
+        battleLog: log,
+      } = textRef.current;
       const projectiles = projectilesRef.current;
 
-      let anyProjectileCrossing = false;
+      ctx.font = CRT_FONT;
+      ctx.textBaseline = "top";
 
-      for (const projectile of projectiles) {
-        if (!projectile.alive) continue;
+      let y = 12;
 
-        projectile.x += projectile.vx;
-        projectile.y += projectile.vy;
+      // 1. Monster intent (orange, highest priority)
+      y = renderTextBlockPhysics(
+        ctx,
+        `> ${intent.label}`,
+        "rgba(255, 170, 60, 0.85)",
+        y,
+        projectiles,
+      );
+      y += 4;
 
-        projectile.offsets.forEach((offset) => {
-          offset.dx += (Math.random() - 0.5) * 0.4;
-          offset.dy += (Math.random() - 0.5) * 0.4;
-          offset.rot += (Math.random() - 0.5) * 0.03;
+      if (mShield > 0) {
+        y = renderTextBlockPhysics(
+          ctx,
+          `  [Shield: ${mShield}]`,
+          "rgba(100, 180, 255, 0.6)",
+          y,
+          projectiles,
+        );
+      }
+
+      // 2. Ambient text (dim, medium priority)
+      y = renderTextBlockPhysics(
+        ctx,
+        ambient,
+        "rgba(180, 180, 180, 0.5)",
+        y,
+        projectiles,
+      );
+      y += 4;
+
+      // Separator
+      ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+      ctx.fillRect(PAD, y, W - PAD * 2, 1);
+      y += 8;
+
+      // 3. Battle log (scrolls up)
+      const maxLogLines = Math.floor((H - y - 10) / LINE_H);
+      const visibleLog = log.slice(-maxLogLines);
+
+      for (const entry of visibleLog) {
+        ctx.font = CRT_FONT;
+        y = renderTextBlockPhysics(
+          ctx,
+          entry.text,
+          classToCanvasColor(entry.color),
+          y,
+          projectiles,
+        );
+      }
+
+      // ── Projectiles ──
+      let anyCrossing = false;
+
+      for (const p of projectiles) {
+        if (!p.alive) continue;
+        p.x += p.vx;
+        p.y += p.vy;
+
+        p.offsets.forEach((o) => {
+          o.dx += (Math.random() - 0.5) * 0.4;
+          o.dy += (Math.random() - 0.5) * 0.4;
+          o.rot += (Math.random() - 0.5) * 0.03;
         });
 
-        if (projectile.x > 0 && projectile.x < width) {
-          anyProjectileCrossing = true;
-        }
+        if (p.x > 0 && p.x < W) anyCrossing = true;
 
-        context.save();
-        context.font = "bold 18px 'Courier New', monospace";
-        context.fillStyle = projectile.fromPlayer
+        ctx.save();
+        ctx.font = "bold 18px 'Courier New', monospace";
+        ctx.fillStyle = p.fromPlayer
           ? "rgba(100, 220, 255, 0.9)"
           : "rgba(255, 80, 60, 0.9)";
-        context.shadowColor = projectile.fromPlayer
+        ctx.shadowColor = p.fromPlayer
           ? "rgba(100, 220, 255, 0.4)"
           : "rgba(255, 80, 60, 0.4)";
-        context.shadowBlur = 16;
+        ctx.shadowBlur = 16;
 
-        for (
-          let charIndex = 0;
-          charIndex < projectile.chars.length;
-          charIndex += 1
-        ) {
-          const offset = projectile.offsets[charIndex];
-          const charX = projectile.x + charIndex * 14 + offset.dx;
-          const charY = projectile.y + offset.dy;
-
-          context.save();
-          context.translate(charX, charY);
-          context.rotate(offset.rot);
-          context.fillText(projectile.chars[charIndex], 0, 0);
-          context.restore();
+        for (let i = 0; i < p.chars.length; i += 1) {
+          const o = p.offsets[i];
+          ctx.save();
+          ctx.translate(p.x + i * 14 + o.dx, p.y + o.dy);
+          ctx.rotate(o.rot);
+          ctx.fillText(p.chars[i], 0, 0);
+          ctx.restore();
         }
-
-        context.restore();
+        ctx.restore();
 
         if (
-          (projectile.fromPlayer && projectile.x > width + 20) ||
-          (!projectile.fromPlayer && projectile.x < -20) ||
-          projectile.x < -200 ||
-          projectile.x > width + 200
+          (p.fromPlayer && p.x > W + 20) ||
+          (!p.fromPlayer && p.x < -20) ||
+          p.x < -200 ||
+          p.x > W + 200
         ) {
-          projectile.alive = false;
+          p.alive = false;
         }
       }
 
-      if (glitchStateRef.current !== anyProjectileCrossing) {
-        glitchStateRef.current = anyProjectileCrossing;
-        setGlitchActive(anyProjectileCrossing);
+      if (glitchStateRef.current !== anyCrossing) {
+        glitchStateRef.current = anyCrossing;
+        setGlitchActive(anyCrossing);
       }
 
       projectilesRef.current = projectiles.filter((p) => p.alive);
@@ -204,51 +404,114 @@ export default function BattleCombat({
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []);
+  }, []); // stable — reads from textRef
 
-  // Auto-scroll log
+  // Auto-scroll
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [battleLog]);
 
-  // ── Spell submit ──
-  const handleSpellSubmit = useCallback(
+  // ── Keyboard navigation ──
+  useEffect(() => {
+    if (turn !== "player") return;
+
+    const handler = (e: KeyboardEvent) => {
+      if (showPrompt) {
+        if (e.key === "Escape") {
+          setShowPrompt(false);
+          setPromptInput("");
+        }
+        return;
+      }
+      if (e.key === "ArrowUp" || e.key === "w") {
+        setSelectedIndex((v) => (v <= 0 ? 2 : v - 1));
+      } else if (e.key === "ArrowDown" || e.key === "s") {
+        setSelectedIndex((v) => (v >= 2 ? 0 : v + 1));
+      } else if (e.key === "Enter") {
+        executeChoice(selectedIndex);
+      } else if (e.key === "1") {
+        executeChoice(0);
+      } else if (e.key === "2") {
+        executeChoice(1);
+      } else if (e.key === "3") {
+        executeChoice(2);
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [turn, showPrompt, selectedIndex]);
+
+  const executeChoice = useCallback(
+    (index: number) => {
+      if (index === 0) {
+        onAction({ type: "attack" });
+      } else if (index === 1) {
+        onAction({ type: "defend" });
+      } else {
+        setShowPrompt(true);
+      }
+    },
+    [onAction],
+  );
+
+  // ── Prompt submit ──
+  const handlePromptSubmit = useCallback(
     (event: FormEvent) => {
       event.preventDefault();
       if (turn !== "player") return;
-      const found = findSpell(spellInput);
-      if (!found) {
-        setSpellInput("");
-        return;
-      }
 
-      // If spell supports defend, let user choose mode
-      if (found.modes.length > 1) {
-        // For simplicity: if spell has defend mode, default to attack. 
-        // User can prefix with "방어:" to choose defend mode.
-        const isDefend = spellInput.trim().toLowerCase().startsWith("방어:");
-        onAction({
-          type: "spell",
-          spell: found,
-          mode: isDefend ? "defend" : "attack",
-        });
+      const raw = promptInput.trim();
+      if (!raw) return;
+
+      const isDefendMode = raw.toLowerCase().startsWith("defend:");
+      const spellQuery = isDefendMode ? raw.slice(7).trim() : raw;
+
+      const spell = findSpell(spellQuery);
+      if (spell) {
+        const mode =
+          isDefendMode && spell.modes.includes("defend")
+            ? ("defend" as const)
+            : ("attack" as const);
+        onAction({ type: "spell", spell, mode });
       } else {
-        onAction({ type: "spell", spell: found, mode: found.modes[0] });
+        const lower = raw.toLowerCase();
+        if (
+          lower.includes("heal") ||
+          lower.includes("breath") ||
+          lower.includes("rest") ||
+          lower.includes("호흡") ||
+          lower.includes("회복")
+        ) {
+          onAction({ type: "heal" });
+        } else {
+          onAction({ type: "attack" });
+        }
       }
 
-      setSpellInput("");
-      setShowSpellInput(false);
+      setPromptInput("");
+      setShowPrompt(false);
     },
-    [turn, spellInput, onAction],
+    [turn, promptInput, onAction],
   );
 
-  // Available spells for hints
-  const tier = getLiteracyTier(playerStats.literacy);
-  const availableSpells = SPELLS.filter((s) => s.tier <= tier);
+  // Reset prompt on monster turn
+  useEffect(() => {
+    if (turn === "monster") {
+      setShowPrompt(false);
+      setPromptInput("");
+    }
+  }, [turn]);
+
+  const CHOICES = [
+    { key: "1", label: "Attack" },
+    { key: "2", label: "Defend" },
+    { key: "3", label: ">_" },
+  ];
 
   return (
     <div className="flex w-full max-w-[1200px] flex-col items-center justify-center gap-6 px-4 animate-fade-in-quick lg:flex-row lg:gap-8">
-      {/* ── Player ASCII ── */}
+      {/* Player ASCII */}
       <div
         className={`flex shrink-0 items-end transition-transform duration-100 ${
           shakePlayer ? "animate-sprite-shake" : ""
@@ -265,21 +528,15 @@ export default function BattleCombat({
         </pre>
       </div>
 
-      {/* ── Center panel ── */}
+      {/* Center panel */}
       <div className="flex min-w-0 flex-1 flex-col items-center gap-4">
-        {/* Monster intent */}
-        <div className="w-full max-w-[480px] text-center">
-          <p className="text-[0.8rem] tracking-[0.08em] text-orange-400/70 italic">
-            {nextIntent.label}
-          </p>
-          {monsterShield > 0 && (
-            <span className="text-[0.7rem] text-blue-400/60">
-              🛡 {monsterShield}
-            </span>
-          )}
+        {/* HP + Mana — right above CRT */}
+        <div className="flex items-center gap-4">
+          <HeartHP current={playerHp} max={playerMaxHp} shield={playerShield} />
+          <ManaFlask current={playerMana} max={playerMaxMana} />
         </div>
 
-        {/* Projectile canvas */}
+        {/* CRT container — all text lives here */}
         <div
           className={`relative overflow-hidden rounded-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.5),0_0_30px_rgba(0,0,0,0.6)] ${
             glitchActive ? "animate-crt-glitch" : ""
@@ -292,93 +549,69 @@ export default function BattleCombat({
           <CrtOverlay glitchActive={glitchActive} />
         </div>
 
-        {/* Battle log */}
-        <div className="w-full max-w-[480px] h-[100px] overflow-y-auto rounded border border-white/10 bg-black/30 px-3 py-2 text-[0.75rem] leading-[1.6]">
-          {battleLog.map((entry, i) => (
-            <p key={i} className={`m-0 ${entry.color ?? "text-ash/70"}`}>
-              {entry.text}
-            </p>
-          ))}
-          <div ref={logEndRef} />
-        </div>
-
-        {/* ── Player actions ── */}
-        {turn === "player" && !showSpellInput && (
-          <div className="flex w-full max-w-[480px] flex-wrap items-center justify-center gap-2">
-            <ActionButton
-              label="⚔ 공격"
-              onClick={() => onAction({ type: "attack" })}
-            />
-            <ActionButton
-              label="🛡 방어"
-              onClick={() => onAction({ type: "defend" })}
-            />
-            <ActionButton
-              label="💨 호흡"
-              onClick={() => onAction({ type: "heal" })}
-            />
-            <ActionButton
-              label="✦ 마법"
-              onClick={() => setShowSpellInput(true)}
-              accent
-            />
+        {/* Terminal-style choices (OUTSIDE CRT, below) */}
+        {turn === "player" && !showPrompt && (
+          <div className="w-full max-w-[480px] font-crt text-[0.9rem]">
+            {CHOICES.map((c, i) => (
+              <div
+                key={c.key}
+                className={`cursor-pointer px-3 py-1 tracking-[0.06em] transition-colors duration-100 ${
+                  selectedIndex === i
+                    ? "text-ember [text-shadow:0_0_6px_rgba(255,170,0,0.4)]"
+                    : "text-ash/50 hover:text-ash/80"
+                }`}
+                onClick={() => executeChoice(i)}
+                onMouseEnter={() => setSelectedIndex(i)}
+              >
+                {selectedIndex === i ? "> " : "  "}
+                [{c.key}] {c.label}
+              </div>
+            ))}
           </div>
         )}
 
-        {/* ── Spell typing ── */}
-        {turn === "player" && showSpellInput && (
+        {/* Direct input prompt */}
+        {turn === "player" && showPrompt && (
           <div className="w-full max-w-[480px]">
             <form
-              onSubmit={handleSpellSubmit}
+              onSubmit={handlePromptSubmit}
               className="flex items-center gap-2"
             >
-              <span className="font-bold text-cyan-400">{"✦"}</span>
+              <span className="font-bold text-ember">{">"}</span>
               <input
                 type="text"
-                value={spellInput}
-                onChange={(e) => setSpellInput(e.target.value)}
-                placeholder="주문 이름을 입력... (방어:Stone 으로 방어 모드)"
+                value={promptInput}
+                onChange={(e) => setPromptInput(e.target.value)}
+                placeholder="cast a spell, heal, or act..."
                 autoFocus
-                className="min-w-0 flex-1 border-0 border-b border-cyan-400/30 bg-transparent text-[1rem] text-cyan-300 outline-none placeholder:text-white/25 focus:border-cyan-400 sm:text-[1.1rem]"
+                className="min-w-0 flex-1 border-0 border-b border-ember/30 bg-transparent text-[1rem] text-ember outline-none placeholder:text-white/25 focus:border-ember sm:text-[1.1rem]"
               />
               <button
                 type="button"
-                onClick={() => setShowSpellInput(false)}
+                onClick={() => setShowPrompt(false)}
                 className="cursor-pointer border-0 bg-transparent text-[0.8rem] text-white/40 hover:text-white/70"
               >
-                취소
+                [ESC]
               </button>
             </form>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {availableSpells.map((s) => (
-                <span
-                  key={s.name}
-                  className="cursor-pointer rounded bg-white/5 px-2 py-0.5 text-[0.65rem] text-white/40 hover:bg-white/10 hover:text-white/70"
-                  onClick={() => setSpellInput(s.name)}
-                >
-                  {s.name}{" "}
-                  <span className="text-cyan-400/40">({s.manaCost}mp)</span>
-                  {s.modes.includes("defend") && (
-                    <span className="text-teal-400/40"> 🛡</span>
-                  )}
-                </span>
-              ))}
-            </div>
             <p className="mt-1 text-[0.6rem] text-white/20">
-              MP: {playerMana} | 방어 모드: "방어:주문이름" 입력
+              Spell names, "defend:Stone", "heal", or anything you can think of.
+              MP: {playerMana}
             </p>
           </div>
         )}
 
-        {/* ── Monster turn ── */}
+        {/* Monster turn */}
         {turn === "monster" && (
           <p className="m-0 text-center text-[0.95rem] tracking-[0.1em] text-[rgba(255,100,80,0.5)] animate-wait-blink">
-            {monsterName}이(가) 행동한다...
+            {monsterName} acts...
           </p>
         )}
+
+        <div ref={logEndRef} />
       </div>
 
-      {/* ── Monster ASCII ── */}
+      {/* Monster ASCII */}
       <div
         className={`flex shrink-0 items-end transition-transform duration-100 ${
           shakeMonster ? "animate-sprite-shake" : ""
@@ -393,29 +626,5 @@ export default function BattleCombat({
         </pre>
       </div>
     </div>
-  );
-}
-
-function ActionButton({
-  label,
-  onClick,
-  accent,
-}: {
-  label: string;
-  onClick: () => void;
-  accent?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`cursor-pointer rounded border px-4 py-1.5 text-[0.85rem] tracking-[0.08em] transition-colors duration-200 ${
-        accent
-          ? "border-cyan-400/40 bg-cyan-400/5 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-400/10"
-          : "border-white/20 bg-white/5 text-ash/80 hover:border-white/40 hover:bg-white/10 hover:text-ash"
-      }`}
-    >
-      {label}
-    </button>
   );
 }

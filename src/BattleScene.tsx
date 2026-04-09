@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BattleCombat from "./BattleCombat";
-import HeartHP from "./HeartHP";
 import SkullEncounter from "./SkullEncounter";
 import { useImageToAscii } from "./useImageToAscii";
 import {
@@ -26,6 +25,19 @@ const ENCOUNTER_TEXT =
   "A twisted figure emerges from the shadows, its body a mass of writhing dark tendrils, " +
   "two pale eyes burning with cold malice. The Hollow Wraith lets out a guttural screech " +
   "that rattles your bones. The air thickens, and the temperature drops.";
+
+const AMBIENT_LINES = [
+  "Shadows coil around the wraith's tendrils.",
+  "The air tastes of iron and decay.",
+  "Wind howls through the hollow.",
+  "Frost creeps along the stone floor.",
+  "The wraith's eyes pulse with faint hunger.",
+  "A low hum resonates from the darkness.",
+  "Your breath fogs in the cold air.",
+  "Embers drift through the stale dark.",
+  "The silence presses like a weight.",
+  "Something stirs in the deeper shadows.",
+];
 
 export interface BattleResult {
   won: boolean;
@@ -65,6 +77,8 @@ export default function BattleScene({ onBattleEnd }: Props) {
     pickMonsterIntent(monster),
   );
   const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
+  const [ambientIndex, setAmbientIndex] = useState(0);
+  const ambientText = useMemo(() => AMBIENT_LINES[ambientIndex % AMBIENT_LINES.length], [ambientIndex]);
 
   const addLog = useCallback((text: string, color?: string) => {
     setBattleLog((prev) => [...prev.slice(-30), { text, color }]);
@@ -78,7 +92,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
   const handleEncounterDone = useCallback(() => setPhase("intro"), []);
   const handleIntroDone = useCallback(() => {
     setPhase("combat");
-    addLog("전투가 시작되었다!", "text-ember");
+    addLog("The battle begins!", "text-ember");
   }, [addLog]);
 
   // ── Resolve player action ──
@@ -100,11 +114,11 @@ export default function BattleScene({ onBattleEnd }: Props) {
           if (shieldAbsorb > 0) {
             setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
             addLog(
-              `기본 공격! ${shieldAbsorb} 방어막 관통, ${hpDmg} 피해!`,
+              `Strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
               "text-sky-400",
             );
           } else {
-            addLog(`기본 공격! ${dmg} 피해를 입혔다!`, "text-sky-400");
+            addLog(`Strike! ${dmg} damage!`, "text-sky-400");
           }
           setMonsterHp((v) => Math.max(0, v - hpDmg));
           projectileWord = "STRIKE";
@@ -113,13 +127,13 @@ export default function BattleScene({ onBattleEnd }: Props) {
         case "defend": {
           const shield = getBaseShield(stats);
           setPlayerShield(shield);
-          addLog(`방어 자세! ${shield} 방어막 생성!`, "text-blue-400");
+          addLog(`Brace! Shield +${shield}!`, "text-blue-400");
           break;
         }
         case "heal": {
           const heal = getHealAmount(stats);
           setPlayerHp((v) => Math.min(maxHp, v + heal));
-          addLog(`수련된 호흡... ${heal} HP 회복!`, "text-green-400");
+          addLog(`Steady breath... +${heal} HP.`, "text-green-400");
           break;
         }
         case "spell": {
@@ -127,13 +141,13 @@ export default function BattleScene({ onBattleEnd }: Props) {
           const tier = getLiteracyTier(stats.literacy);
           if (spell.tier > tier) {
             addLog(
-              `어휘력이 부족하다... (필요: 티어 ${spell.tier})`,
+              `Not enough literacy... (need tier ${spell.tier})`,
               "text-red-400",
             );
             return;
           }
           if (playerMana < spell.manaCost) {
-            addLog(`마나가 부족하다! (필요: ${spell.manaCost})`, "text-red-400");
+            addLog(`Not enough mana! (need ${spell.manaCost})`, "text-red-400");
             return;
           }
           setPlayerMana((v) => v - spell.manaCost);
@@ -144,9 +158,9 @@ export default function BattleScene({ onBattleEnd }: Props) {
               const mult = getElementMultiplier(spell.element, monster.element);
               dmg = Math.round(dmg * mult);
               if (mult > 1)
-                addLog("속성 상성! 효과가 뛰어나다!", "text-yellow-300");
+                addLog("Elemental weakness! Super effective!", "text-yellow-300");
               if (mult < 1)
-                addLog("속성 상성 불리... 효과가 미미하다.", "text-gray-400");
+                addLog("Elemental resistance... not very effective.", "text-gray-400");
             }
             const shieldAbsorb = Math.min(monsterShield, dmg);
             const hpDmg = dmg - shieldAbsorb;
@@ -155,26 +169,26 @@ export default function BattleScene({ onBattleEnd }: Props) {
             }
             setMonsterHp((v) => Math.max(0, v - hpDmg));
             addLog(
-              `${spell.name} 시전! ${dmg} 피해! (마나 -${spell.manaCost})`,
+              `${spell.name}! ${dmg} damage! (MP -${spell.manaCost})`,
               "text-cyan-300",
             );
             projectileWord = spell.name.toUpperCase();
 
             if (spell.stunChance > 0 && Math.random() < spell.stunChance) {
               setMonsterStunned(true);
-              addLog("적이 기절했다!", "text-purple-400");
+              addLog("Enemy stunned!", "text-purple-400");
             }
           } else {
             // defend mode
             const shield = spell.baseShield + Math.floor(stats.agility * 0.5);
             setPlayerShield(shield);
             addLog(
-              `${spell.name} 방어! ${shield} 방어막! (마나 -${spell.manaCost})`,
+              `${spell.name} ward! Shield +${shield}! (MP -${spell.manaCost})`,
               "text-teal-300",
             );
             if (spell.healOnDefend > 0) {
               setPlayerHp((v) => Math.min(maxHp, v + spell.healOnDefend));
-              addLog(`자연의 힘이 상처를 치유한다... +${spell.healOnDefend} HP`, "text-green-300");
+              addLog(`Nature mends your wounds... +${spell.healOnDefend} HP`, "text-green-300");
             }
           }
           break;
@@ -216,9 +230,10 @@ export default function BattleScene({ onBattleEnd }: Props) {
       setMonsterShield(0);
 
       if (monsterStunned) {
-        addLog(`${monster.name}은(는) 기절 상태다! 행동할 수 없다!`, "text-purple-300");
+        addLog(`${monster.name} is stunned and cannot act!`, "text-purple-300");
         setMonsterStunned(false);
         setTurn("player");
+        setAmbientIndex((v) => v + 1);
         rollNextIntent();
         return;
       }
@@ -229,7 +244,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
         const shield = 8;
         setMonsterShield(shield);
         addLog(
-          `${monster.name}이(가) 방어를 굳힌다! (${shield} 방어막)`,
+          `${monster.name} hardens its guard! (Shield ${shield})`,
           "text-orange-300",
         );
       } else {
@@ -241,11 +256,11 @@ export default function BattleScene({ onBattleEnd }: Props) {
         if (absorbed > 0) {
           setPlayerShield((v) => Math.max(0, v - absorbed));
           addLog(
-            `${intent.label.replace("...", "")} — ${absorbed} 방어막 흡수, ${hpDmg} 피해!`,
+            `${intent.label.replace("...", "")} — ${absorbed} blocked, ${hpDmg} damage!`,
             "text-red-400",
           );
         } else {
-          addLog(`${intent.label.replace("...", "")} — ${dmg} 피해!`, "text-red-400");
+          addLog(`${intent.label.replace("...", "")} — ${dmg} damage!`, "text-red-400");
         }
 
         setPlayerHp((v) => Math.max(0, v - hpDmg));
@@ -258,6 +273,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
         }
       }
 
+      setAmbientIndex((v) => v + 1);
       rollNextIntent();
       setTurn("player");
     }, 1200);
@@ -279,7 +295,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
     if (phase !== "combat") return;
     if (monsterHp <= 0 && phase === "combat") {
       setPhase("victory");
-      addLog(`${monster.name}을(를) 처치했다!`, "text-yellow-400");
+      addLog(`${monster.name} has been slain!`, "text-yellow-400");
     }
   }, [monsterHp, phase, monster.name, addLog]);
 
@@ -292,18 +308,6 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-center gap-6">
-      <div className="pointer-events-none fixed left-1/2 top-4 z-50 -translate-x-1/2 flex items-center gap-4">
-        <HeartHP current={playerHp} max={maxHp} />
-        {playerShield > 0 && (
-          <span className="text-[0.7rem] text-blue-400 tracking-wider">
-            🛡 {playerShield}
-          </span>
-        )}
-        <span className="text-[0.65rem] text-cyan-400/60 tracking-wider">
-          MP {playerMana}/{maxMana}
-        </span>
-      </div>
-
       <div className="flex w-full flex-1 items-center justify-center">
         {phase === "encounter" && (
           <SkullEncounter onComplete={handleEncounterDone} />
@@ -331,8 +335,13 @@ export default function BattleScene({ onBattleEnd }: Props) {
             monsterShield={monsterShield}
             nextIntent={nextIntent}
             battleLog={battleLog}
+            ambientText={ambientText}
             turn={turn}
+            playerHp={playerHp}
+            playerMaxHp={maxHp}
             playerMana={playerMana}
+            playerMaxMana={maxMana}
+            playerShield={playerShield}
             playerStats={stats}
             onAction={handlePlayerAction}
             projectileCallbackRef={projectileCallbackRef}
@@ -348,10 +357,10 @@ export default function BattleScene({ onBattleEnd }: Props) {
         {phase === "victory" && (
           <div className="flex flex-col items-center gap-4 animate-fade-in-quick">
             <p className="text-[1.3rem] text-ember tracking-wider [text-shadow:0_0_12px_rgba(255,170,0,0.4)]">
-              {monster.name}을(를) 처치했다!
+              {monster.name} has been slain.
             </p>
             <p className="text-[0.85rem] text-white/40 tracking-[0.15em]">
-              모닥불로 돌아가는 중...
+              Returning to the bonfire...
             </p>
           </div>
         )}

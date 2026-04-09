@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 interface HeartHPProps {
   current: number;
   max: number;
+  shield?: number;
 }
 
 /**
@@ -52,7 +53,7 @@ const FRAME_INTERVAL = 1000 / 24;
  *
  * @param props 현재 체력과 최대 체력
  */
-export default function HeartHP({ current, max }: HeartHPProps) {
+export default function HeartHP({ current, max, shield = 0 }: HeartHPProps) {
   /**
    * 마우스 hover 여부를 저장한다.
    */
@@ -148,21 +149,56 @@ export default function HeartHP({ current, max }: HeartHPProps) {
     lines.push(line);
   }
 
+  const shieldActive = shield > 0;
+
+  // Build bracket overlay lines when shield is active
+  const bracketLines: string[] = [];
+  if (shieldActive) {
+    // Surround heart with [ ] brackets that pulse via CSS
+    const bracketMask = [
+      "[ .#. .#. ]",
+      "[.#####.#.]",
+      "[.#######.]",
+      "[.#######.]",
+      "[ .#####. ]",
+      "[  .###.  ]",
+      "[   .#.   ]",
+      "[    .    ]",
+    ];
+    for (let row = 0; row < bracketMask.length; row += 1) {
+      let line = "";
+      for (let col = 0; col < bracketMask[row].length; col += 1) {
+        const ch = bracketMask[row][col];
+        if (ch === "[" || ch === "]") {
+          line += ch;
+        } else {
+          line += " ";
+        }
+      }
+      bracketLines.push(line);
+    }
+  }
+
   return (
     <div
       className="relative inline-flex cursor-default flex-col items-center"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <pre className="m-0 whitespace-pre text-[9px] leading-[1.1] text-heart select-none [text-shadow:0_0_4px_rgba(200,40,50,0.3)]">
+      <pre className={`m-0 whitespace-pre text-[9px] leading-[1.1] text-heart select-none [text-shadow:0_0_4px_rgba(200,40,50,0.3)] ${shieldActive ? "[text-shadow:0_0_6px_rgba(60,140,255,0.4)]" : ""}`}>
         {lines.join("\n")}
       </pre>
+      {shieldActive && (
+        <pre className="pointer-events-none absolute inset-0 m-0 whitespace-pre text-[9px] leading-[1.1] text-[rgba(60,160,255,0.8)] select-none animate-shield-pulse [text-shadow:0_0_8px_rgba(60,140,255,0.5)]">
+          {bracketLines.join("\n")}
+        </pre>
+      )}
       <span
         className={`pointer-events-none absolute right-[-2.8rem] top-1/2 -translate-y-1/2 whitespace-nowrap text-[0.65rem] text-[rgba(200,60,60,0.8)] transition-opacity duration-300 ${
           hovered ? "opacity-100" : "opacity-0"
         }`}
       >
-        {current}/{max}
+        {current}/{max}{shield > 0 ? ` +${shield}` : ""}
       </span>
     </div>
   );

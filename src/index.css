@@ -16,6 +16,7 @@
   --animate-wait-blink: blink 1.2s step-end infinite;
   --animate-sprite-shake: sprite-shake 0.3s ease-out;
   --animate-crt-glitch: crt-glitch 0.12s steps(2) infinite;
+  --animate-shield-pulse: shield-pulse 2s ease-in-out infinite;
 
   @keyframes fade-in-text {
     from {
@@ -159,6 +160,19 @@
     100% {
       clip-path: inset(0 0 0 0);
       transform: translate(0);
+    }
+  }
+
+  @keyframes shield-pulse {
+    0%,
+    100% {
+      opacity: 0.7;
+      text-shadow: 0 0 4px rgba(80, 160, 255, 0.3);
+    }
+
+    50% {
+      opacity: 1;
+      text-shadow: 0 0 10px rgba(80, 160, 255, 0.6);
     }
   }
 }
