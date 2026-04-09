@@ -54,9 +54,9 @@ export default function BattleScene({ onBattleEnd }: Props) {
     { flip: true, brightnessThreshold: 40 },
   );
   const { lines: monsterAscii, loading: monsterLoading } = useImageToAscii(
-    "/assets/enemy.png",
-    55,
-    { flip: true, brightnessThreshold: 40 },
+    "/assets/knight.png",
+    100,
+    { flip: false, brightnessThreshold: 20, spriteSheet: { frameCount: 2, interval: 1000 } },
   );
 
   const monster = HOLLOW_WRAITH;
@@ -105,12 +105,14 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
       let projectileWord = "";
       let projectileFromPlayer = true;
+      let projectileBlocked = false;
 
       switch (action.type) {
         case "attack": {
           const dmg = getBaseAttackDamage(stats);
           const shieldAbsorb = Math.min(monsterShield, dmg);
           const hpDmg = dmg - shieldAbsorb;
+          projectileBlocked = monsterShield >= dmg;
           if (shieldAbsorb > 0) {
             setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
             addLog(
@@ -164,6 +166,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
             }
             const shieldAbsorb = Math.min(monsterShield, dmg);
             const hpDmg = dmg - shieldAbsorb;
+            projectileBlocked = monsterShield >= dmg;
             if (shieldAbsorb > 0) {
               setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
             }
@@ -195,14 +198,16 @@ export default function BattleScene({ onBattleEnd }: Props) {
         }
       }
 
-      // Trigger monster turn after a delay
-      setTurn("monster");
+      // Trigger monster turn — delay depends on whether player fired a projectile
+      const turnDelay = projectileWord ? 2200 : 400;
+      window.setTimeout(() => setTurn("monster"), turnDelay);
+
       projectileFromPlayer; // used by BattleCombat for animation
       void projectileWord; // used by BattleCombat for animation
 
       // Pass the projectile info via a ref so BattleCombat can animate it
       if (projectileCallbackRef.current) {
-        projectileCallbackRef.current(projectileWord, projectileFromPlayer);
+        projectileCallbackRef.current(projectileWord, projectileFromPlayer, { blocked: projectileBlocked });
       }
     },
     [
@@ -217,15 +222,24 @@ export default function BattleScene({ onBattleEnd }: Props) {
   );
 
   const projectileCallbackRef = useRef<
-    ((word: string, fromPlayer: boolean) => void) | null
+    ((word: string, fromPlayer: boolean, opts?: { blocked?: boolean }) => void) | null
   >(null);
+
+  // Refs for values the monster-turn effect needs to read WITHOUT re-triggering
+  const nextIntentRef = useRef(nextIntent);
+  nextIntentRef.current = nextIntent;
+  const playerShieldRef = useRef(playerShield);
+  playerShieldRef.current = playerShield;
 
   // ── Monster turn ──
   useEffect(() => {
     if (turn !== "monster") return;
     if (monsterHp <= 0) return;
 
-    const timeoutId = window.setTimeout(() => {
+    const timeoutIds: number[] = [];
+
+    // Short delay before monster acts (transition after charge)
+    timeoutIds.push(window.setTimeout(() => {
       // Clear monster shield each turn
       setMonsterShield(0);
 
@@ -238,53 +252,69 @@ export default function BattleScene({ onBattleEnd }: Props) {
         return;
       }
 
-      const intent = nextIntent;
+      // Read from refs so we don't depend on these values
+      const intent = nextIntentRef.current;
+      const shield = playerShieldRef.current;
 
       if (intent.kind === "defend") {
-        const shield = 8;
-        setMonsterShield(shield);
+        const shieldVal = 8;
+        setMonsterShield(shieldVal);
         addLog(
-          `${monster.name} hardens its guard! (Shield ${shield})`,
+          `${monster.name} hardens its guard! (Shield ${shieldVal})`,
           "text-orange-300",
         );
-      } else {
-        // attack or spell
-        let dmg = intent.damage;
-        const absorbed = Math.min(playerShield, dmg);
-        const hpDmg = dmg - absorbed;
+        setAmbientIndex((v) => v + 1);
+        rollNextIntent();
+        timeoutIds.push(window.setTimeout(() => setTurn("player"), 800));
+        return;
+      }
 
+      // Attack or spell — fire projectile first
+      const dmg = intent.damage;
+      const absorbed = Math.min(shield, dmg);
+      const hpDmg = dmg - absorbed;
+      const blocked = shield >= dmg;
+
+      // Fire projectile animation
+      if (projectileCallbackRef.current) {
+        const word =
+          intent.element?.toUpperCase() ?? intent.kind.toUpperCase();
+        projectileCallbackRef.current(word, false, { blocked });
+      }
+
+      // Apply damage AFTER projectile arrives (~1200ms travel time)
+      timeoutIds.push(window.setTimeout(() => {
         if (absorbed > 0) {
           setPlayerShield((v) => Math.max(0, v - absorbed));
-          addLog(
-            `${intent.label.replace("...", "")} — ${absorbed} blocked, ${hpDmg} damage!`,
-            "text-red-400",
-          );
+          if (hpDmg > 0) {
+            addLog(
+              `${intent.label.replace("...", "")} — ${absorbed} blocked, ${hpDmg} damage!`,
+              "text-red-400",
+            );
+          } else {
+            addLog(
+              `${intent.label.replace("...", "")} — fully blocked by shield!`,
+              "text-blue-400",
+            );
+          }
         } else {
           addLog(`${intent.label.replace("...", "")} — ${dmg} damage!`, "text-red-400");
         }
 
         setPlayerHp((v) => Math.max(0, v - hpDmg));
+        setAmbientIndex((v) => v + 1);
+        rollNextIntent();
 
-        // Projectile animation
-        if (projectileCallbackRef.current) {
-          const word =
-            intent.element?.toUpperCase() ?? intent.kind.toUpperCase();
-          projectileCallbackRef.current(word, false);
-        }
-      }
+        // Return to player turn after effects settle
+        timeoutIds.push(window.setTimeout(() => setTurn("player"), 600));
+      }, 1200));
+    }, 600));
 
-      setAmbientIndex((v) => v + 1);
-      rollNextIntent();
-      setTurn("player");
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutId);
+    return () => timeoutIds.forEach(id => window.clearTimeout(id));
   }, [
     turn,
-    nextIntent,
     monsterHp,
     monsterStunned,
-    playerShield,
     monster,
     addLog,
     rollNextIntent,
@@ -294,8 +324,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
   useEffect(() => {
     if (phase !== "combat") return;
     if (monsterHp <= 0 && phase === "combat") {
-      setPhase("victory");
-      addLog(`${monster.name} has been slain!`, "text-yellow-400");
+      // Wait for projectile+hit (1800ms) + death sink animation (1200ms) + buffer
+      const id = window.setTimeout(() => {
+        setPhase("victory");
+        addLog(`${monster.name} has been slain!`, "text-yellow-400");
+      }, 3200);
+      return () => window.clearTimeout(id);
     }
   }, [monsterHp, phase, monster.name, addLog]);
 

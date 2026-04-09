@@ -14,9 +14,12 @@
   --animate-crt-flicker: crt-flicker 0.15s infinite;
   --animate-cursor-blink: blink 0.7s step-end infinite;
   --animate-wait-blink: blink 1.2s step-end infinite;
-  --animate-sprite-shake: sprite-shake 0.3s ease-out;
+  --animate-sprite-shake: sprite-shake 0.6s ease-out;
   --animate-crt-glitch: crt-glitch 0.12s steps(2) infinite;
   --animate-shield-pulse: shield-pulse 2s ease-in-out infinite;
+  --animate-player-lunge: player-lunge 0.7s ease-out;
+  --animate-monster-sink: monster-sink 1.2s ease-in forwards;
+  --animate-hit-absorb: hit-absorb 0.5s ease-out;
 
   @keyframes fade-in-text {
     from {
@@ -173,6 +176,55 @@
     50% {
       opacity: 1;
       text-shadow: 0 0 10px rgba(80, 160, 255, 0.6);
+    }
+  }
+
+  @keyframes player-lunge {
+    0% {
+      transform: translateX(0);
+    }
+
+    30% {
+      transform: translateX(30px);
+    }
+
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes monster-sink {
+    0% {
+      clip-path: inset(0 0 0 0);
+      opacity: 1;
+    }
+
+    70% {
+      clip-path: inset(0 0 60% 0);
+      opacity: 0.7;
+    }
+
+    100% {
+      clip-path: inset(0 0 100% 0);
+      opacity: 0;
+    }
+  }
+
+  @keyframes hit-absorb {
+    0% {
+      transform: scale(1) translateX(0);
+    }
+
+    25% {
+      transform: scale(0.92, 1.04) translateX(6px);
+    }
+
+    50% {
+      transform: scale(0.96, 1.01) translateX(-3px);
+    }
+
+    100% {
+      transform: scale(1) translateX(0);
     }
   }
 }
