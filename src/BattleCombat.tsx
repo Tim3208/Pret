@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
   useMemo,
   useCallback,
   useEffect,
@@ -15,6 +16,7 @@ import {
   prepareWithSegments,
 } from "@chenglou/pretext";
 import CrtOverlay from "./CrtOverlay";
+import HealthPotion from "./HealthPotion";
 import HeartHP from "./HeartHP";
 import ManaFlask from "./ManaFlask";
 import {
@@ -32,6 +34,22 @@ import {
   getActionHitChance,
   getActionTargeting,
 } from "./battleTypes";
+import {
+  getProjectileTone,
+  getProjectileVisual,
+  renderIntentSparks,
+  renderOverlayEffects,
+  spawnChargeParticles,
+  spawnDefendParticles,
+  spawnHealParticles,
+  spawnHitParticles,
+  spawnImpactBurst,
+  spawnMonsterDefendParticles,
+  spawnPotionShatterBurst,
+  spawnShieldChargeParticles,
+  spawnSlashParticles,
+  spawnSpellParticles,
+} from "./battleCombatVisuals";
 
 interface Projectile {
   chars: string[];
@@ -39,12 +57,14 @@ interface Projectile {
   y: number;
   startX: number;
   startY: number;
+  controlX?: number;
+  controlY?: number;
+  turnX?: number;
+  turnY?: number;
   targetX: number;
   targetY: number;
   startTime: number;
   duration: number;
-  arcHeight: number;
-  sway: number;
   alive: boolean;
   fromPlayer: boolean;
   element?: string;
@@ -70,7 +90,9 @@ interface ShieldPlane {
   center: Point;
 }
 
-interface SlashSample extends Point {
+interface SlashSample {
+  x: number;
+  y: number;
   nx: number;
   ny: number;
   t: number;
@@ -166,6 +188,8 @@ interface BattleCombatProps {
   playerStats: PlayerStats;
   targetOptions: BattleTargetOption[];
   onAction: (action: PlayerAction) => void;
+  potionAvailable: boolean;
+  onPotionUse: () => number;
   projectileCallbackRef: MutableRefObject<((request: CombatAnimationRequest) => void) | null>;
 }
 
@@ -190,6 +214,42 @@ interface ConsolePulse {
   strength: "soft" | "strong";
 }
 
+interface MonsterAsciiImpactState {
+  startedAt: number;
+  duration: number;
+  direction: -1 | 1;
+  strength: number;
+  centerRatio: number;
+  columnRatio: number;
+  radiusRatio: number;
+}
+
+interface LiveAsciiDisplacementState {
+  direction: -1 | 1;
+  strength: number;
+  centerRatio: number;
+  columnRatio: number;
+  radiusRatio: number;
+}
+
+interface MonsterAsciiGlyph {
+  char: string;
+  row: number;
+  column: number;
+  rowRatio: number;
+  columnRatio: number;
+}
+
+interface MonsterAsciiCanvasMetrics {
+  dpr: number;
+  width: number;
+  height: number;
+  charWidth: number;
+  lineHeight: number;
+  baseline: number;
+  font: string;
+}
+
 type CrtNoiseLevel = "off" | "soft" | "strong";
 
 /* ================================================================
@@ -205,6 +265,8 @@ const SCENE_H = 712;
 const LINE_H = 18;
 const PAD = 14;
 const TEXT_W = W - PAD * 2;
+const POTION_WIDTH = 56;
+const POTION_HEIGHT = 92;
 /** Radius within which a projectile displaces characters */
 const DISPLACE_RADIUS = 90;
 /** Maximum pixel push in Y */
@@ -212,6 +274,7 @@ const DISPLACE_Y = 28;
 /** Maximum pixel push in X */
 const DISPLACE_X = 16;
 const SLASH_THICKNESS = 34;
+const PLAYER_ASCII_CANVAS_TONE = "rgba(244, 244, 244, 0.98)";
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -219,6 +282,15 @@ function clamp01(value: number): number {
 
 function lerp(start: number, end: number, amount: number): number {
   return start + (end - start) * amount;
+}
+
+function pointInsideDomRect(point: Point, rect: DOMRect, padding = 0): boolean {
+  return (
+    point.x >= rect.left - padding &&
+    point.x <= rect.right + padding &&
+    point.y >= rect.top - padding &&
+    point.y <= rect.bottom + padding
+  );
 }
 
 function easeOutCubic(value: number): number {
@@ -253,6 +325,16 @@ function sampleQuadraticNormal(start: Point, control: Point, end: Point, t: numb
   return {
     x: -dy / length,
     y: dx / length,
+  };
+}
+
+function sampleQuadraticTangent(start: Point, control: Point, end: Point, t: number): Point {
+  const dx = 2 * (1 - t) * (control.x - start.x) + 2 * t * (end.x - control.x);
+  const dy = 2 * (1 - t) * (control.y - start.y) + 2 * t * (end.y - control.y);
+  const length = Math.max(1, Math.hypot(dx, dy));
+  return {
+    x: dx / length,
+    y: dy / length,
   };
 }
 
@@ -295,7 +377,7 @@ function buildSlashSamples(start: Point, control: Point, end: Point): SlashSampl
 function getSceneAnchors(width: number, height: number): SceneAnchors {
   return {
     playerMuzzle: { x: width * 0.18, y: height * 0.78 },
-    monsterCore: { x: width * 0.94, y: height * 0.15 },
+    monsterCore: { x: width * 0.955, y: height * 0.118 },
     playerShield: makeShieldPlane(
       { x: width * 0.24, y: height * 0.28 },
       { x: width * 0.36, y: height * 0.23 },
@@ -303,8 +385,8 @@ function getSceneAnchors(width: number, height: number): SceneAnchors {
       height * 0.34,
     ),
     monsterShield: makeShieldPlane(
-      { x: width * 0.69, y: height * 0.17 },
-      { x: width * 0.82, y: height * 0.21 },
+      { x: width * 0.73, y: height * 0.14 },
+      { x: width * 0.845, y: height * 0.18 },
       -width * 0.06,
       height * 0.27,
     ),
@@ -317,25 +399,56 @@ function getSceneAnchors(width: number, height: number): SceneAnchors {
 function getProjectileSceneAnchors(width: number, height: number): ProjectileSceneAnchors {
   return {
     playerMuzzle: { x: width * 0.28, y: height * 0.71 },
-    playerCore: { x: width * 0.345, y: height * 0.57 },
-    playerShield: { x: width * 0.37, y: height * 0.48 },
-    monsterCore: { x: width * 0.742, y: height * 0.23 },
-    monsterShield: { x: width * 0.712, y: height * 0.18 },
+    playerCore: { x: width * 0.235, y: height * 0.63 },
+    playerShield: { x: width * 0.292, y: height * 0.56 },
+    monsterCore: { x: width * 0.774, y: height * 0.198 },
+    monsterShield: { x: width * 0.736, y: height * 0.162 },
   };
 }
 
-function sampleRandomOffscreenPoint(origin: Point): Point {
+function sampleRandomOffscreenPoint(origin: Point, heading?: Point): Point {
   const padding = 150;
   const candidates = [
     { x: -padding, y: Math.random() * SCENE_H },
     { x: SCENE_W + padding, y: Math.random() * SCENE_H },
     { x: Math.random() * SCENE_W, y: -padding },
     { x: Math.random() * SCENE_W, y: SCENE_H + padding },
-  ].filter((point) => Math.hypot(point.x - origin.x, point.y - origin.y) > 260);
+  ].filter((point) => {
+    if (Math.hypot(point.x - origin.x, point.y - origin.y) <= 260) {
+      return false;
+    }
+
+    if (!heading) {
+      return true;
+    }
+
+    const headingLength = Math.max(1, Math.hypot(heading.x, heading.y));
+    const normalizedHeading = { x: heading.x / headingLength, y: heading.y / headingLength };
+    const towardCandidate = { x: point.x - origin.x, y: point.y - origin.y };
+    const candidateLength = Math.max(1, Math.hypot(towardCandidate.x, towardCandidate.y));
+    const normalizedCandidate = {
+      x: towardCandidate.x / candidateLength,
+      y: towardCandidate.y / candidateLength,
+    };
+
+    // Keep misses within the forward 180-degree arc so they still fly enemy-ward.
+    return normalizedHeading.x * normalizedCandidate.x + normalizedHeading.y * normalizedCandidate.y >= 0;
+  });
 
   return candidates[Math.floor(Math.random() * candidates.length)] ?? {
     x: SCENE_W + padding,
     y: origin.y - padding,
+  };
+}
+
+function sampleMonsterImpactPoint(anchors: ProjectileSceneAnchors): Point {
+  const horizontalSpan = Math.max(22, Math.abs(anchors.monsterCore.x - anchors.monsterShield.x));
+  const verticalSpan = Math.max(18, Math.abs(anchors.monsterCore.y - anchors.monsterShield.y));
+
+  // Keep direct hits inside a loose left/lower pocket so repeated shots do not pin the same right-edge pixel.
+  return {
+    x: anchors.monsterCore.x - horizontalSpan * (0.55 + Math.random() * 1.25),
+    y: anchors.monsterCore.y + verticalSpan * (0.45 + Math.random() * 1.45),
   };
 }
 
@@ -779,105 +892,195 @@ function getHitWaveScale(damage: number, maxHp: number): number {
   return 1.35 + normalizedDamage * 2.8;
 }
 
-function getProjectileTone(element?: string, critical?: boolean): string {
-  if (critical) return "critical";
-  return element ?? "strike";
+function getMonsterImpactBandDuration(critical: boolean): number {
+  return critical ? 960 : 780;
 }
 
-function getProjectileVisual(tone: string): {
-  fill: string;
-  shadow: string;
-  head: string;
-} {
-  switch (tone) {
-    case "critical":
-      return {
-        fill: "rgba(255, 224, 120, 0.98)",
-        shadow: "rgba(255, 206, 72, 0.72)",
-        head: "$",
-      };
-    case "fire":
-      return {
-        fill: "rgba(255, 150, 64, 0.96)",
-        shadow: "rgba(255, 110, 36, 0.62)",
-        head: "*",
-      };
-    case "water":
-      return {
-        fill: "rgba(108, 214, 255, 0.96)",
-        shadow: "rgba(76, 188, 255, 0.58)",
-        head: "o",
-      };
-    case "earth":
-      return {
-        fill: "rgba(214, 172, 102, 0.96)",
-        shadow: "rgba(164, 120, 68, 0.56)",
-        head: "#",
-      };
-    case "nature":
-      return {
-        fill: "rgba(130, 220, 132, 0.96)",
-        shadow: "rgba(70, 176, 92, 0.58)",
-        head: "*",
-      };
-    default:
-      return {
-        fill: "rgba(106, 230, 255, 0.96)",
-        shadow: "rgba(84, 218, 255, 0.52)",
-        head: "*",
-      };
-  }
+function getMonsterImpactSettleDelay(critical: boolean): number {
+  return critical ? 860 : 700;
 }
 
-function getProjectileImpactVisual(tone?: string): {
-  chars: string[];
-  color: () => string;
-} {
-  switch (tone) {
-    case "critical":
-      return {
-        chars: ["*", "+", "x", "$"],
-        color: () =>
-          `rgba(${235 + Math.random() * 20}, ${190 + Math.random() * 40}, ${70 + Math.random() * 40}, 1)`,
-      };
-    case "strike":
-      return {
-        chars: ["*", "+", "·", "x"],
-        color: () =>
-          `rgba(${96 + Math.random() * 26}, ${206 + Math.random() * 34}, ${255 - Math.random() * 12}, 1)`,
-      };
-    case "fire":
-      return {
-        chars: ["*", "x", "^", "~"],
-        color: () =>
-          `rgba(${220 + Math.random() * 35}, ${90 + Math.random() * 70}, ${20 + Math.random() * 25}, 1)`,
-      };
-    case "water":
-      return {
-        chars: ["*", "~", "o", "≈"],
-        color: () =>
-          `rgba(${90 + Math.random() * 40}, ${170 + Math.random() * 60}, ${255 - Math.random() * 20}, 1)`,
-      };
-    case "earth":
-      return {
-        chars: ["#", "*", "■", "+"],
-        color: () =>
-          `rgba(${165 + Math.random() * 45}, ${120 + Math.random() * 40}, ${60 + Math.random() * 20}, 1)`,
-      };
-    case "nature":
-      return {
-        chars: ["*", "♦", "+", "~"],
-        color: () =>
-          `rgba(${80 + Math.random() * 40}, ${190 + Math.random() * 45}, ${100 + Math.random() * 35}, 1)`,
-      };
-    default:
-      return {
-        chars: ["·", "•", "∘", ".", "×"],
-        color: () =>
-          `rgba(${200 + Math.random() * 55}, ${30 + Math.random() * 40}, ${20 + Math.random() * 30}, 1)`,
-      };
-  }
+function getRadialHoleInfluence(normalizedDistance: number): number {
+  const raw = clamp01(1 - normalizedDistance);
+  return raw * raw * (3 - 2 * raw);
 }
+
+function getMonsterImpactPulse(progress: number): number {
+  const clamped = clamp01(progress);
+  const swell = Math.sin(Math.PI * clamped);
+  const settle =
+    clamped <= 0.42 ? 1 : 1 - easeInOutCubic((clamped - 0.42) / 0.58) * 0.9;
+  return swell * settle;
+}
+
+function buildMonsterAsciiGlyphs(lines: string[]): MonsterAsciiGlyph[] {
+  const rowCount = Math.max(1, lines.length);
+  const maxColumns = Math.max(1, ...lines.map((line) => Math.max(1, line.length - 1)));
+  const glyphs: MonsterAsciiGlyph[] = [];
+
+  lines.forEach((line, row) => {
+    for (let column = 0; column < line.length; column += 1) {
+      const char = line[column];
+      if (char === " ") continue;
+
+      glyphs.push({
+        char,
+        row,
+        column,
+        rowRatio: rowCount <= 1 ? 0.5 : row / (rowCount - 1),
+        columnRatio: maxColumns <= 1 ? 0.5 : column / maxColumns,
+      });
+    }
+  });
+
+  return glyphs;
+}
+
+function renderMonsterAsciiImpactCanvas(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  metrics: MonsterAsciiCanvasMetrics | null,
+  glyphs: MonsterAsciiGlyph[],
+  impact: MonsterAsciiImpactState | null,
+  baseColor: string,
+  now: number,
+) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!metrics || !impact) {
+    return;
+  }
+
+  const progress = clamp01((now - impact.startedAt) / impact.duration);
+  const pulse = getMonsterImpactPulse(progress);
+  const expansion = easeOutCubic(progress);
+  const radiusXRatio = Math.max(0.12, impact.radiusRatio * 1.22);
+  const radiusYRatio = Math.max(0.11, impact.radiusRatio * 0.98);
+  const maxPush = 14 + impact.strength * 24 + Math.min(metrics.width, metrics.height) * impact.radiusRatio * 0.12;
+  const hitColor = "rgba(198, 18, 34, 0.99)";
+  const waveFront = Math.min(1.28, 0.08 + expansion * 1.04);
+  const waveWidth = Math.max(0.12, 0.34 - expansion * 0.1);
+
+  ctx.setTransform(metrics.dpr, 0, 0, metrics.dpr, 0, 0);
+  ctx.font = metrics.font;
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.fillStyle = baseColor;
+
+  for (const glyph of glyphs) {
+    const dxRatio = (glyph.columnRatio - impact.columnRatio) / radiusXRatio;
+    const dyRatio = (glyph.rowRatio - impact.centerRatio) / radiusYRatio;
+    const distance = Math.hypot(dxRatio, dyRatio);
+    const influence = getRadialHoleInfluence(distance);
+
+    let x = glyph.column * metrics.charWidth;
+    let y = glyph.row * metrics.lineHeight + metrics.baseline;
+
+    if (influence > 0.0001) {
+      let dirX = dxRatio;
+      let dirY = dyRatio;
+      const directionLength = Math.hypot(dirX, dirY);
+
+      if (directionLength < 0.0001) {
+        dirX = impact.direction;
+        dirY = 0;
+      } else {
+        dirX /= directionLength;
+        dirY /= directionLength;
+      }
+
+      const outward = pulse * influence * maxPush * (0.52 + (1 - Math.min(1, distance)) * 0.84);
+      const swirl = Math.sin((1 - Math.min(1, distance)) * Math.PI) * pulse * 2.4;
+
+      x += dirX * outward - dirY * swirl;
+      y += dirY * outward * 0.88 + dirX * swirl * 0.45;
+    }
+
+    const waveBand = clamp01(1 - Math.abs(distance - waveFront) / waveWidth);
+    const innerHeat = influence * Math.max(0, 0.34 - expansion * 0.22);
+    const redMix = clamp01(Math.max(innerHeat, waveBand * (0.52 + pulse * 0.34)));
+    if (redMix > 0.02) {
+      ctx.fillStyle = mixRgbaColors(baseColor, hitColor, Math.min(0.98, 0.08 + redMix * 0.9));
+      ctx.shadowColor = replaceAlpha(hitColor, 0.08 + redMix * 0.18);
+      ctx.shadowBlur = 3 + redMix * 7;
+    } else {
+      ctx.fillStyle = baseColor;
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.fillText(glyph.char, x, y);
+  }
+
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function renderLiveAsciiDisplacementCanvas(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  metrics: MonsterAsciiCanvasMetrics | null,
+  glyphs: MonsterAsciiGlyph[],
+  field: LiveAsciiDisplacementState | null,
+  baseColor: string,
+  now: number,
+) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!metrics || !field) {
+    return;
+  }
+
+  const wobble = 0.94 + Math.sin(now * 0.018) * 0.06;
+  const radiusXRatio = Math.max(0.14, field.radiusRatio * 1.08);
+  const radiusYRatio = Math.max(0.14, field.radiusRatio * 0.96);
+  const maxPush = 8 + field.strength * 18 + Math.min(metrics.width, metrics.height) * 0.02;
+
+  ctx.setTransform(metrics.dpr, 0, 0, metrics.dpr, 0, 0);
+  ctx.font = metrics.font;
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.fillStyle = baseColor;
+
+  for (const glyph of glyphs) {
+    const dxRatio = (glyph.columnRatio - field.columnRatio) / radiusXRatio;
+    const dyRatio = (glyph.rowRatio - field.centerRatio) / radiusYRatio;
+    const distance = Math.hypot(dxRatio, dyRatio);
+    const influence = getRadialHoleInfluence(distance);
+
+    let x = glyph.column * metrics.charWidth;
+    let y = glyph.row * metrics.lineHeight + metrics.baseline;
+
+    if (influence > 0.0001) {
+      let dirX = dxRatio;
+      let dirY = dyRatio;
+      const directionLength = Math.hypot(dirX, dirY);
+
+      if (directionLength < 0.0001) {
+        dirX = field.direction;
+        dirY = 0;
+      } else {
+        dirX /= directionLength;
+        dirY /= directionLength;
+      }
+
+      const edgeBias = 1 - Math.min(1, distance);
+      const outward = influence * maxPush * wobble * (0.68 + edgeBias * 0.52);
+      const swirl = Math.sin(edgeBias * Math.PI) * (0.7 + field.strength * 0.34) * wobble;
+
+      x += dirX * outward - dirY * swirl * 1.1;
+      y += dirY * outward * 0.76 + dirX * swirl * 0.62;
+    }
+
+    ctx.fillText(glyph.char, x, y);
+  }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
 
 /** Map tailwind color classes to approximate canvas RGBA */
 function classToCanvasColor(cls?: string): string {
@@ -899,560 +1102,6 @@ function classToCanvasColor(cls?: string): string {
 /* ================================================================
    Effect particle spawners
    ================================================================ */
-
-function pointOnPlane(plane: ShieldPlane, u: number, v: number): Point {
-  const top = {
-    x: lerp(plane.topLeft.x, plane.topRight.x, u),
-    y: lerp(plane.topLeft.y, plane.topRight.y, u),
-  };
-  const bottom = {
-    x: lerp(plane.bottomLeft.x, plane.bottomRight.x, u),
-    y: lerp(plane.bottomLeft.y, plane.bottomRight.y, u),
-  };
-
-  return {
-    x: lerp(top.x, bottom.x, v),
-    y: lerp(top.y, bottom.y, v),
-  };
-}
-
-function getOverlayShieldPlane(targetSide: "player" | "monster", w: number, h: number): ShieldPlane {
-  return targetSide === "player"
-    ? makeShieldPlane(
-        { x: w * 0.5, y: h * 0.23 },
-        { x: w * 0.72, y: h * 0.17 },
-        w * 0.08,
-        h * 0.45,
-      )
-    : makeShieldPlane(
-        { x: w * 0.2, y: h * 0.18 },
-        { x: w * 0.42, y: h * 0.24 },
-        -w * 0.08,
-        h * 0.34,
-      );
-}
-
-function drawShieldPlate(
-  ctx: CanvasRenderingContext2D,
-  plane: ShieldPlane,
-  alpha: number,
-  color: string,
-): void {
-  ctx.save();
-  ctx.globalAlpha = alpha;
-
-  const gradient = ctx.createLinearGradient(
-    plane.topLeft.x,
-    plane.topLeft.y,
-    plane.bottomRight.x,
-    plane.bottomRight.y,
-  );
-  gradient.addColorStop(0, color.replace(", 1)", ", 0.08)"));
-  gradient.addColorStop(0.5, color.replace(", 1)", ", 0.28)"));
-  gradient.addColorStop(1, color.replace(", 1)", ", 0.12)"));
-
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.moveTo(plane.topLeft.x, plane.topLeft.y);
-  ctx.lineTo(plane.topRight.x, plane.topRight.y);
-  ctx.lineTo(plane.bottomRight.x, plane.bottomRight.y);
-  ctx.lineTo(plane.bottomLeft.x, plane.bottomLeft.y);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = color.replace(", 1)", ", 0.52)");
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(plane.topLeft.x, plane.topLeft.y);
-  ctx.lineTo(plane.topRight.x, plane.topRight.y);
-  ctx.lineTo(plane.bottomRight.x, plane.bottomRight.y);
-  ctx.lineTo(plane.bottomLeft.x, plane.bottomLeft.y);
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.font = "bold 11px 'Courier New', monospace";
-  ctx.fillStyle = color.replace(", 1)", ", 0.72)");
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 6;
-
-  for (let row = 0; row < 4; row += 1) {
-    const v = 0.18 + row * 0.2;
-    const left = pointOnPlane(plane, 0.06, v);
-    const right = pointOnPlane(plane, 0.94, v);
-    const segments = Math.max(5, Math.round(Math.hypot(right.x - left.x, right.y - left.y) / 16));
-
-    for (let index = 0; index < segments; index += 1) {
-      const t = segments === 1 ? 0 : index / (segments - 1);
-      const point = {
-        x: lerp(left.x, right.x, t),
-        y: lerp(left.y, right.y, t),
-      };
-      ctx.fillText(index % 2 === 0 ? "#" : "=", point.x, point.y);
-    }
-  }
-
-  ctx.restore();
-}
-
-function spawnShieldPlaneParticles(
-  w: number,
-  h: number,
-  targetSide: "player" | "monster",
-): EffectParticle[] {
-  const plane = getOverlayShieldPlane(targetSide, w, h);
-  const shieldChars = ["#", "=", "[", "]", "/", "\\"];
-  return Array.from({ length: 22 }, () => {
-    const point = pointOnPlane(plane, Math.random(), Math.random());
-    return {
-      x: point.x,
-      y: point.y,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.24,
-      char: shieldChars[Math.floor(Math.random() * shieldChars.length)],
-      color: `rgba(${90 + Math.random() * 30}, ${160 + Math.random() * 50}, 255, 1)`,
-      alpha: 0,
-      life: 0,
-      maxLife: 90 + Math.random() * 40,
-      size: 9 + Math.random() * 4,
-    };
-  });
-}
-
-function spawnHealParticles(w: number, h: number): EffectParticle[] {
-  const particles: EffectParticle[] = [];
-  for (let i = 0; i < 10; i++) {
-    particles.push({
-      x: w * 0.2 + Math.random() * w * 0.6,
-      y: h * 0.3 + Math.random() * h * 0.5,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: -(0.4 + Math.random() * 0.6),
-      char: "+",
-      color: `rgba(${60 + Math.random() * 40}, ${220 + Math.random() * 35}, ${80 + Math.random() * 40}, 1)`,
-      alpha: 1,
-      life: 0,
-      maxLife: 50 + Math.random() * 30,
-      size: 8 + Math.random() * 6,
-    });
-  }
-  return particles;
-}
-
-function spawnSlashParticles(w: number, h: number): EffectParticle[] {
-  const particles: EffectParticle[] = [];
-  const slashChars = ["/", "\\", "-", "|", "X"];
-  const cx = w * 0.5;
-  const cy = h * 0.4;
-  for (let i = 0; i < 18; i++) {
-    const angle = (Math.PI * 0.8) + Math.random() * Math.PI * 0.4; // roughly right-to-left slash
-    const speed = 1.5 + Math.random() * 2;
-    particles.push({
-      x: cx + (Math.random() - 0.5) * 30,
-      y: cy + (Math.random() - 0.5) * 40,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      char: slashChars[Math.floor(Math.random() * slashChars.length)],
-      color: "rgba(200, 240, 255, 1)",
-      alpha: 1,
-      life: 0,
-      maxLife: 28 + Math.random() * 14,
-      size: 14 + Math.random() * 9,
-    });
-  }
-  return particles;
-}
-
-function spawnDefendParticles(w: number, h: number): EffectParticle[] {
-  return spawnShieldPlaneParticles(w, h, "player");
-}
-
-function spawnMonsterDefendParticles(w: number, h: number): EffectParticle[] {
-  return spawnShieldPlaneParticles(w, h, "monster");
-}
-
-function spawnSpellParticles(w: number, h: number, element?: string): EffectParticle[] {
-  const particles: EffectParticle[] = [];
-  let chars: string[];
-  let colorFn: () => string;
-
-  switch (element) {
-    case "fire":
-      chars = ["^", "~", "*", "▲"];
-      colorFn = () => `rgba(${220 + Math.random() * 35}, ${80 + Math.random() * 80}, ${10 + Math.random() * 30}, 1)`;
-      break;
-    case "water":
-      chars = ["~", "≈", "○", "."];
-      colorFn = () => `rgba(${60 + Math.random() * 40}, ${160 + Math.random() * 60}, ${220 + Math.random() * 35}, 1)`;
-      break;
-    case "earth":
-      chars = ["#", "■", "▓", "."];
-      colorFn = () => `rgba(${160 + Math.random() * 60}, ${120 + Math.random() * 40}, ${40 + Math.random() * 30}, 1)`;
-      break;
-    case "nature":
-      chars = ["*", ".", "♦", "~"];
-      colorFn = () => `rgba(${40 + Math.random() * 40}, ${180 + Math.random() * 60}, ${60 + Math.random() * 40}, 1)`;
-      break;
-    default:
-      chars = ["*", "◇", "△", "○"];
-      colorFn = () => `rgba(${180 + Math.random() * 60}, ${140 + Math.random() * 60}, ${220 + Math.random() * 35}, 1)`;
-  }
-
-  const cx = w * 0.5;
-  const cy = h * 0.4;
-  for (let i = 0; i < 22; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 0.8 + Math.random() * 2;
-    particles.push({
-      x: cx + (Math.random() - 0.5) * 20,
-      y: cy + (Math.random() - 0.5) * 20,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      char: chars[Math.floor(Math.random() * chars.length)],
-      color: colorFn(),
-      alpha: 1,
-      life: 0,
-      maxLife: 40 + Math.random() * 24,
-      size: 12 + Math.random() * 9,
-    });
-  }
-  return particles;
-}
-
-function spawnChargeParticles(w: number, h: number): EffectParticle[] {
-  const particles: EffectParticle[] = [];
-  const chars = ["·", "*", "◦", ".", "°"];
-  const cx = w * 0.5;
-  const cy = h * 0.45;
-  for (let i = 0; i < 20; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 40 + Math.random() * 60;
-    particles.push({
-      x: cx + Math.cos(angle) * dist,
-      y: cy + Math.sin(angle) * dist,
-      vx: 0,
-      vy: 0,
-      char: chars[Math.floor(Math.random() * chars.length)],
-      color: `rgba(${200 + Math.random() * 55}, ${40 + Math.random() * 60}, ${40 + Math.random() * 40}, 1)`,
-      alpha: 0.8,
-      life: 0,
-      maxLife: 60 + Math.random() * 30,
-      size: 6 + Math.random() * 5,
-    });
-  }
-  return particles;
-}
-
-function spawnShieldChargeParticles(w: number, h: number): EffectParticle[] {
-  const particles: EffectParticle[] = [];
-  const chars = ["◆", "◇", "□", "○", "◈"];
-  const cx = w * 0.5;
-  const cy = h * 0.45;
-  for (let i = 0; i < 20; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 5 + Math.random() * 15;
-    particles.push({
-      x: cx + Math.cos(angle) * dist,
-      y: cy + Math.sin(angle) * dist,
-      vx: Math.cos(angle) * (0.8 + Math.random() * 0.5),
-      vy: Math.sin(angle) * (0.8 + Math.random() * 0.5),
-      char: chars[Math.floor(Math.random() * chars.length)],
-      color: `rgba(${60 + Math.random() * 40}, ${120 + Math.random() * 80}, ${220 + Math.random() * 35}, 1)`,
-      alpha: 0.85,
-      life: 0,
-      maxLife: 60 + Math.random() * 30,
-      size: 6 + Math.random() * 5,
-    });
-  }
-  return particles;
-}
-
-function spawnHitParticles(w: number, h: number, tone?: string): EffectParticle[] {
-  const particles: EffectParticle[] = [];
-  const impactVisual = getProjectileImpactVisual(tone);
-  const cx = w * 0.4;
-  const cy = h * 0.35;
-  for (let i = 0; i < 22; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 30 + Math.random() * 50;
-    particles.push({
-      x: cx + Math.cos(angle) * dist,
-      y: cy + Math.sin(angle) * dist,
-      vx: 0,
-      vy: 0,
-      char: impactVisual.chars[Math.floor(Math.random() * impactVisual.chars.length)],
-      color: impactVisual.color(),
-      alpha: 0.9,
-      life: 0,
-      maxLife: 38 + Math.random() * 24,
-      size: 9 + Math.random() * 6,
-    });
-  }
-  return particles;
-}
-
-function spawnImpactBurst(
-  target: EffectParticle[],
-  origin: Point,
-  style: "shieldBreak" | "shieldHit" | "monsterHit",
-  element?: string,
-): void {
-  const impactVisual = getProjectileImpactVisual(element);
-  const chars =
-    style === "shieldBreak"
-      ? ["#", "=", "[", "]", "/", "\\", "◇"]
-      : style === "shieldHit"
-        ? ["#", "=", "[", "]", "×"]
-        : impactVisual.chars;
-
-  const palette = () => {
-    if (style === "shieldBreak" || style === "shieldHit") {
-      return `rgba(${120 + Math.random() * 60}, ${180 + Math.random() * 45}, 255, 1)`;
-    }
-    return impactVisual.color();
-  };
-
-  const particleCount = style === "monsterHit" ? 24 : 20;
-  const minSpeed = style === "monsterHit" ? 1.8 : 1.3;
-  const maxSpeed = style === "monsterHit" ? 4.6 : 3.6;
-
-  for (let index = 0; index < particleCount; index += 1) {
-    const angle = (Math.PI * 2 * index) / particleCount + (Math.random() - 0.5) * 0.4;
-    const speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
-    target.push({
-      x: origin.x + (Math.random() - 0.5) * 6,
-      y: origin.y + (Math.random() - 0.5) * 6,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      char: chars[Math.floor(Math.random() * chars.length)],
-      color: palette(),
-      alpha: 1,
-      life: 0,
-      maxLife: 20 + Math.random() * 20,
-      size: style === "monsterHit" ? 12 + Math.random() * 8 : 10 + Math.random() * 6,
-    });
-  }
-}
-
-function renderIntentSparks(
-  ctx: CanvasRenderingContext2D,
-  sparks: EffectParticle[],
-  now: number,
-  nextIntent: MonsterIntent,
-  active: boolean,
-  advanceFrame: boolean,
-  w: number,
-  h: number,
-): void {
-  if (!active) {
-    sparks.length = 0;
-    return;
-  }
-
-  const defensive = nextIntent.kind === "defend";
-  const spawnLimit = defensive ? 28 : 40;
-  const originX = w * 0.14;
-  const originY = h * 0.54;
-  const chars = defensive ? ["*", "+", "o", "[", "]"] : ["{", "}", "x", "+"];
-  const guideColor = defensive ? "rgba(120, 198, 255, 0.96)" : "rgba(255, 102, 72, 0.96)";
-
-  ctx.save();
-  ctx.globalAlpha = defensive ? 0.34 : 0.4;
-  ctx.font = `bold ${Math.max(30, Math.round(w * 0.15))}px 'Courier New', monospace`;
-  ctx.fillStyle = guideColor;
-  ctx.shadowColor = guideColor;
-  ctx.shadowBlur = 22;
-  const guideGlyph = defensive ? "[]" : "{}";
-  for (let row = 0; row < 4; row += 1) {
-    const drift = Math.sin(now * 0.0045 + row * 0.8) * 4;
-    ctx.fillText(guideGlyph, w * 0.02, h * (0.2 + row * 0.16) + drift);
-  }
-  ctx.restore();
-
-  if (advanceFrame && Math.random() < (defensive ? 0.42 : 0.55) && sparks.length < spawnLimit) {
-    sparks.push({
-      x: originX + Math.random() * w * 0.24,
-      y: originY + (Math.random() - 0.5) * h * 0.28,
-      vx: 0.65 + Math.random() * 0.56,
-      vy: -(0.2 + Math.random() * 0.26),
-      char: chars[Math.floor(Math.random() * chars.length)],
-      color: defensive
-        ? `rgba(${90 + Math.random() * 40}, ${170 + Math.random() * 50}, 255, 1)`
-        : `rgba(255, ${70 + Math.random() * 60}, ${30 + Math.random() * 30}, 1)`,
-      alpha: 1,
-      life: 0,
-      maxLife: 34 + Math.random() * 34,
-      size: 20 + Math.random() * 12,
-    });
-  }
-
-  for (let index = sparks.length - 1; index >= 0; index -= 1) {
-    const spark = sparks[index];
-    if (advanceFrame) {
-      spark.x += spark.vx + Math.sin(now * 0.004 + index) * 0.12;
-      spark.y += spark.vy + Math.cos(now * 0.0035 + index * 0.6) * 0.06;
-      spark.life += 1;
-    }
-
-    if (spark.life > spark.maxLife || spark.x > w + 18 || spark.y < -18) {
-      sparks.splice(index, 1);
-      continue;
-    }
-
-    const fade = 1 - spark.life / spark.maxLife;
-    ctx.save();
-    ctx.globalAlpha = 0.18 + fade * 0.78;
-    ctx.font = `bold ${spark.size}px 'Courier New', monospace`;
-    ctx.fillStyle = spark.color;
-    ctx.shadowColor = spark.color;
-    ctx.shadowBlur = 18;
-    ctx.fillText(spark.char, spark.x, spark.y);
-    ctx.restore();
-  }
-}
-
-function renderOverlayEffects(
-  ctx: CanvasRenderingContext2D,
-  effects: SpriteEffect[],
-  targetSide: "player" | "monster",
-  w: number,
-  h: number,
-): void {
-  ctx.clearRect(0, 0, w, h);
-  const now = performance.now();
-
-  for (const effect of effects) {
-    if (effect.target !== targetSide) continue;
-    const elapsed = now - effect.startTime;
-    if (elapsed > effect.duration) continue;
-    const progress = elapsed / effect.duration;
-    const shieldPlane =
-      effect.type === "defend" ? getOverlayShieldPlane(targetSide, w, h) : null;
-
-    if (shieldPlane) {
-      const plateAlpha = effect.persistent
-        ? 0.72
-        : Math.max(0.22, (1 - progress) * 0.9);
-      drawShieldPlate(
-        ctx,
-        shieldPlane,
-        plateAlpha,
-        targetSide === "player"
-          ? "rgba(110, 180, 255, 1)"
-          : "rgba(90, 170, 255, 1)",
-      );
-    }
-
-    for (const p of effect.particles) {
-      p.life += 1;
-      if (p.life > p.maxLife && effect.type !== "defend") continue;
-      const lifeRatio = Math.min(p.life / p.maxLife, 1);
-
-      if (effect.type === "charge") {
-        // Spiral inward toward center
-        const cx = w * 0.5;
-        const cy = h * 0.45;
-        const dx = cx - p.x;
-        const dy = cy - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 2) {
-          const pullStrength = 0.02 + progress * 0.06;
-          p.vx += (dx / dist) * pullStrength;
-          p.vy += (dy / dist) * pullStrength;
-          p.vx += (-dy / dist) * 0.3;
-          p.vy += (dx / dist) * 0.3;
-          p.vx *= 0.96;
-          p.vy *= 0.96;
-        }
-        // Respawn particles that die (persistent loop)
-        if (lifeRatio > 0.95 && effect.persistent) {
-          const angle = Math.random() * Math.PI * 2;
-          const sDist = 40 + Math.random() * 60;
-          p.x = cx + Math.cos(angle) * sDist;
-          p.y = cy + Math.sin(angle) * sDist;
-          p.vx = 0;
-          p.vy = 0;
-          p.life = 0;
-          p.alpha = 0.8;
-        }
-      } else if (effect.type === "shieldCharge") {
-        // Expand outward from center
-        const cx = w * 0.5;
-        const cy = h * 0.45;
-        const dx = p.x - cx;
-        const dy = p.y - cy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 1) {
-          p.vx += (dx / dist) * 0.04;
-          p.vy += (dy / dist) * 0.04;
-          // Slight orbit
-          p.vx += (-dy / dist) * 0.15;
-          p.vy += (dx / dist) * 0.15;
-          p.vx *= 0.97;
-          p.vy *= 0.97;
-        }
-        if (lifeRatio > 0.95 && effect.persistent) {
-          const angle = Math.random() * Math.PI * 2;
-          p.x = cx + (Math.random() - 0.5) * 10;
-          p.y = cy + (Math.random() - 0.5) * 10;
-          p.vx = Math.cos(angle) * (0.3 + Math.random() * 0.5);
-          p.vy = Math.sin(angle) * (0.3 + Math.random() * 0.5);
-          p.life = 0;
-          p.alpha = 0.9;
-        }
-      } else if (effect.type === "hit") {
-        // Pull toward hit center (first particle's original position approximated by center)
-        if (p.life === 1) {
-          // Store original position as target
-          const angle = Math.atan2(p.y - h * 0.35, p.x - w * 0.4);
-          p.vx = -Math.cos(angle) * 1.2;
-          p.vy = -Math.sin(angle) * 1.2;
-        }
-        p.vx *= 0.92;
-        p.vy *= 0.92;
-      } else if (effect.type === "defend") {
-        const plane = shieldPlane ?? getOverlayShieldPlane(targetSide, w, h);
-        if (p.life > p.maxLife) {
-          const point = pointOnPlane(plane, Math.random(), Math.random());
-          const shieldChars = ["#", "=", "[", "]", "/", "\\"];
-          p.x = point.x;
-          p.y = point.y;
-          p.char = shieldChars[Math.floor(Math.random() * shieldChars.length)];
-          p.life = 0;
-          p.alpha = 0;
-          p.vx = (Math.random() - 0.5) * 0.18;
-          p.vy = (Math.random() - 0.5) * 0.14;
-        }
-        p.alpha = lifeRatio < 0.15 ? lifeRatio / 0.15 : effect.persistent ? 0.92 : 1 - progress;
-        p.x += Math.sin(p.life * 0.14 + p.y * 0.02) * 0.35;
-        p.y += Math.cos(p.life * 0.12 + p.x * 0.01) * 0.18;
-      }
-
-      p.x += p.vx;
-      p.y += p.vy;
-
-      // Fade based on life
-      let fadeAlpha = p.alpha;
-      if (effect.type !== "defend") {
-        fadeAlpha = lifeRatio > 0.6 ? p.alpha * (1 - (lifeRatio - 0.6) / 0.4) : p.alpha;
-      }
-      if (effect.type === "heal") {
-        // Wave motion
-        p.x += Math.sin(p.life * 0.12 + p.y * 0.05) * 0.6;
-        fadeAlpha = lifeRatio < 0.1 ? lifeRatio / 0.1 : fadeAlpha;
-      }
-
-      if (fadeAlpha <= 0) continue;
-
-      ctx.save();
-      ctx.globalAlpha = fadeAlpha;
-      ctx.font = `bold ${p.size}px 'Courier New', monospace`;
-      ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 8;
-      ctx.fillText(p.char, p.x, p.y);
-      ctx.restore();
-    }
-  }
-}
 
 /* ================================================================
    Component
@@ -1477,6 +1126,8 @@ export default function BattleCombat({
   playerStats,
   targetOptions,
   onAction,
+  potionAvailable,
+  onPotionUse,
   projectileCallbackRef,
 }: BattleCombatProps) {
   const [showPrompt, setShowPrompt] = useState(false);
@@ -1496,8 +1147,21 @@ export default function BattleCombat({
   const [monsterHitWaveProgress, setMonsterHitWaveProgress] = useState<number | null>(null);
   const [playerHitWaveScale, setPlayerHitWaveScale] = useState(1.35);
   const [monsterHitWaveScale, setMonsterHitWaveScale] = useState(1.35);
+  const [playerAsciiCanvasActive, setPlayerAsciiCanvasActive] = useState(false);
+  const [monsterImpactCanvasActive, setMonsterImpactCanvasActive] = useState(false);
+  const [potionHomePosition, setPotionHomePosition] = useState<Point | null>(null);
+  const [potionRestPosition, setPotionRestPosition] = useState<Point | null>(null);
+  const [potionDragPosition, setPotionDragPosition] = useState<Point | null>(null);
+  const [potionDragging, setPotionDragging] = useState(false);
+  const [potionHovered, setPotionHovered] = useState(false);
+  const [potionHoveringPlayer, setPotionHoveringPlayer] = useState(false);
+  const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const playerAsciiCanvasRef = useRef<HTMLCanvasElement>(null);
+  const monsterAsciiCanvasRef = useRef<HTMLCanvasElement>(null);
+  const playerAsciiPreRef = useRef<HTMLPreElement>(null);
+  const monsterAsciiPreRef = useRef<HTMLPreElement>(null);
   const playerOverlayRef = useRef<HTMLCanvasElement>(null);
   const monsterOverlayRef = useRef<HTMLCanvasElement>(null);
   const monsterIntentOverlayRef = useRef<HTMLCanvasElement>(null);
@@ -1513,16 +1177,28 @@ export default function BattleCombat({
   const noiseResetRef = useRef<number | null>(null);
   const playerHitWaveFrameRef = useRef<number | null>(null);
   const monsterHitWaveFrameRef = useRef<number | null>(null);
+  const potionPointerOffsetRef = useRef<Point>({ x: 0, y: 0 });
+  const potionRestModeRef = useRef<"home" | "dropped">("home");
+  const activePotionPointerIdRef = useRef<number | null>(null);
+  const playerAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
+  const monsterAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
+  const playerPotionDisplacementRef = useRef<LiveAsciiDisplacementState | null>(null);
+  const monsterImpactRef = useRef<MonsterAsciiImpactState | null>(null);
+  const monsterImpactCallbackTimeoutRef = useRef<number | null>(null);
+  const monsterImpactVisualTimeoutRef = useRef<number | null>(null);
   const prevPlayerHpRef = useRef(playerHp);
   const prevPlayerShieldRef = useRef(playerShield);
   const prevMonsterHpRef = useRef(monsterHp);
   const prevMonsterShieldRef = useRef(monsterShield);
 
   /* Keep text data in a ref so the RAF loop never needs to restart */
-  const textRef = useRef({ nextIntent, monsterShield, ambientText, battleLog });
-  textRef.current = { nextIntent, monsterShield, ambientText, battleLog };
-  const sceneAnchors = useRef(getSceneAnchors(W, H)).current;
-  const projectileSceneAnchors = useRef(getProjectileSceneAnchors(SCENE_W, SCENE_H)).current;
+  const textRef = useRef({ nextIntent, monsterShield, ambientText, battleLog, monsterHp, turn });
+  const sceneAnchors = useMemo(() => getSceneAnchors(W, H), []);
+  const projectileSceneAnchors = useMemo(() => getProjectileSceneAnchors(SCENE_W, SCENE_H), []);
+
+  useEffect(() => {
+    textRef.current = { nextIntent, monsterShield, ambientText, battleLog, monsterHp, turn };
+  }, [ambientText, battleLog, monsterHp, monsterShield, nextIntent, turn]);
 
   const pendingTargeting = pendingAction ? getActionTargeting(pendingAction) : null;
   const availableTargets = useMemo(() => {
@@ -1588,10 +1264,6 @@ export default function BattleCombat({
     [availableTargets, pendingAction, submitResolvedAction],
   );
 
-  useEffect(() => {
-    setSelectedTargetIndex(0);
-  }, [pendingAction, availableTargets.length]);
-
   const setCrtReaction = useCallback((noiseLevel: CrtNoiseLevel, duration: number) => {
     if (noiseResetRef.current) {
       window.clearTimeout(noiseResetRef.current);
@@ -1651,16 +1323,77 @@ export default function BattleCombat({
     frameRef.current = window.requestAnimationFrame(tick);
   }, []);
 
+  const triggerMonsterImpactBand = useCallback((
+    impactPoint: Point,
+    damage: number,
+    critical = false,
+  ) => {
+    const duration = getMonsterImpactBandDuration(critical);
+    const normalizedDamage = clamp01(damage / Math.max(1, monsterMaxHp));
+    const strength = Math.min(2.2, 1.26 + normalizedDamage * 1.62 + (critical ? 0.38 : 0));
+    const radiusRatio = Math.min(0.34, 0.19 + normalizedDamage * 0.12 + (critical ? 0.05 : 0));
+    const sceneRect = sceneFxCanvasRef.current?.getBoundingClientRect();
+    const spriteRect = monsterAsciiPreRef.current?.getBoundingClientRect();
+    const hasValidRects =
+      !!sceneRect && !!spriteRect && sceneRect.width > 0 && sceneRect.height > 0 && spriteRect.width > 0 && spriteRect.height > 0;
+    const centerRatio = hasValidRects
+      ? clamp01(
+          ((sceneRect.top + (impactPoint.y / SCENE_H) * sceneRect.height) - spriteRect.top) /
+            spriteRect.height,
+        )
+      : clamp01((impactPoint.y - SCENE_H * 0.045) / (SCENE_H * 0.72));
+    const columnRatio = hasValidRects
+      ? clamp01(
+          ((sceneRect.left + (impactPoint.x / SCENE_W) * sceneRect.width) - spriteRect.left) /
+            spriteRect.width,
+        )
+      : clamp01(
+          (impactPoint.x - (projectileSceneAnchors.monsterShield.x - (projectileSceneAnchors.monsterCore.x - projectileSceneAnchors.monsterShield.x) * 0.58)) /
+            Math.max(1, (projectileSceneAnchors.monsterCore.x - projectileSceneAnchors.monsterShield.x) * 2.5),
+        );
+    const direction: -1 | 1 = impactPoint.x <= projectileSceneAnchors.monsterCore.x ? 1 : -1;
+
+    if (monsterImpactVisualTimeoutRef.current) {
+      window.clearTimeout(monsterImpactVisualTimeoutRef.current);
+      monsterImpactVisualTimeoutRef.current = null;
+    }
+
+    monsterImpactRef.current = {
+      startedAt: performance.now(),
+      duration,
+      direction,
+      strength,
+      centerRatio,
+      columnRatio,
+      radiusRatio,
+    };
+    setMonsterImpactCanvasActive(true);
+    monsterImpactVisualTimeoutRef.current = window.setTimeout(() => {
+      monsterImpactVisualTimeoutRef.current = null;
+      monsterImpactRef.current = null;
+      setMonsterImpactCanvasActive(false);
+    }, duration + 34);
+  }, [monsterMaxHp, projectileSceneAnchors.monsterCore.x, projectileSceneAnchors.monsterShield.x]);
+
   useEffect(() => {
+    const playerHitWaveFrame = playerHitWaveFrameRef.current;
+    const monsterHitWaveFrame = monsterHitWaveFrameRef.current;
+
     return () => {
       if (noiseResetRef.current) {
         window.clearTimeout(noiseResetRef.current);
       }
-      if (playerHitWaveFrameRef.current) {
-        window.cancelAnimationFrame(playerHitWaveFrameRef.current);
+      if (playerHitWaveFrame) {
+        window.cancelAnimationFrame(playerHitWaveFrame);
       }
-      if (monsterHitWaveFrameRef.current) {
-        window.cancelAnimationFrame(monsterHitWaveFrameRef.current);
+      if (monsterHitWaveFrame) {
+        window.cancelAnimationFrame(monsterHitWaveFrame);
+      }
+      if (monsterImpactCallbackTimeoutRef.current) {
+        window.clearTimeout(monsterImpactCallbackTimeoutRef.current);
+      }
+      if (monsterImpactVisualTimeoutRef.current) {
+        window.clearTimeout(monsterImpactVisualTimeoutRef.current);
       }
     };
   }, []);
@@ -1687,6 +1420,10 @@ export default function BattleCombat({
     ),
   );
   const enemyShieldFill = Math.max(0, enemyTotalFill - enemyHealthFill);
+  const playerAsciiText = playerAscii.join("\n");
+  const playerAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(playerAscii), [playerAscii]);
+  const monsterAsciiText = monsterAscii.join("\n");
+  const monsterAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(monsterAscii), [monsterAscii]);
   const playerAsciiStyle = buildHitWaveTextStyle(
     "rgba(244, 244, 244, 0.98)",
     "rgba(176, 8, 20, 0.99)",
@@ -1705,6 +1442,368 @@ export default function BattleCombat({
     monsterHitWaveScale,
     shakeMonster,
   );
+  const playerAsciiClassName = `m-0 whitespace-pre text-[8.8px] leading-[9px] select-none sm:text-[10px] sm:leading-[10.2px] lg:text-[11.8px] lg:leading-[12px] ${
+    hitAbsorbPlayer ? "animate-hit-absorb" : ""
+  }`;
+  const monsterAsciiClassName = `m-0 whitespace-pre text-[6.1px] leading-[6.4px] select-none sm:text-[6.9px] sm:leading-[7.2px] lg:text-[8px] lg:leading-[8.3px] ${
+    hitAbsorbMonster ? "animate-hit-absorb" : ""
+  }`;
+  const playerAsciiRenderRef = useRef({ glyphs: playerAsciiGlyphs });
+  const monsterAsciiRenderRef = useRef({ glyphs: monsterAsciiGlyphs, tone: monsterTone });
+
+  useEffect(() => {
+    playerAsciiRenderRef.current = { glyphs: playerAsciiGlyphs };
+  }, [playerAsciiGlyphs]);
+
+  useEffect(() => {
+    monsterAsciiRenderRef.current = { glyphs: monsterAsciiGlyphs, tone: monsterTone };
+  }, [monsterAsciiGlyphs, monsterTone]);
+
+  const syncPlayerAsciiCanvasMetrics = useCallback(() => {
+    const canvas = playerAsciiCanvasRef.current;
+    const pre = playerAsciiPreRef.current;
+    if (!canvas || !pre) return;
+
+    const rect = pre.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetWidth = Math.max(1, Math.round(rect.width * dpr));
+    const targetHeight = Math.max(1, Math.round(rect.height * dpr));
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    const styles = window.getComputedStyle(pre);
+    const fontSize = parseFloat(styles.fontSize) || 12;
+    const lineHeight = parseFloat(styles.lineHeight) || fontSize * 1.05;
+    const font = `${styles.fontWeight} ${fontSize}px ${styles.fontFamily}`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = font;
+
+    playerAsciiMetricsRef.current = {
+      dpr,
+      width: rect.width,
+      height: rect.height,
+      charWidth: ctx.measureText("M").width,
+      lineHeight,
+      baseline: fontSize * 0.84 + Math.max(0, (lineHeight - fontSize) * 0.5),
+      font,
+    };
+  }, []);
+
+  const syncMonsterAsciiCanvasMetrics = useCallback(() => {
+    const canvas = monsterAsciiCanvasRef.current;
+    const pre = monsterAsciiPreRef.current;
+    if (!canvas || !pre) return;
+
+    const rect = pre.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetWidth = Math.max(1, Math.round(rect.width * dpr));
+    const targetHeight = Math.max(1, Math.round(rect.height * dpr));
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    const styles = window.getComputedStyle(pre);
+    const fontSize = parseFloat(styles.fontSize) || 8;
+    const lineHeight = parseFloat(styles.lineHeight) || fontSize * 1.05;
+    const font = `${styles.fontWeight} ${fontSize}px ${styles.fontFamily}`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.font = font;
+
+    monsterAsciiMetricsRef.current = {
+      dpr,
+      width: rect.width,
+      height: rect.height,
+      charWidth: ctx.measureText("M").width,
+      lineHeight,
+      baseline: fontSize * 0.84 + Math.max(0, (lineHeight - fontSize) * 0.5),
+      font,
+    };
+  }, []);
+
+  useEffect(() => {
+    syncPlayerAsciiCanvasMetrics();
+
+    const frame = window.requestAnimationFrame(syncPlayerAsciiCanvasMetrics);
+    const pre = playerAsciiPreRef.current;
+    let observer: ResizeObserver | null = null;
+
+    if (pre && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        syncPlayerAsciiCanvasMetrics();
+      });
+      observer.observe(pre);
+    }
+
+    window.addEventListener("resize", syncPlayerAsciiCanvasMetrics);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", syncPlayerAsciiCanvasMetrics);
+    };
+  }, [playerAsciiText, syncPlayerAsciiCanvasMetrics]);
+
+  useEffect(() => {
+    syncMonsterAsciiCanvasMetrics();
+
+    const frame = window.requestAnimationFrame(syncMonsterAsciiCanvasMetrics);
+    const pre = monsterAsciiPreRef.current;
+    let observer: ResizeObserver | null = null;
+
+    if (pre && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        syncMonsterAsciiCanvasMetrics();
+      });
+      observer.observe(pre);
+    }
+
+    window.addEventListener("resize", syncMonsterAsciiCanvasMetrics);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", syncMonsterAsciiCanvasMetrics);
+    };
+  }, [monsterAsciiText, syncMonsterAsciiCanvasMetrics]);
+
+  const syncPotionHomePosition = useCallback(() => {
+    const frame = battleFrameRef.current;
+    const playerPre = playerAsciiPreRef.current;
+    if (!frame || !playerPre) return;
+
+    const frameRect = frame.getBoundingClientRect();
+    const playerRect = playerPre.getBoundingClientRect();
+    if (frameRect.width < 1 || frameRect.height < 1 || playerRect.width < 1 || playerRect.height < 1) {
+      return;
+    }
+
+    const nextHome = {
+      x: playerRect.left - frameRect.left + playerRect.width * 0.55,
+      y: playerRect.top - frameRect.top + playerRect.height * 0.12,
+    };
+
+    setPotionHomePosition((current) => {
+      if (
+        current &&
+        Math.abs(current.x - nextHome.x) < 0.5 &&
+        Math.abs(current.y - nextHome.y) < 0.5
+      ) {
+        return current;
+      }
+      return nextHome;
+    });
+
+    setPotionRestPosition((current) => {
+      if (potionRestModeRef.current === "dropped" && current) {
+        return current;
+      }
+      if (
+        current &&
+        Math.abs(current.x - nextHome.x) < 0.5 &&
+        Math.abs(current.y - nextHome.y) < 0.5
+      ) {
+        return current;
+      }
+      return nextHome;
+    });
+  }, []);
+
+  useEffect(() => {
+    syncPotionHomePosition();
+
+    const frame = window.requestAnimationFrame(syncPotionHomePosition);
+    const playerPre = playerAsciiPreRef.current;
+    const battleFrame = battleFrameRef.current;
+    let observer: ResizeObserver | null = null;
+
+    if ((playerPre || battleFrame) && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        syncPotionHomePosition();
+      });
+      if (playerPre) {
+        observer.observe(playerPre);
+      }
+      if (battleFrame) {
+        observer.observe(battleFrame);
+      }
+    }
+
+    window.addEventListener("resize", syncPotionHomePosition);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", syncPotionHomePosition);
+    };
+  }, [playerAsciiText, potionAvailable, syncPotionHomePosition]);
+
+  const updatePotionHoverState = useCallback((framePoint: Point) => {
+    const frameRect = battleFrameRef.current?.getBoundingClientRect();
+    const playerRect = playerAsciiPreRef.current?.getBoundingClientRect();
+    if (!frameRect || !playerRect || playerRect.width < 1 || playerRect.height < 1) {
+      playerPotionDisplacementRef.current = null;
+      setPotionHoveringPlayer(false);
+      setPlayerAsciiCanvasActive(false);
+      return false;
+    }
+
+    const viewportPoint = {
+      x: frameRect.left + framePoint.x,
+      y: frameRect.top + framePoint.y,
+    };
+    const hovering = pointInsideDomRect(viewportPoint, playerRect, 18);
+    setPotionHoveringPlayer((current) => (current === hovering ? current : hovering));
+    setPlayerAsciiCanvasActive((current) => (current === hovering ? current : hovering));
+
+    if (!hovering) {
+      playerPotionDisplacementRef.current = null;
+      return false;
+    }
+
+    const columnRatio = clamp01((viewportPoint.x - playerRect.left) / playerRect.width);
+    const centerRatio = clamp01((viewportPoint.y - playerRect.top) / playerRect.height);
+    const centeredX = columnRatio - 0.5;
+    const centeredY = centerRatio - 0.44;
+    const distance = Math.min(1, Math.hypot(centeredX * 1.45, centeredY * 1.28));
+
+    playerPotionDisplacementRef.current = {
+      direction: centeredX <= 0 ? -1 : 1,
+      strength: 1.12 + (1 - distance) * 1.06,
+      centerRatio,
+      columnRatio,
+      radiusRatio: 0.22 + (1 - distance) * 0.08,
+    };
+    return true;
+  }, []);
+
+  const getClampedPotionFramePoint = useCallback((clientX: number, clientY: number) => {
+    const frameRect = battleFrameRef.current?.getBoundingClientRect();
+    if (!frameRect) {
+      return null;
+    }
+
+    const rawX = clientX - frameRect.left - potionPointerOffsetRef.current.x;
+    const rawY = clientY - frameRect.top - potionPointerOffsetRef.current.y;
+
+    return {
+      x: Math.max(POTION_WIDTH * 0.5, Math.min(frameRect.width - POTION_WIDTH * 0.5, rawX)),
+      y: Math.max(POTION_HEIGHT * 0.5, Math.min(frameRect.height - POTION_HEIGHT * 0.5, rawY)),
+    };
+  }, []);
+
+  const handlePotionPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!potionAvailable) return;
+
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    activePotionPointerIdRef.current = event.pointerId;
+    potionPointerOffsetRef.current = {
+      x: event.clientX - (targetRect.left + targetRect.width * 0.5),
+      y: event.clientY - (targetRect.top + targetRect.height * 0.5),
+    };
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setPotionDragging(true);
+
+    const nextPoint = getClampedPotionFramePoint(event.clientX, event.clientY);
+    if (!nextPoint) {
+      return;
+    }
+
+    setPotionDragPosition(nextPoint);
+    updatePotionHoverState(nextPoint);
+  }, [getClampedPotionFramePoint, potionAvailable, updatePotionHoverState]);
+
+  const handlePotionPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!potionDragging || activePotionPointerIdRef.current !== event.pointerId) return;
+
+    const nextPoint = getClampedPotionFramePoint(event.clientX, event.clientY);
+    if (!nextPoint) {
+      return;
+    }
+
+    event.preventDefault();
+    setPotionDragPosition(nextPoint);
+    updatePotionHoverState(nextPoint);
+  }, [getClampedPotionFramePoint, potionDragging, updatePotionHoverState]);
+
+  const finishPotionDrag = useCallback((
+    event: ReactPointerEvent<HTMLButtonElement>,
+    cancelled = false,
+  ) => {
+    if (activePotionPointerIdRef.current !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    activePotionPointerIdRef.current = null;
+
+    const nextPoint = getClampedPotionFramePoint(event.clientX, event.clientY);
+    const hoveringPlayer = cancelled || !nextPoint ? false : updatePotionHoverState(nextPoint);
+    let potionConsumed = false;
+
+    if (!cancelled && hoveringPlayer && nextPoint) {
+      const healedAmount = onPotionUse();
+      if (healedAmount > 0) {
+        potionConsumed = true;
+        const frameRect = battleFrameRef.current?.getBoundingClientRect();
+        if (frameRect && frameRect.width > 0 && frameRect.height > 0) {
+          spawnPotionShatterBurst(sceneScatterRef.current, {
+            x: (nextPoint.x / frameRect.width) * SCENE_W,
+            y: (nextPoint.y / frameRect.height) * SCENE_H,
+          });
+        } else {
+          spawnPotionShatterBurst(sceneScatterRef.current, projectileSceneAnchors.playerCore);
+        }
+      } else if (playerHp >= playerMaxHp && potionHomePosition) {
+        potionRestModeRef.current = "home";
+        setPotionRestPosition(potionHomePosition);
+      }
+    }
+
+    if (!potionConsumed && nextPoint) {
+      if (!(hoveringPlayer && playerHp >= playerMaxHp && potionHomePosition)) {
+        potionRestModeRef.current = "dropped";
+        setPotionRestPosition(nextPoint);
+      }
+    }
+
+    playerPotionDisplacementRef.current = null;
+    setPlayerAsciiCanvasActive(false);
+    setPotionHovered(false);
+    setPotionHoveringPlayer(false);
+    setPotionDragging(false);
+    setPotionDragPosition(null);
+  }, [getClampedPotionFramePoint, onPotionUse, playerHp, playerMaxHp, potionHomePosition, projectileSceneAnchors.playerCore, updatePotionHoverState]);
+
+  const handlePotionPointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    finishPotionDrag(event, false);
+  }, [finishPotionDrag]);
+
+  const handlePotionPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    finishPotionDrag(event, true);
+  }, [finishPotionDrag]);
 
   // ── Effect helpers ──
   const triggerEffect = useCallback(
@@ -1864,7 +1963,12 @@ export default function BattleCombat({
       }
     }
     prevMonsterShieldRef.current = monsterShield;
-  }, [monsterShield, projectileSceneAnchors.monsterShield]);
+  }, [
+    monsterShield,
+    projectileSceneAnchors.monsterShield,
+    sceneAnchors.monsterShield.center.x,
+    sceneAnchors.monsterShield.center.y,
+  ]);
 
   // ── Detect monster death (guard: only fire once, delayed for projectile+hit) ──
   const monsterDeathFiredRef = useRef(false);
@@ -1918,9 +2022,11 @@ export default function BattleCombat({
   const flashMonsterImpact = useCallback(
     (word: string, impactPoint: Point, element?: string, damage = 0, critical = false) => {
       const impactTone = critical ? "critical" : word === "STRIKE" ? "strike" : element;
+      const settleDelay = getMonsterImpactSettleDelay(critical);
       setShakeMonster(true);
       window.setTimeout(() => setShakeMonster(false), 600);
       startHitWave("monster", 620, damage, monsterMaxHp);
+      triggerMonsterImpactBand(impactPoint, damage, critical);
       if (word === "STRIKE") {
         triggerEffect("slash", "monster", 1320);
       } else {
@@ -1930,8 +2036,9 @@ export default function BattleCombat({
       spawnImpactBurst(sceneScatterRef.current, impactPoint, "monsterHit", impactTone);
       setHitAbsorbMonster(true);
       window.setTimeout(() => setHitAbsorbMonster(false), 620);
+      return settleDelay;
     },
-    [monsterMaxHp, startHitWave, triggerEffect],
+    [monsterMaxHp, startHitWave, triggerEffect, triggerMonsterImpactBand],
   );
 
   const flashPlayerImpact = useCallback((outcome: "partial" | "full" = "full", damage = 0) => {
@@ -1961,23 +2068,49 @@ export default function BattleCombat({
           window.setTimeout(() => setLungePlayer(false), 700);
         }
 
+        const isSelfReturn = request.targetSide === "player" && !request.missed;
+        const missHeading = {
+          x: projectileSceneAnchors.monsterCore.x - projectileSceneAnchors.playerMuzzle.x,
+          y: projectileSceneAnchors.monsterCore.y - projectileSceneAnchors.playerMuzzle.y,
+        };
+        const isMonsterBodyHit =
+          !request.missed &&
+          request.targetSide === "enemy" &&
+          !request.blocked &&
+          !isSelfReturn;
         const target = request.missed
-          ? sampleRandomOffscreenPoint(projectileSceneAnchors.playerMuzzle)
-          : request.targetSide === "player"
+          ? sampleRandomOffscreenPoint(projectileSceneAnchors.playerMuzzle, missHeading)
+          : isSelfReturn
             ? request.blocked
               ? projectileSceneAnchors.playerShield
               : projectileSceneAnchors.playerCore
             : request.blocked
               ? projectileSceneAnchors.monsterShield
-              : projectileSceneAnchors.monsterCore;
+              : isMonsterBodyHit
+                ? sampleMonsterImpactPoint(projectileSceneAnchors)
+                : projectileSceneAnchors.monsterCore;
+        const returnTurn = isSelfReturn
+          ? {
+              x: projectileSceneAnchors.playerMuzzle.x + SCENE_W * 0.24,
+              y: projectileSceneAnchors.playerMuzzle.y - SCENE_H * 0.23,
+            }
+          : undefined;
+        const returnControl = isSelfReturn && returnTurn
+          ? {
+              x: returnTurn.x + SCENE_W * 0.04,
+              y: returnTurn.y + SCENE_H * 0.05,
+            }
+          : undefined;
         const directionX = target.x - projectileSceneAnchors.playerMuzzle.x;
         const directionY = target.y - projectileSceneAnchors.playerMuzzle.y;
         const directionLength = Math.max(1, Math.hypot(directionX, directionY));
         const impactInset = request.missed
           ? 0
-          : request.targetSide === "player"
+          : isSelfReturn
             ? 8 + request.word.length * 5
-            : 16 + request.word.length * 11;
+            : isMonsterBodyHit
+              ? 0
+              : 16 + request.word.length * 11;
         const impactX = target.x + (directionX / directionLength) * impactInset;
         const impactY = target.y + (directionY / directionLength) * impactInset;
 
@@ -1987,12 +2120,14 @@ export default function BattleCombat({
           y: projectileSceneAnchors.playerMuzzle.y,
           startX: projectileSceneAnchors.playerMuzzle.x,
           startY: projectileSceneAnchors.playerMuzzle.y,
+          controlX: returnControl?.x,
+          controlY: returnControl?.y,
+          turnX: returnTurn?.x,
+          turnY: returnTurn?.y,
           targetX: impactX,
           targetY: impactY,
           startTime: performance.now(),
-          duration: 920,
-          arcHeight: 0,
-          sway: 0,
+          duration: isSelfReturn ? 1180 : 920,
           alive: true,
           fromPlayer: true,
           element: request.element,
@@ -2014,18 +2149,33 @@ export default function BattleCombat({
             }
             if (!request.blocked) {
               if (request.targetSide === "player") {
+                spawnImpactBurst(
+                  sceneScatterRef.current,
+                  { x: impactX, y: impactY },
+                  "monsterHit",
+                  request.critical ? "critical" : request.element ?? "strike",
+                );
                 flashPlayerImpact(
                   request.shielded ? "partial" : "full",
                   request.impactDamage ?? 0,
                 );
               } else {
-                flashMonsterImpact(
+                const settleDelay = flashMonsterImpact(
                   request.word,
                   { x: impactX, y: impactY },
                   request.element,
                   request.impactDamage ?? 0,
                   request.critical,
                 );
+                if (monsterImpactCallbackTimeoutRef.current) {
+                  window.clearTimeout(monsterImpactCallbackTimeoutRef.current);
+                  monsterImpactCallbackTimeoutRef.current = null;
+                }
+                monsterImpactCallbackTimeoutRef.current = window.setTimeout(() => {
+                  monsterImpactCallbackTimeoutRef.current = null;
+                  request.onImpact?.();
+                }, settleDelay);
+                return;
               }
             }
             request.onImpact?.();
@@ -2067,14 +2217,8 @@ export default function BattleCombat({
     flashPlayerImpact,
     flashShieldImpact,
     projectileCallbackRef,
-    projectileSceneAnchors.monsterCore,
-    projectileSceneAnchors.monsterShield,
-    projectileSceneAnchors.playerCore,
-    projectileSceneAnchors.playerMuzzle,
-    projectileSceneAnchors.playerShield,
-    sceneAnchors.slashControl,
-    sceneAnchors.slashEnd,
-    sceneAnchors.slashStart,
+    projectileSceneAnchors,
+    sceneAnchors,
   ]);
 
   // ── Canvas loop — pretext dynamic layout + projectiles + effects ──
@@ -2105,6 +2249,8 @@ export default function BattleCombat({
         monsterShield: mShield,
         ambientText: ambient,
         battleLog: log,
+        monsterHp: currentMonsterHp,
+        turn: currentTurn,
       } = textRef.current;
       const projectiles = projectilesRef.current;
       const slashes = slashesRef.current;
@@ -2210,13 +2356,92 @@ export default function BattleCombat({
         if (!p.alive) continue;
 
         const progress = clamp01((now - p.startTime) / p.duration);
-        const travel = easeInCubic(progress);
-        const baseX = lerp(p.startX, p.targetX, travel);
-        const baseY = lerp(p.startY, p.targetY, travel);
-        const angle = Math.atan2(p.targetY - p.startY, p.targetX - p.startX);
+        const hasReturnTurn = p.turnX !== undefined && p.turnY !== undefined;
+        const travel = hasReturnTurn
+          ? progress
+          : p.controlX !== undefined && p.controlY !== undefined
+            ? easeInOutCubic(progress)
+            : easeInCubic(progress);
+        const basePoint = hasReturnTurn
+          ? (() => {
+              const split = 0.54;
+              if (travel <= split) {
+                const outbound = easeOutCubic(travel / split);
+                return sampleQuadraticPoint(
+                  { x: p.startX, y: p.startY },
+                  {
+                    x: lerp(p.startX, p.turnX!, 0.78),
+                    y: Math.min(p.startY, p.turnY!) - SCENE_H * 0.035,
+                  },
+                  { x: p.turnX!, y: p.turnY! },
+                  outbound,
+                );
+              }
 
-        p.x = baseX;
-        p.y = baseY;
+              const returning = easeInOutCubic((travel - split) / (1 - split));
+              return sampleQuadraticPoint(
+                { x: p.turnX!, y: p.turnY! },
+                {
+                  x: p.controlX ?? lerp(p.turnX!, p.targetX, 0.35),
+                  y: p.controlY ?? lerp(p.turnY!, p.targetY, 0.45),
+                },
+                { x: p.targetX, y: p.targetY },
+                returning,
+              );
+            })()
+          : p.controlX !== undefined && p.controlY !== undefined
+            ? sampleQuadraticPoint(
+                { x: p.startX, y: p.startY },
+                { x: p.controlX, y: p.controlY },
+                { x: p.targetX, y: p.targetY },
+                travel,
+              )
+            : {
+                x: lerp(p.startX, p.targetX, travel),
+                y: lerp(p.startY, p.targetY, travel),
+              };
+        const tangent = hasReturnTurn
+          ? (() => {
+              const split = 0.54;
+              if (travel <= split) {
+                const outbound = easeOutCubic(travel / split);
+                return sampleQuadraticTangent(
+                  { x: p.startX, y: p.startY },
+                  {
+                    x: lerp(p.startX, p.turnX!, 0.78),
+                    y: Math.min(p.startY, p.turnY!) - SCENE_H * 0.035,
+                  },
+                  { x: p.turnX!, y: p.turnY! },
+                  outbound,
+                );
+              }
+
+              const returning = easeInOutCubic((travel - split) / (1 - split));
+              return sampleQuadraticTangent(
+                { x: p.turnX!, y: p.turnY! },
+                {
+                  x: p.controlX ?? lerp(p.turnX!, p.targetX, 0.35),
+                  y: p.controlY ?? lerp(p.turnY!, p.targetY, 0.45),
+                },
+                { x: p.targetX, y: p.targetY },
+                returning,
+              );
+            })()
+          : p.controlX !== undefined && p.controlY !== undefined
+            ? sampleQuadraticTangent(
+                { x: p.startX, y: p.startY },
+                { x: p.controlX, y: p.controlY },
+                { x: p.targetX, y: p.targetY },
+                travel,
+              )
+            : {
+                x: p.targetX - p.startX,
+                y: p.targetY - p.startY,
+              };
+        const angle = Math.atan2(tangent.y, tangent.x);
+
+        p.x = basePoint.x;
+        p.y = basePoint.y;
 
         p.offsets.forEach((offset) => {
           offset.dx = 0;
@@ -2473,6 +2698,38 @@ export default function BattleCombat({
         sceneFxCtx.restore();
       }
 
+      const playerAsciiCanvas = playerAsciiCanvasRef.current;
+      if (playerAsciiCanvas) {
+        const playerAsciiCtx = playerAsciiCanvas.getContext("2d");
+        if (playerAsciiCtx) {
+          renderLiveAsciiDisplacementCanvas(
+            playerAsciiCtx,
+            playerAsciiCanvas,
+            playerAsciiMetricsRef.current,
+            playerAsciiRenderRef.current.glyphs,
+            playerPotionDisplacementRef.current,
+            PLAYER_ASCII_CANVAS_TONE,
+            now,
+          );
+        }
+      }
+
+      const monsterAsciiCanvas = monsterAsciiCanvasRef.current;
+      if (monsterAsciiCanvas) {
+        const monsterAsciiCtx = monsterAsciiCanvas.getContext("2d");
+        if (monsterAsciiCtx) {
+          renderMonsterAsciiImpactCanvas(
+            monsterAsciiCtx,
+            monsterAsciiCanvas,
+            monsterAsciiMetricsRef.current,
+            monsterAsciiRenderRef.current.glyphs,
+            monsterImpactRef.current,
+            monsterAsciiRenderRef.current.tone,
+            now,
+          );
+        }
+      }
+
       // ── Sprite overlay effects ──
       const effects = effectsRef.current;
       const playerOverlay = playerOverlayRef.current;
@@ -2500,7 +2757,7 @@ export default function BattleCombat({
             intentSparksRef.current,
             now,
             intent,
-            turn === "player" && monsterHp > 0,
+            currentTurn === "player" && currentMonsterHp > 0,
             advanceIntentSparkFrame,
             monsterIntentOverlay.width,
             monsterIntentOverlay.height,
@@ -2660,16 +2917,6 @@ export default function BattleCombat({
     [promptInput, stageAction, turn],
   );
 
-  // Reset prompt on monster turn
-  useEffect(() => {
-    if (turn === "monster") {
-      setShowPrompt(false);
-      setPromptInput("");
-      setPendingAction(null);
-      setSelectedTargetIndex(0);
-    }
-  }, [turn]);
-
   const CHOICES = [
     { key: "1", label: "Attack", hint: "Physical attack" },
     { key: "2", label: "Defend", hint: "Raise a shield" },
@@ -2693,10 +2940,14 @@ export default function BattleCombat({
       : pendingTargeting === "single"
         ? "Self-targets always hit. Other targets use your current hit and crit chances."
         : "This action can only affect yourself.";
+  const activePotionPosition = potionDragging
+    ? potionDragPosition ?? potionRestPosition ?? potionHomePosition
+    : potionRestPosition ?? potionHomePosition;
 
   return (
     <div className="flex w-full flex-col items-center gap-4 px-3 pb-8 animate-fade-in-quick sm:px-4">
       <div
+        ref={battleFrameRef}
         className="relative w-full max-w-[1140px] overflow-hidden rounded-[24px] border border-white/10 bg-[#060606] shadow-[inset_0_0_60px_rgba(0,0,0,0.62),0_0_42px_rgba(0,0,0,0.78)]"
         style={{
           aspectRatio: "16 / 10",
@@ -2723,30 +2974,90 @@ export default function BattleCombat({
         />
 
         <div
-          className={`absolute bottom-[-17%] left-[-4%] z-40 ${
+          className={`absolute bottom-[-11%] left-[-4%] z-40 ${
             shakePlayer ? "animate-sprite-shake" : ""
           } ${lungePlayer ? "animate-player-lunge" : ""}`}
         >
-          <div className="relative origin-bottom-left animate-player-breathe">
+          <div
+            className={`relative origin-bottom-left animate-player-breathe ${
+              potionHoveringPlayer ? "drop-shadow-[0_0_18px_rgba(255,112,112,0.18)]" : ""
+            }`}
+          >
             <pre
-              className={`m-0 whitespace-pre text-[8.8px] leading-[9px] select-none sm:text-[10px] sm:leading-[10.2px] lg:text-[11.8px] lg:leading-[12px] ${
-                hitAbsorbPlayer ? "animate-hit-absorb" : ""
-              }`}
-              style={playerAsciiStyle}
+              ref={playerAsciiPreRef}
+              className={playerAsciiClassName}
+              style={{
+                ...playerAsciiStyle,
+                opacity: playerAsciiCanvasActive ? 0 : 1,
+              }}
             >
-              {playerAscii.join("\n")}
+              {playerAsciiText}
             </pre>
+            <canvas
+              ref={playerAsciiCanvasRef}
+              className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+              style={{ opacity: playerAsciiCanvasActive ? 1 : 0 }}
+            />
             <canvas
               ref={playerOverlayRef}
               width={980}
               height={980}
-              className="pointer-events-none absolute inset-0 h-full w-full"
+              className="pointer-events-none absolute inset-0 z-[2] h-full w-full"
             />
           </div>
         </div>
 
+        {potionAvailable && activePotionPosition && (
+          <button
+            type="button"
+            aria-label="Drag the health potion onto the player"
+            className="absolute z-[44] border-0 bg-transparent p-0"
+            style={{
+              left: `${activePotionPosition.x}px`,
+              top: `${activePotionPosition.y}px`,
+              transform: `translate(-50%, -50%) scale(${potionDragging ? 1.06 : potionHoveringPlayer ? 1.08 : 1})`,
+              animation: potionDragging
+                ? "none"
+                : "potion-orbit 5.2s cubic-bezier(0.37, 0, 0.18, 1) infinite, potion-spin 7.8s linear infinite",
+              touchAction: "none",
+            }}
+            onPointerDown={handlePotionPointerDown}
+            onPointerMove={handlePotionPointerMove}
+            onPointerUp={handlePotionPointerUp}
+            onPointerCancel={handlePotionPointerCancel}
+            onMouseEnter={() => setPotionHovered(true)}
+            onMouseLeave={() => setPotionHovered(false)}
+          >
+            <div
+              className={`relative flex h-[92px] w-[56px] items-start justify-center transition-[filter,transform] duration-150 ${
+                potionDragging ? "cursor-grabbing" : "cursor-grab"
+              }`}
+              style={{
+                filter: potionHoveringPlayer
+                  ? "drop-shadow(0 0 22px rgba(255, 76, 76, 0.36)) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.36))"
+                  : "drop-shadow(0 0 14px rgba(255, 92, 92, 0.22)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.32))",
+              }}
+            >
+              <span className="pointer-events-none absolute left-1/2 top-[-0.9rem] -translate-x-1/2 whitespace-nowrap font-crt text-[0.52rem] tracking-[0.18em] text-[rgba(255,156,156,0.82)] [text-shadow:0_0_6px_rgba(184,28,44,0.26)]">
+                POTION
+              </span>
+              <div className="pointer-events-none absolute left-1/2 top-[66px] h-[15px] w-[34px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,102,102,0.34)_0%,rgba(255,102,102,0.06)_58%,rgba(255,102,102,0)_100%)] blur-[4px]" />
+              <div className="pointer-events-none absolute left-1/2 top-[7px] -translate-x-1/2">
+                <HealthPotion />
+              </div>
+              <span
+                className={`pointer-events-none absolute left-1/2 top-[calc(100%+0.15rem)] -translate-x-1/2 whitespace-nowrap font-crt text-[0.5rem] tracking-[0.06em] text-[rgba(255,186,186,0.78)] transition-opacity duration-150 ${
+                  potionHovered && !potionDragging ? "opacity-100" : "opacity-0"
+                }`}
+              >
+                heal +8 hp, free action
+              </span>
+            </div>
+          </button>
+        )}
+
         <div
-          className={`absolute right-[17%] top-[6%] z-20 ${
+          className={`absolute right-[12.5%] top-[2.8%] z-20 ${
             shakeMonster ? "animate-sprite-shake" : ""
           } ${monsterDying ? "animate-monster-sink" : ""}`}
         >
@@ -2757,15 +3068,22 @@ export default function BattleCombat({
               height={540}
               className="pointer-events-none absolute left-[calc(100%+0.45rem)] top-[2%] z-40 h-[92%] w-[150px] mix-blend-screen opacity-95 sm:w-[180px] lg:w-[220px]"
             />
-            <div className="relative origin-bottom animate-enemy-idle">
+            <div className="relative inline-block origin-bottom align-top animate-enemy-idle">
               <pre
-                className={`m-0 whitespace-pre text-[8.4px] leading-[8.7px] select-none sm:text-[9.6px] sm:leading-[9.9px] lg:text-[11.2px] lg:leading-[11.5px] ${
-                  hitAbsorbMonster ? "animate-hit-absorb" : ""
-                }`}
-                style={monsterAsciiStyle}
+                ref={monsterAsciiPreRef}
+                className={monsterAsciiClassName}
+                style={{
+                  ...monsterAsciiStyle,
+                  opacity: monsterImpactCanvasActive ? 0 : 1,
+                }}
               >
-                {monsterAscii.join("\n")}
+                {monsterAsciiText}
               </pre>
+              <canvas
+                ref={monsterAsciiCanvasRef}
+                className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+                style={{ opacity: monsterImpactCanvasActive ? 1 : 0 }}
+              />
               <canvas
                 ref={monsterOverlayRef}
                 width={960}
@@ -2775,22 +3093,24 @@ export default function BattleCombat({
             </div>
 
             <div className="absolute left-1/2 top-[calc(100%+0.4rem)] z-30 -translate-x-1/2 font-crt text-[0.82rem] leading-[1.1] whitespace-nowrap">
-              <span className="text-white/70">[</span>
-              {Array.from({ length: enemyBarWidth }, (_, index) => {
-                const toneClass =
-                  index < enemyHealthFill
-                    ? "text-[rgba(224,130,118,0.9)]"
-                    : index < enemyHealthFill + enemyShieldFill
-                      ? "text-[rgba(118,176,255,0.92)]"
-                      : "text-white/22";
-                const char = index < enemyHealthFill + enemyShieldFill ? "#" : "-";
-                return (
-                  <span key={`enemy-bar-${index}`} className={toneClass}>
-                    {char}
-                  </span>
-                );
-              })}
-              <span className="text-white/70">]</span>
+              <span className="relative inline-block align-top">
+                <span className="text-white/70">[</span>
+                {Array.from({ length: enemyBarWidth }, (_, index) => {
+                  const toneClass =
+                    index < enemyHealthFill
+                      ? "text-[rgba(224,130,118,0.9)]"
+                      : index < enemyHealthFill + enemyShieldFill
+                        ? "text-[rgba(118,176,255,0.92)]"
+                        : "text-white/22";
+                  const char = index < enemyHealthFill + enemyShieldFill ? "#" : "-";
+                  return (
+                    <span key={`enemy-bar-${index}`} className={toneClass}>
+                      {char}
+                    </span>
+                  );
+                })}
+                <span className="text-white/70">]</span>
+              </span>
               <span className="ml-2 text-white/58">
                 {monsterHp}/{monsterMaxHp}
               </span>
@@ -2866,7 +3186,16 @@ export default function BattleCombat({
                 onClick={() => confirmTargetAtIndex(index)}
                 onMouseEnter={() => setSelectedTargetIndex(index)}
               >
-                {selectedTargetIndex === index ? "> " : "  "}[{index + 1}] {target.name}
+                {selectedTargetIndex === index ? "> " : "  "}[{index + 1}] {" "}
+                <span
+                  className={target.side === "enemy"
+                    ? selectedTargetIndex === index
+                      ? "text-[rgba(255,118,108,0.98)]"
+                      : "text-[rgba(214,78,68,0.94)]"
+                    : undefined}
+                >
+                  {target.name}
+                </span>
                 <span className="ml-3 text-[0.72rem] text-white/28">
                   hit {hitChance}% | crit {critChance}%
                 </span>

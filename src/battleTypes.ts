@@ -49,7 +49,8 @@ export function getBaseShield(stats: PlayerStats): number {
   return 2 + Math.floor(stats.agility * 1.5);
 }
 
-export function getHealAmount(_stats: PlayerStats): number {
+export function getHealAmount(stats?: PlayerStats): number {
+  void stats;
   return 5;
 }
 
@@ -315,17 +316,17 @@ export const HOLLOW_WRAITH: MonsterDef = {
   maxHp: 60,
   element: undefined, // no innate element
   intents: [
-    { kind: "attack", label: "어둠의 발톱을 준비하는 듯 하다...", damage: 8 },
-    { kind: "attack", label: "공격을 준비하는 듯 하다...", damage: 6 },
-    { kind: "defend", label: "방어를 굳히는 것 같다...", damage: 0 },
+    { kind: "attack", label: "drawing a sword...", damage: 8 },
+    { kind: "attack", label: "preparing an attack...", damage: 6 },
+    { kind: "defend", label: "bracing for defense...", damage: 0 },
     {
       kind: "spell",
-      label: "불의 기운을 모으고 있다...",
+      label: "gathering the power of fire...",
       damage: 12,
       element: "fire",
     },
-    { kind: "attack", label: "맹렬하게 돌진하려는 것 같다...", damage: 10 },
-    { kind: "defend", label: "무언가 소환하려는 것 같다...", damage: 0 },
+    { kind: "attack", label: "charging fiercely...", damage: 10 },
+    { kind: "defend", label: "summoning something...", damage: 0 },
   ],
   revealTurnsAhead: 1,
 };
@@ -351,20 +352,22 @@ function clampChance(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+const TEST_NON_SELF_HIT_CHANCE = 0.85;
+
 export function getAttackHitChance(
-  stats: PlayerStats,
+  _stats: PlayerStats,
   targetSide: BattleTargetSide,
 ): number {
   if (targetSide === "player") return 1;
-  return clampChance(0.8 + stats.agility * 0.015, 0.8, 0.97);
+  return clampChance(TEST_NON_SELF_HIT_CHANCE, 0, 1);
 }
 
 export function getSpellHitChance(
-  stats: PlayerStats,
+  _stats: PlayerStats,
   targetSide: BattleTargetSide,
 ): number {
   if (targetSide === "player") return 1;
-  return clampChance(0.8 + stats.literacy * 0.015, 0.8, 0.97);
+  return clampChance(TEST_NON_SELF_HIT_CHANCE, 0, 1);
 }
 
 export function getAttackCritChance(stats: PlayerStats): number {
@@ -412,8 +415,9 @@ export function getActionHitChance(
 export function getActionCritChance(
   action: PlayerActionDraft | PlayerAction,
   stats: PlayerStats,
-  _targetSide: BattleTargetSide,
+  targetSide?: BattleTargetSide,
 ): number {
+  void targetSide;
   switch (action.type) {
     case "attack":
       return getAttackCritChance(stats);

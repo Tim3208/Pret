@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import ResourceChargeBurst from "./ResourceChargeBurst";
 
 interface ManaFlaskProps {
   current: number;
@@ -41,7 +42,6 @@ export default function ManaFlask({ current, max }: ManaFlaskProps) {
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
-
   const fillRatio = Math.max(0, Math.min(1, current / max));
   const lines: string[] = [];
 
@@ -115,6 +115,7 @@ export default function ManaFlask({ current, max }: ManaFlaskProps) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      <ResourceChargeBurst triggerValue={current} width={74} height={88} particleCount={26} tone="mana" />
       <pre className="m-0 whitespace-pre text-[9px] leading-[1.1] text-[rgba(60,140,255,0.85)] select-none [text-shadow:0_0_4px_rgba(40,100,220,0.3)]">
         {lines.join("\n")}
       </pre>

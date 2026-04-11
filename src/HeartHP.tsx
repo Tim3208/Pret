@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import ResourceChargeBurst from "./ResourceChargeBurst";
 
 /**
  * 하트 HP 컴포넌트가 받는 현재/최대 체력 값이다.
@@ -34,11 +35,11 @@ const COLS = HEART_MASK[0].length;
 /**
  * 수면 경계에서 사용할 문자 목록이다.
  */
-const WATER_SURFACE = ["~", "-"];
+const WATER_SURFACE = ["~", "≈"];
 /**
  * 하트 내부를 채우는 물결 밀도 문자 목록이다.
  */
-const WATER_BODY = ["=", "+", "*", "#"];
+const WATER_BODY = ["█", "▓", "▒", "░"];
 /**
  * 비어 있는 공간을 표현할 문자 목록이다.
  */
@@ -89,7 +90,6 @@ export default function HeartHP({ current, max, shield = 0 }: HeartHPProps) {
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
-
   /**
    * 현재 체력을 0~1 범위의 비율로 정규화한 값이다.
    */
@@ -185,6 +185,7 @@ export default function HeartHP({ current, max, shield = 0 }: HeartHPProps) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
+      <ResourceChargeBurst triggerValue={current} width={82} height={88} particleCount={28} tone="health" />
       <pre className={`m-0 whitespace-pre text-[9px] leading-[1.1] text-heart select-none [text-shadow:0_0_4px_rgba(200,40,50,0.3)] ${shieldActive ? "[text-shadow:0_0_6px_rgba(60,140,255,0.4)]" : ""}`}>
         {lines.join("\n")}
       </pre>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BattleCombat from "./BattleCombat";
 import SkullEncounter from "./SkullEncounter";
-import { useImageToAscii } from "./useImageToAscii";
+import { useAsciiAsset } from "./useAsciiAsset";
 import {
   type BattleTargetOption,
   type BattleLogEntry,
@@ -55,31 +55,11 @@ interface Props {
 }
 
 export default function BattleScene({ onBattleEnd }: Props) {
-  const { lines: playerAscii, loading: playerLoading } = useImageToAscii(
-    "/assets/new_hero.png",
-    134,
-    {
-      flip: false,
-      brightnessThreshold: 10,
-      contrast: 1.72,
-      exposure: 1.01,
-      alphaThreshold: 18,
-      blackPoint: 0.1,
-      whitePoint: 0.86,
-    },
+  const { lines: playerAscii, loading: playerLoading } = useAsciiAsset(
+    "/assets/new_hero_ascii.md",
   );
-  const { lines: monsterAscii, loading: monsterLoading } = useImageToAscii(
-    "/assets/new_enemy.png",
-    72,
-    {
-      flip: false,
-      brightnessThreshold: 14,
-      contrast: 1.8,
-      exposure: 0.98,
-      alphaThreshold: 12,
-      blackPoint: 0.14,
-      whitePoint: 0.82,
-    },
+  const { lines: monsterAscii, loading: monsterLoading } = useAsciiAsset(
+    "/assets/new_enemy_ascii.md",
   );
 
   const monster = HOLLOW_WRAITH;
@@ -101,6 +81,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
   );
   const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
   const [ambientIndex, setAmbientIndex] = useState(0);
+  const [potionUsed, setPotionUsed] = useState(false);
   const ambientText = useMemo(() => AMBIENT_LINES[ambientIndex % AMBIENT_LINES.length], [ambientIndex]);
   const targetOptions = useMemo<BattleTargetOption[]>(
     () => [
@@ -125,9 +106,28 @@ export default function BattleScene({ onBattleEnd }: Props) {
     addLog("The battle begins!", "text-ember");
   }, [addLog]);
 
+  const handlePotionUse = useCallback(() => {
+    if (phase !== "combat" || potionUsed || playerHp >= maxHp) {
+      return 0;
+    }
+
+    const healAmount = Math.min(maxHp - playerHp, Math.max(8, getHealAmount(stats) + 3));
+    if (healAmount <= 0) {
+      return 0;
+    }
+
+    setPotionUsed(true);
+    setPlayerHp((value) => Math.min(maxHp, value + healAmount));
+    addLog(`The crimson flask bursts over you... +${healAmount} HP`, "text-green-300");
+    return healAmount;
+  }, [addLog, maxHp, phase, playerHp, potionUsed, stats]);
+
   const monsterShieldRef = useRef(monsterShield);
-  monsterShieldRef.current = monsterShield;
   const monsterTurnFastForwardRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    monsterShieldRef.current = monsterShield;
+  }, [monsterShield]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -421,9 +421,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
   // Refs for values the monster-turn effect needs to read WITHOUT re-triggering
   const nextIntentRef = useRef(nextIntent);
-  nextIntentRef.current = nextIntent;
   const playerShieldRef = useRef(playerShield);
-  playerShieldRef.current = playerShield;
+
+  useEffect(() => {
+    nextIntentRef.current = nextIntent;
+    playerShieldRef.current = playerShield;
+  }, [nextIntent, playerShield]);
 
   // ── Monster turn ──
   useEffect(() => {
@@ -626,6 +629,8 @@ export default function BattleScene({ onBattleEnd }: Props) {
             playerStats={stats}
             targetOptions={targetOptions}
             onAction={handlePlayerAction}
+            potionAvailable={!potionUsed}
+            onPotionUse={handlePotionUse}
             projectileCallbackRef={projectileCallbackRef}
           />
         )}

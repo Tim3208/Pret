@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import BattleScene, { type BattleResult } from "./BattleScene";
+import BattleScene from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
 
 /**
@@ -21,7 +21,7 @@ export default function App() {
    */
   const [phase, setPhase] = useState<"text" | "transition" | "battle">("text");
 
-  const handleBattleEnd = useCallback((_result: BattleResult) => {
+  const handleBattleEnd = useCallback(() => {
     setPhase("transition");
   }, []);
 

@@ -1,130 +1,97 @@
-# Pretext RPG — Architecture & Style Guide
+# Pret-main
 
-A text-based RPG with procedural ASCII art, canvas-based combat, and CRT monitor aesthetics.  
-Uses [@chenglou/pretext](https://www.npmjs.com/package/@chenglou/pretext) for text measurement and layout.
+ASCII-heavy React battle prototype built with Vite, TypeScript, canvas effects, and CRT styling.
+The combat stack is split between battle state, orchestration, shared geometry, and pure rendering helpers.
 
----
+## Scripts
 
-## Game Flow
-
-```
-App (root)
- ├─ "text"       → Campfire narration + player input (light the bonfire)
- ├─ "transition"  → Procedural ASCII fire animation + [venture forth] button
- └─ "battle"      → BattleScene (outside main CRT — has its own)
-      ├─ "encounter" → SkullEncounter (fullscreen animated WebP → ASCII zoom-in)
-      ├─ "intro"     → TypewriterText (enemy description) + [click to fight]
-      └─ "combat"    → BattleCombat (3-column layout with projectiles)
+```bash
+npm install
+npm run dev
+npm run build
+npm run lint
+npm run preview
 ```
 
----
+## Current Flow
 
-## File Map
-
-| File | Role |
-|------|------|
-| `App.tsx` | Root shell. Manages 3 phases: text → transition → battle. CRT wrapper for text/transition phases. |
-| `App.css` | Global styles: `.crt`, `.crt-scanlines`, `.crt-noise`, `.crt-vignette`, `.input-form`, `.proceed-btn`, animations. |
-| `BattleScene.tsx` | Battle orchestrator. Loads hero/enemy PNGs via `useImageToAscii`. Manages encounter → intro → combat flow, HP, turns. |
-| `BattleCombat.tsx` | Core combat engine. Canvas (480×320) renders narrative text + projectiles. Player/monster sprites as DOM `<pre>` elements flanking a mini CRT. Uses `@chenglou/pretext` for word-wrapped text layout. |
-| `SkullEncounter.tsx` | Animated WebP skull decoded frame-by-frame via `ImageDecoder` (WebCodecs). Progressive zoom (2×→15×) into skull's mouth with cubic ease-in. Grayscale ASCII. Fullscreen overlay. |
-| `HeartHP.tsx` | ASCII heart (9×8 mask) with water wave animation. Fill level = HP ratio. Hover reveals `current/max`. 24 FPS. |
-| `useImageToAscii.ts` | Hook: loads PNG → canvas → optional horizontal flip → brightness → ASCII ramp. Returns `string[]` lines. |
-| `Battle.css` | All battle styles: heart, skull encounter, intro, combat layout, sprites, glitch effect, input. |
-| `SwordEncounter.tsx` | *Legacy* — crossed swords encounter (replaced by SkullEncounter, not imported). |
-
----
-
-## Visual Identity
-
-### CRT Monitor Shell
-Text/transition phases wrap in `.crt` with 3 overlay layers (scanlines, SVG noise, vignette).  
-**Battle phase** renders **outside** the main CRT — `BattleCombat` has its own `.battle-crt` with identical overlays to avoid double-nesting.
-
-### Color Palette
-| Token | Value | Usage |
-|-------|-------|-------|
-| Background | `#0d0d0d` | Page / canvas bg |
-| Body text | `#bfbfbf` | Narration |
-| Accent (gold) | `#ffaa00` | Prompt `>`, player input, keyword highlights |
-| Fire core | `#fff8cc` → `#ffdd66` | Bonfire center |
-| Heart | `#cc3344` | HP heart ASCII |
-
-### Typography
-- **Font**: `"Courier New", Courier, monospace` everywhere.
-- **ASCII ramp**: `" .·:;=+*#%@"` (space → dense) for brightness mapping.
-- Player input: gold `#ffaa00`, `border-bottom: 1px solid #555`, `>` prompt.
-
-### Animation Rates
-| Component | FPS | Notes |
-|-----------|-----|-------|
-| Bonfire | 12 | `requestAnimationFrame` throttled |
-| SkullEncounter | 12 | `ImageDecoder` frame sampling |
-| HeartHP | 24 | Wave animation |
-| BattleCombat canvas | 60 | Projectile physics (no cap) |
-
----
-
-## Architecture Details
-
-### Rendering Pipeline (Bonfire)
-```
-Offscreen simCanvas (80×40, RGB-encoded zones)
-  → R-channel zone detection (0=core, 40=mid, 80=outer, 100=wood, 120=embers)
-  → brightness → ASCII ramp char
-  → color/opacity/weight per zone
-  → fillText() on displayCanvas (800×560)
-  → mouse interaction: inner radius opacity, outer radius font-weight gradient
+```text
+App
+ ├─ text / transition shell
+ └─ battle
+    └─ BattleScene
+       ├─ encounter  -> SkullEncounter
+       ├─ intro
+       └─ combat     -> BattleCombat
 ```
 
-### Battle Combat Layout
-```
-.battle-combat-layout (flex row)
-  ├─ .sprite-column.sprite-left   → player <pre> (ASCII from hero.png)
-  ├─ .battle-crt-wrapper
-  │    ├─ .battle-crt              → canvas 480×320 (narrative + projectiles)
-  │    │    ├─ .crt-scanlines
-  │    │    ├─ .crt-noise
-  │    │    └─ .crt-vignette
-  │    └─ .input-form.battle-input-row  → ">" prompt + text input
-  └─ .sprite-column.sprite-right  → monster <pre> (ASCII from enemy.png)
-```
+   ## Combat Architecture
 
-- **Projectiles**: Enter from edges (−40px / W+40px), fly across canvas, trigger `.crt-glitch` when inside bounds.
-- **Keywords**: `[bracketed]` words in narratives highlighted gold; typing any word fires a projectile.
-- **Turn system**: Player types → projectile → 1.4s delay → monster auto-attacks → repeat.
-- **Sprites**: 55-col ASCII from PNG, shake animation + red color shift on hit.
+   - `BattleScene` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
+   - `BattleCombat` owns the live combat scene, DOM/canvas refs, input handling, potion drag/drop, and effect orchestration.
+   - `battleCombatCore` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
+   - `battleCombatVisuals` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
 
-### Skull Encounter (WebCodecs)
-```
-fetch("combat.webp") → ImageDecoder → decode({ frameIndex })
-  → VideoFrame → offscreen canvas → crop (zoom-dependent region) → sample to ASCII grid
-  → grayscale ASCII render on display canvas
-  → zoom: 2× → 15× (cubic ease-in, focus on mouth ~75% down)
-  → fade-to-black in final 15% → auto-proceed to intro
-```
+   If a combat change is pure math, coordinate mapping, or visual rendering, it should usually land in `battleCombatCore.ts` or `battleCombatVisuals.ts` instead of growing `BattleCombat.tsx`.
 
-### Heart HP
-- 9×8 ASCII mask (`#` = fill, `.` = border)
-- Water fill: sine wave surface (`~≈`) + gradient body (`░▒▓█`)
-- Shimmer on deep cells, hover shows numeric HP
+## Current Combat Features
 
----
+- Direct ASCII asset loading from `public/assets/new_hero_ascii.md` and `public/assets/new_enemy_ascii.md`.
+- Canvas-rendered projectile combat with per-hit impact bursts and variable monster hit points.
+- Monster hit deformation that pushes glyphs and tints letters in a localized red wave.
+- Draggable health potion that can be dropped onto the player as a free one-time heal.
+- ASCII HP heart and MP flask widgets with short-lived charge particles when values change.
+- Animated shield overlays, slash sweeps, potion shatter particles, and CRT pulse feedback.
 
-## Assets (`public/assets/`)
+## Key Files
 
-| File | Format | Usage |
-|------|--------|-------|
-| `hero.png` | PNG | Player character (wizard) → ASCII via `useImageToAscii` |
-| `enemy.png` | PNG | Monster (skeleton archer) → ASCII via `useImageToAscii` |
-| `combat.webp` | Animated WebP | Skull opening mouth → `SkullEncounter` frame decoding |
-| `bonefire.png` | PNG | Unused |
+| File | Purpose |
+|------|---------|
+| `src/App.tsx` | Top-level phase switching between non-battle and battle states. |
+| `src/BattleScene.tsx` | Owns battle state, turn resolution, logs, potion usage, and combat requests. |
+| `src/BattleCombat.tsx` | Wires the combat scene together: input, refs, potion interaction, and effect orchestration. |
+| `src/battleCombatCore.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
+| `src/battleCombatVisuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
+| `src/battleTypes.ts` | Combat rules, player stats, monster definition, hit/crit helpers, and intent metadata. |
+| `src/HeartHP.tsx` | Animated ASCII heart resource widget. |
+| `src/ManaFlask.tsx` | Animated ASCII mana flask resource widget. |
+| `src/HealthPotion.tsx` | Small animated ASCII health potion used in combat. |
+| `src/ResourceChargeBurst.tsx` | Canvas-based resource change effect that reuses the monster charge motion pattern. |
+| `src/useAsciiAsset.ts` | Loads pre-authored ASCII `.md` assets and trims annotation padding. |
+| `src/index.css` | Theme tokens and global animation keyframes. |
 
----
+## Asset Notes
 
-## Tech Stack
-- **React 19** + **Vite 8** + **TypeScript 6**
-- **@chenglou/pretext** — `prepareWithSegments()` + `layoutWithLines()` for narrative text layout
-- **WebCodecs ImageDecoder** — animated WebP frame-by-frame decoding
-- **Canvas 2D** — all ASCII rendering (no WebGL)
-- **CSS-only CRT** — scanlines, SVG noise filter, vignette, flicker
+- `new_hero_ascii.md` and `new_enemy_ascii.md` are treated as source-of-truth combat sprites.
+- `useAsciiAsset` trims surrounding whitespace and strips guide/annotation lines before rendering.
+- The older image-to-ASCII hook still exists in the repo, but the battle scene now uses authored ASCII assets directly.
+
+## Rendering Notes
+
+- The central CRT console uses `@chenglou/pretext` for narrative layout and text displacement.
+- Projectiles and larger scene particles render on a wider scene canvas that sits above the CRT layer.
+- Player and monster sprites render as DOM `<pre>` blocks, with temporary sprite-local canvases used only while local deformation effects are active.
+- Resource widgets use tiny local canvases so their charge effect stays locked to widget size.
+
+## Render Layers
+
+- DOM `<pre>` sprites keep the base player and monster ASCII stable.
+- Sprite-local canvases handle temporary deformation, shield overlays, and potion hover displacement.
+- The central CRT canvas renders console text, pulses, and text-layer reactions.
+- The scene FX canvas handles projectiles, scatter particles, and hit bursts that need wider travel space.
+
+## Extending Combat
+
+- Add new turn logic or damage rules in `BattleScene.tsx` / `battleTypes.ts`.
+- Add new reusable coordinate or sampling helpers in `battleCombatCore.ts`.
+- Add new particle systems or canvas-only visuals in `battleCombatVisuals.ts`.
+- Keep `BattleCombat.tsx` focused on wiring those pieces together rather than holding new pure helper code.
+
+## Stack
+
+- React 19
+- TypeScript 6
+- Vite 8
+- Tailwind CSS 4
+- `@chenglou/pretext`
+- Canvas 2D and WebCodecs-based encounter rendering
