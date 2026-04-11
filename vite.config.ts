@@ -8,6 +8,6 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
-    minify: "esbuild",
+    minify: "oxc",
   },
 });
