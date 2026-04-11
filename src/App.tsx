@@ -2,11 +2,57 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import BattleScene from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
 import type { BattleResult } from "./BattleScene";
+import { type Language, pickText } from "./language";
 
 /**
  * 캠프파이어 장면에서 출력할 도입 내레이션이다.
  */
-const STORY_TEXT = `A bitter wind cuts through your coat, chilling you to the bone. Before you lies a crude fire pit with a few dry logs left behind by a forgotten traveler. Wolves howl in the surrounding darkness, their cries echoing closer with every passing moment. Without fire you will surely freeze to death or become prey to the beasts. Will you light the bonfire?`;
+const STORY_TEXT = {
+  en: `A bitter wind cuts through your coat, chilling you to the bone. Before you lies a crude fire pit with a few dry logs left behind by a forgotten traveler. Wolves howl in the surrounding darkness, their cries echoing closer with every passing moment. Without fire you will surely freeze to death or become prey to the beasts. Will you light the bonfire?`,
+  ko: `매서운 바람이 코트를 파고들며 뼛속까지 식혀 온다. 눈앞에는 이름 모를 여행자가 남기고 간 듯한 조잡한 화덕과 마른 장작 몇 토막이 놓여 있다. 주변 어둠에서는 늑대 울음소리가 메아리치고, 그 소리는 점점 더 가까워진다. 불을 피우지 못하면 얼어 죽거나 짐승의 먹이가 될 것이다. 모닥불을 피우겠는가?`,
+} as const;
+
+const APP_TEXT = {
+  inputPlaceholder: {
+    en: "(light / Y)",
+    ko: "(불을 켠다 / 예)",
+  },
+  bonfireLine: {
+    en: "The bonfire crackles to life, its warmth wrapping around you...",
+    ko: "모닥불이 타오르며, 그 온기가 당신을 감싼다...",
+  },
+  ventureForth: {
+    en: "[ venture forth ]",
+    ko: "[ 앞으로 나아간다 ]",
+  },
+  languageLabel: {
+    en: "LANG",
+    ko: "언어",
+  },
+  languageEnglish: {
+    en: "EN",
+    ko: "영어",
+  },
+  languageKorean: {
+    en: "KR",
+    ko: "한글",
+  },
+} as const;
+
+const BONFIRE_CONFIRM_KEYWORDS = [
+  "light",
+  "ignite",
+  "y",
+  "yes",
+  "bonfire",
+  "불",
+  "점화",
+  "켜",
+  "피워",
+  "예",
+  "네",
+  "응",
+] as const;
 
 /**
  * 밝기에 따라 아스키 문자 밀도를 매핑할 때 사용하는 문자 램프다.
@@ -21,6 +67,16 @@ export default function App() {
    * 현재 게임 진행 단계를 저장한다.
    */
   const [phase, setPhase] = useState<"text" | "transition" | "battle">("text");
+  /**
+   * 사용자 인터페이스의 현재 언어 모드다.
+   */
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof navigator === "undefined") {
+      return "en";
+    }
+
+    return navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
+  });
   /**
    * 플레이어가 입력창에 입력한 명령어를 저장한다.
    */
@@ -529,18 +585,39 @@ export default function App() {
     event.preventDefault();
     const answer = input.trim().toLowerCase();
 
-    if (
-      answer.includes("light") ||
-      answer.includes("ignite") ||
-      answer === "y" ||
-      answer === "yes"
-    ) {
+    if (BONFIRE_CONFIRM_KEYWORDS.some((keyword) => answer === keyword || answer.includes(keyword))) {
       setPhase("transition");
     }
   };
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-void px-4 py-8 sm:px-8">
+      <div className="absolute right-4 top-4 z-[80] flex items-center gap-2 rounded-full border border-white/12 bg-black/45 px-2 py-1 font-crt text-[0.68rem] tracking-[0.12em] text-white/70 backdrop-blur-sm">
+        <span className="px-1">{pickText(language, APP_TEXT.languageLabel)}</span>
+        <button
+          type="button"
+          className={`cursor-pointer rounded-full border px-2 py-1 transition-colors ${
+            language === "en"
+              ? "border-ember/60 bg-ember/15 text-ember"
+              : "border-white/12 bg-transparent text-white/50 hover:text-white/80"
+          }`}
+          onClick={() => setLanguage("en")}
+        >
+          {pickText(language, APP_TEXT.languageEnglish)}
+        </button>
+        <button
+          type="button"
+          className={`cursor-pointer rounded-full border px-2 py-1 transition-colors ${
+            language === "ko"
+              ? "border-ember/60 bg-ember/15 text-ember"
+              : "border-white/12 bg-transparent text-white/50 hover:text-white/80"
+          }`}
+          onClick={() => setLanguage("ko")}
+        >
+          {pickText(language, APP_TEXT.languageKorean)}
+        </button>
+      </div>
+
       <svg className="absolute h-0 w-0">
         <filter id="noise">
           <feTurbulence
@@ -557,7 +634,7 @@ export default function App() {
         <div className="relative w-full max-w-[min(92vw,920px)] overflow-hidden rounded-[18px] px-4 py-8 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-8">
           {phase === "text" && (
             <div className="relative z-0 max-w-[600px] text-[1.05rem] leading-[1.8] sm:text-[1.2rem] [text-shadow:0_0_5px_rgba(255,255,255,0.2)]">
-              {STORY_TEXT.split("\n").map((line, index) => (
+              {pickText(language, STORY_TEXT).split("\n").map((line, index) => (
                 <p key={index}>{line}</p>
               ))}
               <form
@@ -569,7 +646,7 @@ export default function App() {
                   type="text"
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
-                  placeholder="(light / Y)"
+                  placeholder={pickText(language, APP_TEXT.inputPlaceholder)}
                   autoFocus
                   className="w-[200px] border-0 border-b border-white/30 bg-transparent text-[1.05rem] text-ember outline-none placeholder:text-white/35 focus:border-ember sm:text-[1.2rem]"
                 />
@@ -592,14 +669,14 @@ export default function App() {
                   WebkitTextFillColor: "transparent",
                 }}
               >
-                The bonfire crackles to life, its warmth wrapping around you...
+                {pickText(language, APP_TEXT.bonfireLine)}
               </p>
               <button
                 type="button"
                 className="mt-8 cursor-pointer border border-white/30 bg-transparent px-6 py-2 text-[0.95rem] tracking-[0.1em] text-white/60 opacity-0 transition-colors duration-300 hover:border-ember hover:text-ember [animation:fade_1s_3s_forwards]"
                 onClick={() => setPhase("battle")}
               >
-                {"[ venture forth ]"}
+                {pickText(language, APP_TEXT.ventureForth)}
               </button>
             </div>
           )}
@@ -607,7 +684,7 @@ export default function App() {
           <CrtOverlay />
         </div>
       ) : (
-        <BattleScene onBattleEnd={handleBattleEnd} />
+        <BattleScene language={language} onBattleEnd={handleBattleEnd} />
       )}
     </div>
   );

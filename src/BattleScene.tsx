@@ -3,6 +3,13 @@ import BattleCombat from "./BattleCombat";
 import SkullEncounter from "./SkullEncounter";
 import { useAsciiAsset } from "./useAsciiAsset";
 import {
+  type Language,
+  getLocalizedMonsterIntentLabel,
+  getLocalizedMonsterName,
+  getLocalizedSpellName,
+  pickText,
+} from "./language";
+import {
   type BattleTargetOption,
   type BattleLogEntry,
   type CombatAnimationRequest,
@@ -28,42 +35,86 @@ import {
 
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
 
-/**
- * 조우 직후 출력되는 적 소개 문장이다.
- */
-const ENCOUNTER_TEXT =
-  "A twisted figure emerges from the shadows, its body a mass of writhing dark tendrils, " +
-  "two pale eyes burning with cold malice. The Hollow Wraith lets out a guttural screech " +
-  "that rattles your bones. The air thickens, and the temperature drops.";
+const ENCOUNTER_TEXT = {
+  en:
+    "A twisted figure emerges from the shadows, its body a mass of writhing dark tendrils, " +
+    "two pale eyes burning with cold malice. The Hollow Wraith lets out a guttural screech " +
+    "that rattles your bones. The air thickens, and the temperature drops.",
+  ko:
+    "비틀린 형상이 그림자 속에서 모습을 드러낸다. 뒤엉킨 검은 촉수로 이루어진 육체와, " +
+    "차가운 악의로 타오르는 창백한 두 눈이 어둠을 가른다. 공허의 망령이 뼈를 울리는 듯한 " +
+    "거친 비명을 지르자 공기가 무거워지고 온도가 뚝 떨어진다.",
+} as const;
 
-/**
- * 전투 중 분위기를 보강하는 순환형 배경 문장 목록이다.
- */
-const AMBIENT_LINES = [
-  "Shadows coil around the wraith's tendrils.",
-  "The air tastes of iron and decay.",
-  "Wind howls through the hollow.",
-  "Frost creeps along the stone floor.",
-  "The wraith's eyes pulse with faint hunger.",
-  "A low hum resonates from the darkness.",
-  "Your breath fogs in the cold air.",
-  "Embers drift through the stale dark.",
-  "The silence presses like a weight.",
-  "Something stirs in the deeper shadows.",
-];
+const AMBIENT_LINES = {
+  en: [
+    "Shadows coil around the wraith's tendrils.",
+    "The air tastes of iron and decay.",
+    "Wind howls through the hollow.",
+    "Frost creeps along the stone floor.",
+    "The wraith's eyes pulse with faint hunger.",
+    "A low hum resonates from the darkness.",
+    "Your breath fogs in the cold air.",
+    "Embers drift through the stale dark.",
+    "The silence presses like a weight.",
+    "Something stirs in the deeper shadows.",
+  ],
+  ko: [
+    "그림자가 망령의 촉수 주위를 소용돌이친다.",
+    "공기에서 쇠와 부패의 맛이 난다.",
+    "허공을 가르는 바람 소리가 스민다.",
+    "차가운 서리가 돌바닥을 타고 번진다.",
+    "망령의 눈빛이 희미한 굶주림으로 맥동한다.",
+    "어둠 깊은 곳에서 낮은 울림이 퍼진다.",
+    "차가운 공기 속에 입김이 하얗게 흩어진다.",
+    "희미한 불씨가 눅눅한 어둠 사이를 떠돈다.",
+    "침묵이 무게처럼 짓눌러 온다.",
+    "더 깊은 그림자 속에서 무언가 꿈틀댄다.",
+  ],
+} as const;
+
+const BATTLE_SCENE_TEXT = {
+  en: {
+    selfTargetName: "You",
+    yourself: "yourself",
+    battleBegins: "The battle begins!",
+    clickToFight: "[ click to fight ]",
+    loadingCombatants: "Loading combatants...",
+    victoryReturn: "Returning to the bonfire...",
+    defeatTitle: "You fall in the dark.",
+    defeatReturn: "Returning to the campfire...",
+    enemyStunned: "Enemy stunned!",
+    elementalWeakness: "Elemental weakness! Super effective!",
+    elementalResistance: "Elemental resistance... not very effective.",
+  },
+  ko: {
+    selfTargetName: "당신",
+    yourself: "당신 자신",
+    battleBegins: "전투가 시작된다!",
+    clickToFight: "[ 클릭하여 전투 ]",
+    loadingCombatants: "전투원을 불러오는 중...",
+    victoryReturn: "모닥불로 돌아가는 중...",
+    defeatTitle: "어둠 속에 쓰러졌다.",
+    defeatReturn: "모닥불로 돌아가는 중...",
+    enemyStunned: "적이 기절했다!",
+    elementalWeakness: "원소 약점 적중! 큰 피해!",
+    elementalResistance: "원소 저항... 피해가 줄었다.",
+  },
+} as const;
 
 export interface BattleResult {
   won: boolean;
 }
 
 interface Props {
+  language: Language;
   onBattleEnd: (result: BattleResult) => void;
 }
 
 /**
  * 전투 진입, 턴 진행, 승패 전환을 관리하는 전투 장면 컨테이너다.
  */
-export default function BattleScene({ onBattleEnd }: Props) {
+export default function BattleScene({ language, onBattleEnd }: Props) {
   const { lines: playerAscii, loading: playerLoading } = useAsciiAsset(
     "/assets/new_hero_ascii.md",
   );
@@ -72,6 +123,8 @@ export default function BattleScene({ onBattleEnd }: Props) {
   );
 
   const monster = HOLLOW_WRAITH;
+  const sceneText = BATTLE_SCENE_TEXT[language];
+  const localizedMonsterName = getLocalizedMonsterName(monster.name, language);
   const [stats] = useState<PlayerStats>({ ...DEFAULT_STATS });
 
   const maxHp = getMaxHp(stats);
@@ -91,18 +144,26 @@ export default function BattleScene({ onBattleEnd }: Props) {
   const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
   const [ambientIndex, setAmbientIndex] = useState(0);
   const [potionUsed, setPotionUsed] = useState(false);
-  const ambientText = useMemo(() => AMBIENT_LINES[ambientIndex % AMBIENT_LINES.length], [ambientIndex]);
+  const ambientText = useMemo(() => {
+    const lines = AMBIENT_LINES[language];
+    return lines[ambientIndex % lines.length];
+  }, [ambientIndex, language]);
+  const nextIntentLabel = useMemo(
+    () => getLocalizedMonsterIntentLabel(nextIntent.label, language),
+    [language, nextIntent.label],
+  );
   const targetOptions = useMemo<BattleTargetOption[]>(
     () => [
-      { id: PLAYER_TARGET_ID, name: "You", side: "player" },
-      { id: MONSTER_TARGET_ID, name: monster.name, side: "enemy" },
+      { id: PLAYER_TARGET_ID, name: sceneText.selfTargetName, side: "player" },
+      { id: MONSTER_TARGET_ID, name: localizedMonsterName, side: "enemy" },
     ],
-    [monster.name],
+    [localizedMonsterName, sceneText.selfTargetName],
   );
 
   const addLog = useCallback((text: string, color?: string) => {
     setBattleLog((prev) => [...prev.slice(-30), { text, color }]);
   }, []);
+  const trimIntentLabel = useCallback((label: string) => label.replace(/\.\.\.$/, ""), []);
 
   // ── Roll next monster intent at the start of each PLAYER turn ──
   const rollNextIntent = useCallback(() => {
@@ -112,8 +173,8 @@ export default function BattleScene({ onBattleEnd }: Props) {
   const handleEncounterDone = useCallback(() => setPhase("intro"), []);
   const handleIntroDone = useCallback(() => {
     setPhase("combat");
-    addLog("The battle begins!", "text-ember");
-  }, [addLog]);
+    addLog(sceneText.battleBegins, "text-ember");
+  }, [addLog, sceneText.battleBegins]);
 
   /**
    * 포션 사용 가능 여부를 검사하고 실제 회복량을 반환한다.
@@ -130,9 +191,14 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
     setPotionUsed(true);
     setPlayerHp((value) => Math.min(maxHp, value + healAmount));
-    addLog(`The crimson flask bursts over you... +${healAmount} HP`, "text-green-300");
+    addLog(
+      language === "ko"
+        ? `진홍 물약이 몸 위에서 터진다... HP +${healAmount}`
+        : `The crimson flask bursts over you... +${healAmount} HP`,
+      "text-green-300",
+    );
     return healAmount;
-  }, [addLog, maxHp, phase, playerHp, potionUsed, stats]);
+  }, [addLog, language, maxHp, phase, playerHp, potionUsed, stats]);
 
   /**
    * 현재 몬스터 방어막을 최신값으로 읽기 위한 ref다.
@@ -187,7 +253,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
       switch (action.type) {
         case "attack": {
           const targetSide = action.targetId === PLAYER_TARGET_ID ? "player" : "enemy";
-          const targetName = targetSide === "player" ? "yourself" : monster.name;
+          const targetName = targetSide === "player" ? sceneText.yourself : localizedMonsterName;
           const hitChance = getActionHitChance(action, stats, targetSide);
           const critChance = getActionCritChance(action, stats, targetSide);
           const didHit = targetSide === "player" || Math.random() < hitChance;
@@ -205,7 +271,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
               kind: "projectile",
               missed: true,
               onImpact: () => {
-                addLog(`Strike misses ${targetName}!`, "text-white/40");
+                addLog(
+                  language === "ko"
+                    ? `일격이 ${targetName}에게 빗나갔다!`
+                    : `Strike misses ${targetName}!`,
+                  "text-white/40",
+                );
               },
             };
             break;
@@ -234,15 +305,23 @@ export default function BattleScene({ onBattleEnd }: Props) {
                 if (shieldAbsorb > 0) {
                   addLog(
                     didCrit
-                      ? `Critical strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`
-                      : `Strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
+                      ? language === "ko"
+                        ? `치명타! 방어막이 ${shieldAbsorb} 막아내고 ${hpDmg} 피해를 입혔다!`
+                        : `Critical strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`
+                      : language === "ko"
+                        ? `일격! 방어막이 ${shieldAbsorb} 막아내고 ${hpDmg} 피해를 입혔다!`
+                        : `Strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
                     didCrit ? "text-yellow-300" : "text-sky-400",
                   );
                 } else {
                   addLog(
                     didCrit
-                      ? `Critical strike! ${totalDamage} damage!`
-                      : `Strike! ${totalDamage} damage!`,
+                      ? language === "ko"
+                        ? `치명타! ${totalDamage} 피해!`
+                        : `Critical strike! ${totalDamage} damage!`
+                      : language === "ko"
+                        ? `일격! ${totalDamage} 피해!`
+                        : `Strike! ${totalDamage} damage!`,
                     didCrit ? "text-yellow-300" : "text-sky-400",
                   );
                 }
@@ -263,8 +342,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
               setPlayerHp((v) => Math.max(0, v - totalDamage));
               addLog(
                 didCrit
-                  ? `Critical strike! You hit yourself for ${totalDamage} damage!`
-                  : `You strike yourself for ${totalDamage} damage!`,
+                  ? language === "ko"
+                    ? `치명타! 당신 자신에게 ${totalDamage} 피해를 입혔다!`
+                    : `Critical strike! You hit yourself for ${totalDamage} damage!`
+                  : language === "ko"
+                    ? `당신 자신을 공격해 ${totalDamage} 피해를 입었다!`
+                    : `You strike yourself for ${totalDamage} damage!`,
                 didCrit ? "text-yellow-300" : "text-red-400",
               );
             },
@@ -274,34 +357,48 @@ export default function BattleScene({ onBattleEnd }: Props) {
         case "defend": {
           const shield = getBaseShield(stats);
           setPlayerShield(shield);
-          addLog(`Brace! Shield +${shield}!`, "text-blue-400");
+          addLog(
+            language === "ko" ? `방어 태세! 방어막 +${shield}!` : `Brace! Shield +${shield}!`,
+            "text-blue-400",
+          );
           break;
         }
         case "heal": {
           const heal = getHealAmount(stats);
           setPlayerHp((v) => Math.min(maxHp, v + heal));
-          addLog(`Steady breath... +${heal} HP.`, "text-green-400");
+          addLog(
+            language === "ko" ? `호흡을 가다듬는다... HP +${heal}.` : `Steady breath... +${heal} HP.`,
+            "text-green-400",
+          );
           break;
         }
         case "spell": {
           const { spell, mode } = action;
+          const spellDisplayName = getLocalizedSpellName(spell.name, language);
           const tier = getLiteracyTier(stats.literacy);
           if (spell.tier > tier) {
             addLog(
-              `Not enough literacy... (need tier ${spell.tier})`,
+              language === "ko"
+                ? `문해력이 부족하다... (필요 티어 ${spell.tier})`
+                : `Not enough literacy... (need tier ${spell.tier})`,
               "text-red-400",
             );
             return;
           }
           if (playerMana < spell.manaCost) {
-            addLog(`Not enough mana! (need ${spell.manaCost})`, "text-red-400");
+            addLog(
+              language === "ko"
+                ? `마나가 부족하다! (${spell.manaCost} 필요)`
+                : `Not enough mana! (need ${spell.manaCost})`,
+              "text-red-400",
+            );
             return;
           }
           setPlayerMana((v) => v - spell.manaCost);
 
           if (mode === "attack") {
             const targetSide = action.targetId === PLAYER_TARGET_ID ? "player" : "enemy";
-            const targetName = targetSide === "player" ? "yourself" : monster.name;
+            const targetName = targetSide === "player" ? sceneText.yourself : localizedMonsterName;
             const hitChance = getActionHitChance(action, stats, targetSide);
             const critChance = getActionCritChance(action, stats, targetSide);
             const didHit = targetSide === "player" || Math.random() < hitChance;
@@ -314,12 +411,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
               damage = Math.round(damage * mult);
               if (mult > 1) {
                 elementLog = {
-                  text: "Elemental weakness! Super effective!",
+                  text: sceneText.elementalWeakness,
                   color: "text-yellow-300",
                 };
               } else if (mult < 1) {
                 elementLog = {
-                  text: "Elemental resistance... not very effective.",
+                  text: sceneText.elementalResistance,
                   color: "text-gray-400",
                 };
               }
@@ -346,7 +443,9 @@ export default function BattleScene({ onBattleEnd }: Props) {
                 missed: true,
                 onImpact: () => {
                   addLog(
-                    `${spell.name} misses ${targetName}! (MP -${spell.manaCost})`,
+                    language === "ko"
+                      ? `${spellDisplayName}이(가) ${targetName}에게 빗나갔다! (MP -${spell.manaCost})`
+                      : `${spellDisplayName} misses ${targetName}! (MP -${spell.manaCost})`,
                     "text-white/40",
                   );
                 },
@@ -379,14 +478,18 @@ export default function BattleScene({ onBattleEnd }: Props) {
                   setMonsterHp((v) => Math.max(0, v - hpDmg));
                   addLog(
                     didCrit
-                      ? `Critical ${spell.name}! ${damage} damage! (MP -${spell.manaCost})`
-                      : `${spell.name}! ${damage} damage! (MP -${spell.manaCost})`,
+                      ? language === "ko"
+                        ? `치명적인 ${spellDisplayName}! ${damage} 피해! (MP -${spell.manaCost})`
+                        : `Critical ${spellDisplayName}! ${damage} damage! (MP -${spell.manaCost})`
+                      : language === "ko"
+                        ? `${spellDisplayName}! ${damage} 피해! (MP -${spell.manaCost})`
+                        : `${spellDisplayName}! ${damage} damage! (MP -${spell.manaCost})`,
                     didCrit ? "text-yellow-300" : "text-cyan-300",
                   );
 
                   if (willStun) {
                     setMonsterStunned(true);
-                    addLog("Enemy stunned!", "text-purple-400");
+                    addLog(sceneText.enemyStunned, "text-purple-400");
                   }
                 },
               };
@@ -406,8 +509,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
                 setPlayerHp((v) => Math.max(0, v - damage));
                 addLog(
                   didCrit
-                    ? `Critical ${spell.name}! You take ${damage} damage. (MP -${spell.manaCost})`
-                    : `${spell.name} hits yourself for ${damage} damage. (MP -${spell.manaCost})`,
+                    ? language === "ko"
+                      ? `치명적인 ${spellDisplayName}! 당신이 ${damage} 피해를 입었다. (MP -${spell.manaCost})`
+                      : `Critical ${spellDisplayName}! You take ${damage} damage. (MP -${spell.manaCost})`
+                    : language === "ko"
+                      ? `${spellDisplayName}이(가) 당신 자신에게 ${damage} 피해를 주었다. (MP -${spell.manaCost})`
+                      : `${spellDisplayName} hits yourself for ${damage} damage. (MP -${spell.manaCost})`,
                   didCrit ? "text-yellow-300" : "text-red-400",
                 );
               },
@@ -417,12 +524,19 @@ export default function BattleScene({ onBattleEnd }: Props) {
             const shield = spell.baseShield + Math.floor(stats.agility * 0.5);
             setPlayerShield(shield);
             addLog(
-              `${spell.name} ward! Shield +${shield}! (MP -${spell.manaCost})`,
+              language === "ko"
+                ? `${spellDisplayName} 수호! 방어막 +${shield}! (MP -${spell.manaCost})`
+                : `${spellDisplayName} ward! Shield +${shield}! (MP -${spell.manaCost})`,
               "text-teal-300",
             );
             if (spell.healOnDefend > 0) {
               setPlayerHp((v) => Math.min(maxHp, v + spell.healOnDefend));
-              addLog(`Nature mends your wounds... +${spell.healOnDefend} HP`, "text-green-300");
+              addLog(
+                language === "ko"
+                  ? `자연의 힘이 상처를 메운다... HP +${spell.healOnDefend}`
+                  : `Nature mends your wounds... +${spell.healOnDefend} HP`,
+                "text-green-300",
+              );
             }
           }
           break;
@@ -455,6 +569,9 @@ export default function BattleScene({ onBattleEnd }: Props) {
       playerMana,
       monster,
       addLog,
+      language,
+      localizedMonsterName,
+      sceneText,
     ],
   );
 
@@ -507,7 +624,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
       setMonsterShield(0);
 
       if (monsterStunned) {
-        addLog(`${monster.name} is stunned and cannot act!`, "text-purple-300");
+        addLog(
+          language === "ko"
+            ? `${localizedMonsterName}은(는) 기절해 움직이지 못한다!`
+            : `${localizedMonsterName} is stunned and cannot act!`,
+          "text-purple-300",
+        );
         setMonsterStunned(false);
         finishMonsterTurn();
         return;
@@ -521,7 +643,9 @@ export default function BattleScene({ onBattleEnd }: Props) {
         const shieldVal = 8;
         setMonsterShield(shieldVal);
         addLog(
-          `${monster.name} hardens its guard! (Shield ${shieldVal})`,
+          language === "ko"
+            ? `${localizedMonsterName}이(가) 몸을 굳히며 방어한다! (방어막 ${shieldVal})`
+            : `${localizedMonsterName} hardens its guard! (Shield ${shieldVal})`,
           "text-orange-300",
         );
         pendingResolve = finishMonsterTurn;
@@ -539,6 +663,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
       const hpDmg = dmg - absorbed;
       const blocked = shield >= dmg;
       const shielded = absorbed > 0;
+      const localizedIntent = trimIntentLabel(getLocalizedMonsterIntentLabel(intent.label, language));
 
       const resolveMonsterHit = () => {
         if (turnResolved) return;
@@ -546,17 +671,26 @@ export default function BattleScene({ onBattleEnd }: Props) {
           setPlayerShield((v) => Math.max(0, v - absorbed));
           if (hpDmg > 0) {
             addLog(
-              `${intent.label.replace("...", "")} — ${absorbed} blocked, ${hpDmg} damage!`,
+              language === "ko"
+                ? `${localizedIntent} - ${absorbed} 막아내고 ${hpDmg} 피해!`
+                : `${localizedIntent} - ${absorbed} blocked, ${hpDmg} damage!`,
               "text-red-400",
             );
           } else {
             addLog(
-              `${intent.label.replace("...", "")} — fully blocked by shield!`,
+              language === "ko"
+                ? `${localizedIntent} - 방어막이 완전히 막아냈다!`
+                : `${localizedIntent} - fully blocked by shield!`,
               "text-blue-400",
             );
           }
         } else {
-          addLog(`${intent.label.replace("...", "")} — ${dmg} damage!`, "text-red-400");
+          addLog(
+            language === "ko"
+              ? `${localizedIntent} - ${dmg} 피해!`
+              : `${localizedIntent} - ${dmg} damage!`,
+            "text-red-400",
+          );
         }
 
         setPlayerHp((v) => Math.max(0, v - hpDmg));
@@ -609,7 +743,10 @@ export default function BattleScene({ onBattleEnd }: Props) {
     monsterStunned,
     monster,
     addLog,
+    language,
+    localizedMonsterName,
     rollNextIntent,
+    trimIntentLabel,
   ]);
 
   // ── Victory / Defeat detection ──
@@ -623,11 +760,16 @@ export default function BattleScene({ onBattleEnd }: Props) {
       // HP now drops on impact, so only wait for the hit flash and death sink.
       const id = window.setTimeout(() => {
         setPhase("victory");
-        addLog(`${monster.name} has been slain!`, "text-yellow-400");
+        addLog(
+          language === "ko"
+            ? `${localizedMonsterName}을(를) 쓰러뜨렸다!`
+            : `${localizedMonsterName} has been slain!`,
+          "text-yellow-400",
+        );
       }, 1900);
       return () => window.clearTimeout(id);
     }
-  }, [monsterHp, phase, monster.name, addLog]);
+  }, [monsterHp, phase, addLog, language, localizedMonsterName]);
 
   // Victory → return to bonfire after delay
   useEffect(() => {
@@ -650,10 +792,15 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
     const id = window.setTimeout(() => {
       setPhase("defeat");
-      addLog("You collapse beneath the wraith's assault.", "text-red-400");
+      addLog(
+        language === "ko"
+          ? "망령의 맹공에 무너졌다."
+          : "You collapse beneath the wraith's assault.",
+        "text-red-400",
+      );
     }, 1400);
     return () => window.clearTimeout(id);
-  }, [playerHp, phase, addLog]);
+  }, [playerHp, phase, addLog, language]);
 
   /**
    * 패배 연출 후 앱 시작 장면으로 되돌린다.
@@ -676,21 +823,23 @@ export default function BattleScene({ onBattleEnd }: Props) {
             className="max-w-[500px] cursor-pointer px-6 py-8 animate-fade-in-quick"
             onClick={handleIntroDone}
           >
-            <TypewriterText text={ENCOUNTER_TEXT} speed={30} />
+            <TypewriterText text={pickText(language, ENCOUNTER_TEXT)} speed={30} />
             <p className="mt-6 text-center text-[0.9rem] tracking-[0.15em] text-white/40 opacity-0 [animation:fade_1s_4s_forwards]">
-              {"[ click to fight ]"}
+              {sceneText.clickToFight}
             </p>
           </div>
         )}
 
         {phase === "combat" && !playerLoading && !monsterLoading && (
           <BattleCombat
-            monsterName={monster.name}
+            monsterName={localizedMonsterName}
             monsterAscii={monsterAscii}
             playerAscii={playerAscii}
             monsterHp={monsterHp}
             monsterMaxHp={monster.maxHp}
             monsterShield={monsterShield}
+            language={language}
+            nextIntentLabel={nextIntentLabel}
             nextIntent={nextIntent}
             battleLog={battleLog}
             ambientText={ambientText}
@@ -711,17 +860,19 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
         {phase === "combat" && (playerLoading || monsterLoading) && (
           <p className="px-6 text-[1.15rem] leading-[1.9] text-ash [text-shadow:0_0_4px_rgba(255,255,255,0.1)]">
-            Loading combatants...
+            {sceneText.loadingCombatants}
           </p>
         )}
 
         {phase === "victory" && (
           <div className="flex flex-col items-center gap-4 animate-fade-in-quick">
             <p className="text-[1.3rem] text-ember tracking-wider [text-shadow:0_0_12px_rgba(255,170,0,0.4)]">
-              {monster.name} has been slain.
+              {language === "ko"
+                ? `${localizedMonsterName}을(를) 쓰러뜨렸다.`
+                : `${localizedMonsterName} has been slain.`}
             </p>
             <p className="text-[0.85rem] text-white/40 tracking-[0.15em]">
-              Returning to the bonfire...
+              {sceneText.victoryReturn}
             </p>
           </div>
         )}
@@ -729,10 +880,10 @@ export default function BattleScene({ onBattleEnd }: Props) {
         {phase === "defeat" && (
           <div className="flex flex-col items-center gap-4 animate-fade-in-quick">
             <p className="text-[1.3rem] tracking-wider text-red-300 [text-shadow:0_0_12px_rgba(220,38,38,0.35)]">
-              You fall in the dark.
+              {sceneText.defeatTitle}
             </p>
             <p className="text-[0.85rem] text-white/40 tracking-[0.15em]">
-              Returning to the campfire...
+              {sceneText.defeatReturn}
             </p>
           </div>
         )}

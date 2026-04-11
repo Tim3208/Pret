@@ -4,6 +4,7 @@ import ResourceChargeBurst from "./ResourceChargeBurst";
 interface ManaFlaskProps {
   current: number;
   max: number;
+  label: string;
 }
 
 // Cylindrical flask shape (8 rows tall)
@@ -25,7 +26,7 @@ const FILL_CHAR_BODY = ["█", "▓", "▒", "░"];
 const EMPTY_CHARS = [".", " "];
 const FRAME_INTERVAL = 1000 / 24;
 
-export default function ManaFlask({ current, max }: ManaFlaskProps) {
+export default function ManaFlask({ current, max, label }: ManaFlaskProps) {
   const [hovered, setHovered] = useState(false);
   const [time, setTime] = useState(0);
   const rafRef = useRef<number>(0);
@@ -124,7 +125,7 @@ export default function ManaFlask({ current, max }: ManaFlaskProps) {
           hovered ? "opacity-100" : "opacity-0"
         }`}
       >
-        mp {current}/{max}
+        {label} {current}/{max}
       </span>
     </div>
   );

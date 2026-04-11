@@ -20,6 +20,11 @@ import HealthPotion from "./HealthPotion";
 import HeartHP from "./HeartHP";
 import ManaFlask from "./ManaFlask";
 import {
+  type Language,
+  getLocalizedSpellName,
+  normalizeSpellQuery,
+} from "./language";
+import {
   type BattleTargetOption,
   type BattleTargetSide,
   type BattleLogEntry,
@@ -176,7 +181,9 @@ interface BattleCombatProps {
   monsterHp: number;
   monsterMaxHp: number;
   monsterShield: number;
+  language: Language;
   nextIntent: MonsterIntent;
+  nextIntentLabel: string;
   battleLog: BattleLogEntry[];
   ambientText: string;
   turn: "player" | "monster";
@@ -251,6 +258,61 @@ interface MonsterAsciiCanvasMetrics {
 }
 
 type CrtNoiseLevel = "off" | "soft" | "strong";
+
+const BATTLE_COMBAT_TEXT = {
+  en: {
+    attackLabel: "Attack",
+    attackHint: "Physical attack",
+    defendLabel: "Defend",
+    defendHint: "Raise a shield",
+    healLabel: "Heal",
+    promptLabel: ">_",
+    promptHint: "Spell or freeform",
+    targetSuffix: "target",
+    chooseEnemyHint: "Choose an enemy. This spell still strikes every enemy in range.",
+    chooseSingleHint: "Self-targets always hit. Other targets use your current hit and crit chances.",
+    chooseSelfHint: "This action can only affect yourself.",
+    hitLabel: "hit",
+    critLabel: "crit",
+    cancelLabel: "cancel",
+    promptPlaceholder: "cast a spell, heal, or act...",
+    promptHelp:
+      'Spell names, "defend:Stone", "heal", or anything you can think of. Offensive actions will ask for a target.',
+    potionAriaLabel: "Drag the health potion onto the player",
+    potionLabel: "POTION",
+    potionTooltip: "heal +8 hp, free action",
+    monsterTurnMessage: (monsterName: string) => `${monsterName} acts beyond the torchlight...`,
+    shieldLabel: "Shield",
+    manaLabel: "MP",
+    hpLabel: "HP",
+  },
+  ko: {
+    attackLabel: "공격",
+    attackHint: "물리 공격",
+    defendLabel: "방어",
+    defendHint: "방어막 전개",
+    healLabel: "회복",
+    promptLabel: ">_",
+    promptHint: "주문 또는 자유 입력",
+    targetSuffix: "대상",
+    chooseEnemyHint: "대상을 고르세요. 이 주문은 범위 안의 모든 적에게 적중합니다.",
+    chooseSingleHint: "자기 자신을 고르면 반드시 맞습니다. 다른 대상은 현재 명중률과 치명타 확률을 따릅니다.",
+    chooseSelfHint: "이 행동은 자신에게만 사용할 수 있습니다.",
+    hitLabel: "명중",
+    critLabel: "치명",
+    cancelLabel: "취소",
+    promptPlaceholder: "주문을 외우거나, 회복하거나, 행동을 입력하세요...",
+    promptHelp:
+      '주문명, "방어:돌", "회복" 또는 자유 입력이 가능합니다. 공격 행동은 대상을 다시 고르게 됩니다.',
+    potionAriaLabel: "체력 물약을 플레이어에게 드래그하기",
+    potionLabel: "물약",
+    potionTooltip: "HP +8, 무료 행동",
+    monsterTurnMessage: (monsterName: string) => `${monsterName}이(가) 횃불 너머에서 움직인다...`,
+    shieldLabel: "방어막",
+    manaLabel: "MP",
+    hpLabel: "HP",
+  },
+} as const;
 
 /* ================================================================
    Pretext helpers — character-level physics displacement
@@ -1117,7 +1179,9 @@ export default function BattleCombat({
   monsterHp,
   monsterMaxHp,
   monsterShield,
+  language,
   nextIntent,
+  nextIntentLabel,
   battleLog,
   ambientText,
   turn,
@@ -1133,6 +1197,7 @@ export default function BattleCombat({
   onPotionUse,
   projectileCallbackRef,
 }: BattleCombatProps) {
+  const combatText = BATTLE_COMBAT_TEXT[language];
   const [showPrompt, setShowPrompt] = useState(false);
   const [promptInput, setPromptInput] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -1195,13 +1260,31 @@ export default function BattleCombat({
   const prevMonsterShieldRef = useRef(monsterShield);
 
   /* Keep text data in a ref so the RAF loop never needs to restart */
-  const textRef = useRef({ nextIntent, monsterShield, ambientText, battleLog, monsterHp, turn });
+  const textRef = useRef({
+    nextIntent,
+    nextIntentLabel,
+    monsterShield,
+    ambientText,
+    battleLog,
+    monsterHp,
+    turn,
+    shieldLabel: combatText.shieldLabel,
+  });
   const sceneAnchors = useMemo(() => getSceneAnchors(W, H), []);
   const projectileSceneAnchors = useMemo(() => getProjectileSceneAnchors(SCENE_W, SCENE_H), []);
 
   useEffect(() => {
-    textRef.current = { nextIntent, monsterShield, ambientText, battleLog, monsterHp, turn };
-  }, [ambientText, battleLog, monsterHp, monsterShield, nextIntent, turn]);
+    textRef.current = {
+      nextIntent,
+      nextIntentLabel,
+      monsterShield,
+      ambientText,
+      battleLog,
+      monsterHp,
+      turn,
+      shieldLabel: combatText.shieldLabel,
+    };
+  }, [ambientText, battleLog, combatText.shieldLabel, monsterHp, monsterShield, nextIntent, nextIntentLabel, turn]);
 
   const pendingTargeting = pendingAction ? getActionTargeting(pendingAction) : null;
   const availableTargets = useMemo(() => {
@@ -2249,11 +2332,13 @@ export default function BattleCombat({
         !!sceneRect && sceneRect.width > 0 && sceneRect.height > 0 && consoleRect.width > 0 && consoleRect.height > 0;
       const {
         nextIntent: intent,
+        nextIntentLabel: intentLabel,
         monsterShield: mShield,
         ambientText: ambient,
         battleLog: log,
         monsterHp: currentMonsterHp,
         turn: currentTurn,
+        shieldLabel,
       } = textRef.current;
       const projectiles = projectilesRef.current;
       const slashes = slashesRef.current;
@@ -2478,7 +2563,7 @@ export default function BattleCombat({
       // 1. Monster intent (orange, highest priority)
       y = renderTextBlockPhysics(
         ctx,
-        `> ${intent.label}`,
+        `> ${intentLabel}`,
         `rgba(255, 170, 60, ${(0.72 + torchFlicker * 0.14).toFixed(2)})`,
         y,
         consoleProjectiles,
@@ -2492,7 +2577,7 @@ export default function BattleCombat({
       if (mShield > 0) {
         y = renderTextBlockPhysics(
           ctx,
-          `  [Shield: ${mShield}]`,
+          `  [${shieldLabel}: ${mShield}]`,
           "rgba(100, 180, 255, 0.68)",
           y,
           consoleProjectiles,
@@ -2892,10 +2977,12 @@ export default function BattleCombat({
       const raw = promptInput.trim();
       if (!raw) return;
 
-      const isDefendMode = raw.toLowerCase().startsWith("defend:");
-      const spellQuery = isDefendMode ? raw.slice(7).trim() : raw;
+      const lower = raw.toLowerCase();
+      const defendPrefix = ["defend:", "방어:"].find((prefix) => lower.startsWith(prefix));
+      const isDefendMode = Boolean(defendPrefix);
+      const spellQuery = defendPrefix ? raw.slice(defendPrefix.length).trim() : raw;
 
-      const spell = findSpell(spellQuery);
+      const spell = findSpell(normalizeSpellQuery(spellQuery));
       if (spell) {
         const mode =
           isDefendMode && spell.modes.includes("defend")
@@ -2903,7 +2990,6 @@ export default function BattleCombat({
             : ("attack" as const);
         stageAction({ type: "spell", spell, mode });
       } else {
-        const lower = raw.toLowerCase();
         if (
           lower.includes("heal") ||
           lower.includes("breath") ||
@@ -2920,29 +3006,32 @@ export default function BattleCombat({
     [promptInput, stageAction, turn],
   );
 
-  const CHOICES = [
-    { key: "1", label: "Attack", hint: "Physical attack" },
-    { key: "2", label: "Defend", hint: "Raise a shield" },
-    { key: "3", label: ">_", hint: "Spell or freeform" },
-  ];
+  const CHOICES = useMemo(
+    () => [
+      { key: "1", label: combatText.attackLabel, hint: combatText.attackHint },
+      { key: "2", label: combatText.defendLabel, hint: combatText.defendHint },
+      { key: "3", label: combatText.promptLabel, hint: combatText.promptHint },
+    ],
+    [combatText],
+  );
 
   const pendingActionLabel = !pendingAction
     ? ""
     : pendingAction.type === "attack"
-      ? "Attack"
+      ? combatText.attackLabel
       : pendingAction.type === "spell"
-        ? pendingAction.spell.name
-        : pendingAction.type === "heal"
-          ? "Heal"
-          : "Defend";
+        ? getLocalizedSpellName(pendingAction.spell.name, language)
+      : pendingAction.type === "heal"
+          ? combatText.healLabel
+          : combatText.defendLabel;
 
   const pendingActionHint = !pendingAction
     ? ""
     : pendingTargeting === "all-enemies"
-      ? "Choose an enemy. This spell still strikes every enemy in range."
+      ? combatText.chooseEnemyHint
       : pendingTargeting === "single"
-        ? "Self-targets always hit. Other targets use your current hit and crit chances."
-        : "This action can only affect yourself.";
+        ? combatText.chooseSingleHint
+        : combatText.chooseSelfHint;
   const activePotionPosition = potionDragging
     ? potionDragPosition ?? potionRestPosition ?? potionHomePosition
     : potionRestPosition ?? potionHomePosition;
@@ -3013,7 +3102,7 @@ export default function BattleCombat({
         {potionAvailable && activePotionPosition && (
           <button
             type="button"
-            aria-label="Drag the health potion onto the player"
+            aria-label={combatText.potionAriaLabel}
             className="absolute z-[44] border-0 bg-transparent p-0"
             style={{
               left: `${activePotionPosition.x}px`,
@@ -3042,7 +3131,7 @@ export default function BattleCombat({
               }}
             >
               <span className="pointer-events-none absolute left-1/2 top-[-0.9rem] -translate-x-1/2 whitespace-nowrap font-crt text-[0.52rem] tracking-[0.18em] text-[rgba(255,156,156,0.82)] [text-shadow:0_0_6px_rgba(184,28,44,0.26)]">
-                POTION
+                {combatText.potionLabel}
               </span>
               <div className="pointer-events-none absolute left-1/2 top-[66px] h-[15px] w-[34px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,102,102,0.34)_0%,rgba(255,102,102,0.06)_58%,rgba(255,102,102,0)_100%)] blur-[4px]" />
               <div className="pointer-events-none absolute left-1/2 top-[7px] -translate-x-1/2">
@@ -3053,7 +3142,7 @@ export default function BattleCombat({
                   potionHovered && !potionDragging ? "opacity-100" : "opacity-0"
                 }`}
               >
-                heal +8 hp, free action
+                {combatText.potionTooltip}
               </span>
             </div>
           </button>
@@ -3136,8 +3225,14 @@ export default function BattleCombat({
 
         <div className="absolute left-1/2 top-[71%] z-30 flex -translate-x-1/2 flex-col items-center gap-2">
           <div className="flex items-end gap-6">
-            <HeartHP current={playerHp} max={playerMaxHp} shield={playerShield} />
-            <ManaFlask current={playerMana} max={playerMaxMana} />
+            <HeartHP
+              current={playerHp}
+              max={playerMaxHp}
+              shield={playerShield}
+              label={combatText.hpLabel}
+              shieldLabel={combatText.shieldLabel}
+            />
+            <ManaFlask current={playerMana} max={playerMaxMana} label={combatText.manaLabel} />
           </div>
         </div>
 
@@ -3168,7 +3263,7 @@ export default function BattleCombat({
       {turn === "player" && !showPrompt && pendingAction && (
         <div className="w-full max-w-[560px] font-crt text-[0.92rem] sm:text-[0.96rem]">
           <p className="px-3 pb-1 text-[0.7rem] uppercase tracking-[0.14em] text-white/38">
-            {pendingActionLabel} target
+            {pendingActionLabel} {combatText.targetSuffix}
           </p>
           {availableTargets.map((target, index) => {
             const hitChance = Math.round(
@@ -3200,13 +3295,13 @@ export default function BattleCombat({
                   {target.name}
                 </span>
                 <span className="ml-3 text-[0.72rem] text-white/28">
-                  hit {hitChance}% | crit {critChance}%
+                  {combatText.hitLabel} {hitChance}% | {combatText.critLabel} {critChance}%
                 </span>
               </button>
             );
           })}
           <p className="px-3 pt-1 text-[0.68rem] text-white/30">
-            {pendingActionHint} [ESC] cancel.
+            {pendingActionHint} [ESC] {combatText.cancelLabel}.
           </p>
         </div>
       )}
@@ -3219,7 +3314,7 @@ export default function BattleCombat({
               type="text"
               value={promptInput}
               onChange={(e) => setPromptInput(e.target.value)}
-              placeholder="cast a spell, heal, or act..."
+              placeholder={combatText.promptPlaceholder}
               autoFocus
               className="min-w-0 flex-1 border-0 border-b border-ember/30 bg-transparent text-[1rem] text-ember outline-none placeholder:text-white/25 focus:border-ember sm:text-[1.08rem]"
             />
@@ -3232,9 +3327,7 @@ export default function BattleCombat({
             </button>
           </form>
           <p className="mt-1 text-[0.68rem] text-white/30">
-            Spell names, "defend:Stone", "heal", or anything you can think of.
-            Offensive actions will ask for a target.
-            MP: {playerMana}
+            {combatText.promptHelp} {combatText.manaLabel}: {playerMana}
           </p>
         </div>
       )}
@@ -3244,7 +3337,7 @@ export default function BattleCombat({
           className="m-0 animate-wait-blink text-center text-[0.9rem] uppercase tracking-[0.16em]"
           style={{ color: "rgba(255, 100, 80, 0.55)" }}
         >
-          {monsterName} acts beyond the torchlight...
+          {combatText.monsterTurnMessage(monsterName)}
         </p>
       )}
     </div>

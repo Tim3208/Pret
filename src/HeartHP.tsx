@@ -8,6 +8,8 @@ interface HeartHPProps {
   current: number;
   max: number;
   shield?: number;
+  label: string;
+  shieldLabel: string;
 }
 
 /**
@@ -54,7 +56,13 @@ const FRAME_INTERVAL = 1000 / 24;
  *
  * @param props 현재 체력과 최대 체력
  */
-export default function HeartHP({ current, max, shield = 0 }: HeartHPProps) {
+export default function HeartHP({
+  current,
+  max,
+  shield = 0,
+  label,
+  shieldLabel,
+}: HeartHPProps) {
   /**
    * 마우스 hover 여부를 저장한다.
    */
@@ -199,7 +207,7 @@ export default function HeartHP({ current, max, shield = 0 }: HeartHPProps) {
           hovered ? "opacity-100" : "opacity-0"
         }`}
       >
-        hp {current}/{max}{shield > 0 ? ` +${shield}` : ""}
+        {label} {current}/{max}{shield > 0 ? ` +${shield} ${shieldLabel}` : ""}
       </span>
     </div>
   );
