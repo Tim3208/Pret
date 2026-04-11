@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import BattleScene from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
+import type { BattleResult } from "./BattleScene";
 
 /**
  * 캠프파이어 장면에서 출력할 도입 내레이션이다.
@@ -20,15 +21,26 @@ export default function App() {
    * 현재 게임 진행 단계를 저장한다.
    */
   const [phase, setPhase] = useState<"text" | "transition" | "battle">("text");
-
-  const handleBattleEnd = useCallback(() => {
-    setPhase("transition");
-  }, []);
-
   /**
    * 플레이어가 입력창에 입력한 명령어를 저장한다.
    */
   const [input, setInput] = useState("");
+
+  /**
+   * 전투 결과에 따라 다음 장면을 결정한다.
+   *
+   * @param result 전투 승패 정보
+   */
+  const handleBattleEnd = useCallback((result: BattleResult) => {
+    if (result.won) {
+      setPhase("transition");
+      return;
+    }
+
+    setInput("");
+    setPhase("text");
+  }, []);
+
   /**
    * 모닥불 애니메이션 프레임을 취소하기 위해 최근 requestAnimationFrame ID를 보관한다.
    */
