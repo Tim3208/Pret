@@ -1,7 +1,11 @@
 // ── Element system ──────────────────────────────────────────
 export type Element = "fire" | "water" | "earth" | "nature";
 
-// fire → nature → earth → water → fire
+/**
+ * 상성 우위를 갖는 원소를 매핑한 순환 규칙표다.
+ *
+ * fire → nature → earth → water → fire
+ */
 const ELEMENT_ADVANTAGE: Record<Element, Element> = {
   fire: "nature",
   nature: "earth",
@@ -9,6 +13,13 @@ const ELEMENT_ADVANTAGE: Record<Element, Element> = {
   water: "fire",
 };
 
+/**
+ * 공격 원소와 방어 원소의 상성을 계산한다.
+ *
+ * @param attack 공격 원소
+ * @param defense 방어 원소
+ * @returns 상성 배율
+ */
 export function getElementMultiplier(
   attack: Element,
   defense: Element,
@@ -19,6 +30,9 @@ export function getElementMultiplier(
 }
 
 // ── Player stats ────────────────────────────────────────────
+/**
+ * 플레이어 능력치 묶음이다.
+ */
 export interface PlayerStats {
   strength: number; // → maxHp, base attack dmg
   agility: number; // → base attack bonus, base shield bonus
@@ -27,28 +41,46 @@ export interface PlayerStats {
 
 export type LiteracyTier = 1 | 2 | 3;
 
+/**
+ * 문해력 수치로 해금된 주문 티어를 계산한다.
+ */
 export function getLiteracyTier(literacy: number): LiteracyTier {
   if (literacy >= 20) return 3;
   if (literacy >= 12) return 2;
   return 1;
 }
 
+/**
+ * 현재 능력치 기준 최대 체력을 계산한다.
+ */
 export function getMaxHp(stats: PlayerStats): number {
   return 20 + stats.strength * 2;
 }
 
+/**
+ * 현재 능력치 기준 최대 마나를 계산한다.
+ */
 export function getMaxMana(stats: PlayerStats): number {
   return 8 + stats.literacy * 3;
 }
 
+/**
+ * 기본 물리 공격 피해량을 계산한다.
+ */
 export function getBaseAttackDamage(stats: PlayerStats): number {
   return 3 + stats.strength + stats.agility;
 }
 
+/**
+ * 기본 방어 행동으로 얻는 방어막 수치를 계산한다.
+ */
 export function getBaseShield(stats: PlayerStats): number {
   return 2 + Math.floor(stats.agility * 1.5);
 }
 
+/**
+ * 회복 행동의 기본 회복량을 반환한다.
+ */
 export function getHealAmount(stats?: PlayerStats): number {
   void stats;
   return 5;
@@ -70,6 +102,9 @@ export type ActionTargeting = "single" | "self" | "all-enemies";
 // ── Spells ──────────────────────────────────────────────────
 export type SpellMode = "attack" | "defend";
 
+/**
+ * 플레이어가 사용할 수 있는 주문 정의다.
+ */
 export interface Spell {
   name: string;
   element: Element;
@@ -257,6 +292,12 @@ export const SPELLS: Spell[] = [
   },
 ];
 
+/**
+ * 입력 문자열에 가장 가까운 주문을 찾는다.
+ *
+ * @param input 플레이어 입력값
+ * @returns 일치하는 주문, 없으면 `null`
+ */
 export function findSpell(input: string): Spell | null {
   const normalised = input.trim().toLowerCase();
   if (!normalised) return null;
@@ -274,6 +315,9 @@ export function findSpell(input: string): Spell | null {
   return null;
 }
 
+/**
+ * 두 문자열의 편집 거리를 계산한다.
+ */
 function levenshtein(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
@@ -296,6 +340,9 @@ function levenshtein(a: string, b: string): number {
 // ── Monster ─────────────────────────────────────────────────
 export type MonsterIntentKind = "attack" | "defend" | "spell";
 
+/**
+ * 몬스터가 다음 턴에 수행할 의도를 설명한다.
+ */
 export interface MonsterIntent {
   kind: MonsterIntentKind;
   label: string; // narrative hint for the player
@@ -311,6 +358,9 @@ export interface MonsterDef {
   revealTurnsAhead: number; // how many turns ahead to show intent
 }
 
+/**
+ * 기본 전투에 등장하는 테스트 몬스터 정의다.
+ */
 export const HOLLOW_WRAITH: MonsterDef = {
   name: "Hollow Wraith",
   maxHp: 60,
@@ -331,6 +381,9 @@ export const HOLLOW_WRAITH: MonsterDef = {
   revealTurnsAhead: 1,
 };
 
+/**
+ * 몬스터 의도 목록에서 다음 행동을 무작위 선택한다.
+ */
 export function pickMonsterIntent(monster: MonsterDef): MonsterIntent {
   return monster.intents[Math.floor(Math.random() * monster.intents.length)];
 }
@@ -354,6 +407,9 @@ function clampChance(value: number, min: number, max: number): number {
 
 const TEST_NON_SELF_HIT_CHANCE = 0.85;
 
+/**
+ * 기본 물리 공격의 명중 확률을 계산한다.
+ */
 export function getAttackHitChance(
   _stats: PlayerStats,
   targetSide: BattleTargetSide,
@@ -362,6 +418,9 @@ export function getAttackHitChance(
   return clampChance(TEST_NON_SELF_HIT_CHANCE, 0, 1);
 }
 
+/**
+ * 주문 공격의 명중 확률을 계산한다.
+ */
 export function getSpellHitChance(
   _stats: PlayerStats,
   targetSide: BattleTargetSide,
@@ -370,18 +429,30 @@ export function getSpellHitChance(
   return clampChance(TEST_NON_SELF_HIT_CHANCE, 0, 1);
 }
 
+/**
+ * 기본 물리 공격의 치명타 확률을 계산한다.
+ */
 export function getAttackCritChance(stats: PlayerStats): number {
   return clampChance(0.05 + stats.strength * 0.01, 0.05, 0.45);
 }
 
+/**
+ * 공격형 주문의 치명타 확률을 계산한다.
+ */
 export function getSpellCritChance(stats: PlayerStats): number {
   return clampChance(0.05 + stats.literacy * 0.01, 0.05, 0.45);
 }
 
+/**
+ * 치명타 배율을 적용한 최종 피해량을 계산한다.
+ */
 export function getCriticalDamage(baseDamage: number): number {
   return Math.max(1, Math.round(baseDamage * 1.5));
 }
 
+/**
+ * 행동 초안이 요구하는 타깃 범위를 반환한다.
+ */
 export function getActionTargeting(action: PlayerActionDraft): ActionTargeting {
   switch (action.type) {
     case "attack":
@@ -396,6 +467,9 @@ export function getActionTargeting(action: PlayerActionDraft): ActionTargeting {
   }
 }
 
+/**
+ * 행동 종류와 대상 진영을 기준으로 명중 확률을 계산한다.
+ */
 export function getActionHitChance(
   action: PlayerActionDraft | PlayerAction,
   stats: PlayerStats,
@@ -412,6 +486,9 @@ export function getActionHitChance(
   }
 }
 
+/**
+ * 행동 종류와 대상 진영을 기준으로 치명타 확률을 계산한다.
+ */
 export function getActionCritChance(
   action: PlayerActionDraft | PlayerAction,
   stats: PlayerStats,
@@ -451,6 +528,9 @@ export interface CombatAnimationRequest {
 }
 
 // ── Default starting stats ──────────────────────────────────
+/**
+ * 새 전투 시작 시 사용하는 기본 플레이어 능력치다.
+ */
 export const DEFAULT_STATS: PlayerStats = {
   strength: 6,
   agility: 5,

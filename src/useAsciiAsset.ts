@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+/**
+ * ASCII 라인 배열의 바깥 여백을 잘라 실제 도형 영역만 남긴다.
+ */
 function trimAscii(lines: string[]): string[] {
   if (lines.length === 0) return [];
 
@@ -32,6 +35,9 @@ function trimAscii(lines: string[]): string[] {
   return croppedRows.map((line) => line.slice(left, right + 1));
 }
 
+/**
+ * 원본 ASCII 에셋 문자열을 런타임용 라인 배열로 정리한다.
+ */
 function parseAsciiAsset(raw: string): string[] {
   // The authored ASCII files sometimes contain Korean guide labels used while aligning sprites.
   // Strip those lines so the runtime renderer only sees drawable glyph rows.
@@ -43,6 +49,12 @@ function parseAsciiAsset(raw: string): string[] {
   return trimAscii(lines);
 }
 
+/**
+ * 텍스트 기반 ASCII 에셋을 불러와 정리된 라인 배열로 반환한다.
+ *
+ * @param path 퍼블릭 에셋 경로
+ * @returns ASCII 라인 목록과 로딩 상태
+ */
 export function useAsciiAsset(path: string) {
   const [lines, setLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
