@@ -1107,6 +1107,9 @@ function classToCanvasColor(cls?: string): string {
    Component
    ================================================================ */
 
+/**
+ * 전투 콘솔, ASCII 캐릭터, 투사체 연출을 함께 렌더링하는 메인 전투 UI다.
+ */
 export default function BattleCombat({
   monsterName,
   monsterAscii,
@@ -1376,18 +1379,18 @@ export default function BattleCombat({
   }, [monsterMaxHp, projectileSceneAnchors.monsterCore.x, projectileSceneAnchors.monsterShield.x]);
 
   useEffect(() => {
-    const playerHitWaveFrame = playerHitWaveFrameRef.current;
-    const monsterHitWaveFrame = monsterHitWaveFrameRef.current;
+    const playerHitWaveFrame = playerHitWaveFrameRef;
+    const monsterHitWaveFrame = monsterHitWaveFrameRef;
 
     return () => {
       if (noiseResetRef.current) {
         window.clearTimeout(noiseResetRef.current);
       }
-      if (playerHitWaveFrame) {
-        window.cancelAnimationFrame(playerHitWaveFrame);
+      if (playerHitWaveFrame.current) {
+        window.cancelAnimationFrame(playerHitWaveFrame.current);
       }
-      if (monsterHitWaveFrame) {
-        window.cancelAnimationFrame(monsterHitWaveFrame);
+      if (monsterHitWaveFrame.current) {
+        window.cancelAnimationFrame(monsterHitWaveFrame.current);
       }
       if (monsterImpactCallbackTimeoutRef.current) {
         window.clearTimeout(monsterImpactCallbackTimeoutRef.current);
