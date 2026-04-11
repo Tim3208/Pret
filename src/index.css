@@ -20,6 +20,9 @@
   --animate-player-lunge: player-lunge 0.7s ease-out;
   --animate-monster-sink: monster-sink 1.2s ease-in forwards;
   --animate-hit-absorb: hit-absorb 0.5s ease-out;
+  --animate-player-breathe: player-breathe 4.8s ease-in-out infinite;
+  --animate-enemy-idle: enemy-idle 5.8s ease-in-out infinite;
+  --animate-torch-glow: torch-glow 3.2s ease-in-out infinite;
 
   @keyframes fade-in-text {
     from {
@@ -227,6 +230,50 @@
       transform: scale(1) translateX(0);
     }
   }
+
+  @keyframes player-breathe {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) rotate(-0.35deg) scaleY(1);
+    }
+
+    50% {
+      transform: translate3d(2px, -6px, 0) rotate(0.15deg) scaleY(1.02);
+    }
+  }
+
+  @keyframes enemy-idle {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    50% {
+      transform: translate3d(-2px, -5px, 0) scale(1.01);
+    }
+  }
+
+  @keyframes torch-glow {
+    0%,
+    100% {
+      opacity: 0.7;
+      transform: scale(0.97);
+      filter: blur(16px);
+    }
+
+    35% {
+      opacity: 0.92;
+      transform: scale(1.02);
+      filter: blur(20px);
+    }
+
+    65% {
+      opacity: 0.78;
+      transform: scale(0.99);
+      filter: blur(18px);
+    }
+  }
+
 }
 
 @layer base {

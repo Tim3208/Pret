@@ -3,14 +3,21 @@ import BattleCombat from "./BattleCombat";
 import SkullEncounter from "./SkullEncounter";
 import { useImageToAscii } from "./useImageToAscii";
 import {
+  type BattleTargetOption,
   type BattleLogEntry,
+  type CombatAnimationRequest,
   type MonsterIntent,
   type PlayerAction,
   type PlayerStats,
   DEFAULT_STATS,
   HOLLOW_WRAITH,
+  MONSTER_TARGET_ID,
+  PLAYER_TARGET_ID,
+  getActionCritChance,
+  getActionHitChance,
   getBaseAttackDamage,
   getBaseShield,
+  getCriticalDamage,
   getElementMultiplier,
   getHealAmount,
   getLiteracyTier,
@@ -49,14 +56,30 @@ interface Props {
 
 export default function BattleScene({ onBattleEnd }: Props) {
   const { lines: playerAscii, loading: playerLoading } = useImageToAscii(
-    "/assets/hero.png",
-    55,
-    { flip: true, brightnessThreshold: 40 },
+    "/assets/new_hero.png",
+    134,
+    {
+      flip: false,
+      brightnessThreshold: 10,
+      contrast: 1.72,
+      exposure: 1.01,
+      alphaThreshold: 18,
+      blackPoint: 0.1,
+      whitePoint: 0.86,
+    },
   );
   const { lines: monsterAscii, loading: monsterLoading } = useImageToAscii(
-    "/assets/knight.png",
-    100,
-    { flip: false, brightnessThreshold: 20, spriteSheet: { frameCount: 2, interval: 1000 } },
+    "/assets/new_enemy.png",
+    72,
+    {
+      flip: false,
+      brightnessThreshold: 14,
+      contrast: 1.8,
+      exposure: 0.98,
+      alphaThreshold: 12,
+      blackPoint: 0.14,
+      whitePoint: 0.82,
+    },
   );
 
   const monster = HOLLOW_WRAITH;
@@ -79,6 +102,13 @@ export default function BattleScene({ onBattleEnd }: Props) {
   const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
   const [ambientIndex, setAmbientIndex] = useState(0);
   const ambientText = useMemo(() => AMBIENT_LINES[ambientIndex % AMBIENT_LINES.length], [ambientIndex]);
+  const targetOptions = useMemo<BattleTargetOption[]>(
+    () => [
+      { id: PLAYER_TARGET_ID, name: "You", side: "player" },
+      { id: MONSTER_TARGET_ID, name: monster.name, side: "enemy" },
+    ],
+    [monster.name],
+  );
 
   const addLog = useCallback((text: string, color?: string) => {
     setBattleLog((prev) => [...prev.slice(-30), { text, color }]);
@@ -95,6 +125,21 @@ export default function BattleScene({ onBattleEnd }: Props) {
     addLog("The battle begins!", "text-ember");
   }, [addLog]);
 
+  const monsterShieldRef = useRef(monsterShield);
+  monsterShieldRef.current = monsterShield;
+  const monsterTurnFastForwardRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        monsterTurnFastForwardRef.current?.();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
   // ── Resolve player action ──
   const handlePlayerAction = useCallback(
     (action: PlayerAction) => {
@@ -103,27 +148,93 @@ export default function BattleScene({ onBattleEnd }: Props) {
       // Clear previous shield (shields expire each turn)
       setPlayerShield(0);
 
-      let projectileWord = "";
-      let projectileFromPlayer = true;
-      let projectileBlocked = false;
+      let animationRequest: CombatAnimationRequest | null = null;
 
       switch (action.type) {
         case "attack": {
-          const dmg = getBaseAttackDamage(stats);
-          const shieldAbsorb = Math.min(monsterShield, dmg);
-          const hpDmg = dmg - shieldAbsorb;
-          projectileBlocked = monsterShield >= dmg;
-          if (shieldAbsorb > 0) {
-            setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
-            addLog(
-              `Strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
-              "text-sky-400",
-            );
-          } else {
-            addLog(`Strike! ${dmg} damage!`, "text-sky-400");
+          const targetSide = action.targetId === PLAYER_TARGET_ID ? "player" : "enemy";
+          const targetName = targetSide === "player" ? "yourself" : monster.name;
+          const hitChance = getActionHitChance(action, stats, targetSide);
+          const critChance = getActionCritChance(action, stats, targetSide);
+          const didHit = targetSide === "player" || Math.random() < hitChance;
+          const didCrit = didHit && Math.random() < critChance;
+          const totalDamage = didCrit
+            ? getCriticalDamage(getBaseAttackDamage(stats))
+            : getBaseAttackDamage(stats);
+
+          if (!didHit) {
+            animationRequest = {
+              word: "STRIKE",
+              fromPlayer: true,
+              targetId: action.targetId,
+              targetSide,
+              kind: "projectile",
+              missed: true,
+              onImpact: () => {
+                addLog(`Strike misses ${targetName}!`, "text-white/40");
+              },
+            };
+            break;
           }
-          setMonsterHp((v) => Math.max(0, v - hpDmg));
-          projectileWord = "STRIKE";
+
+          if (targetSide === "enemy") {
+            const currentShield = monsterShieldRef.current;
+            const shieldAbsorb = Math.min(currentShield, totalDamage);
+            const hpDmg = totalDamage - shieldAbsorb;
+            animationRequest = {
+              word: "STRIKE",
+              fromPlayer: true,
+              targetId: action.targetId,
+              targetSide,
+              kind: "projectile",
+              shielded: currentShield > 0,
+              blocked: currentShield >= totalDamage,
+              critical: didCrit,
+              impactDamage: hpDmg,
+              onImpact: () => {
+                if (shieldAbsorb > 0) {
+                  setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
+                }
+                setMonsterHp((v) => Math.max(0, v - hpDmg));
+
+                if (shieldAbsorb > 0) {
+                  addLog(
+                    didCrit
+                      ? `Critical strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`
+                      : `Strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
+                    didCrit ? "text-yellow-300" : "text-sky-400",
+                  );
+                } else {
+                  addLog(
+                    didCrit
+                      ? `Critical strike! ${totalDamage} damage!`
+                      : `Strike! ${totalDamage} damage!`,
+                    didCrit ? "text-yellow-300" : "text-sky-400",
+                  );
+                }
+              },
+            };
+            break;
+          }
+
+          animationRequest = {
+            word: "STRIKE",
+            fromPlayer: true,
+            targetId: action.targetId,
+            targetSide,
+            kind: "projectile",
+            critical: didCrit,
+            impactDamage: totalDamage,
+            onImpact: () => {
+              setPlayerHp((v) => Math.max(0, v - totalDamage));
+              addLog(
+                didCrit
+                  ? `Critical strike! You hit yourself for ${totalDamage} damage!`
+                  : `You strike yourself for ${totalDamage} damage!`,
+                didCrit ? "text-yellow-300" : "text-red-400",
+              );
+            },
+          };
           break;
         }
         case "defend": {
@@ -155,32 +266,118 @@ export default function BattleScene({ onBattleEnd }: Props) {
           setPlayerMana((v) => v - spell.manaCost);
 
           if (mode === "attack") {
-            let dmg = spell.baseDamage;
-            if (monster.element) {
-              const mult = getElementMultiplier(spell.element, monster.element);
-              dmg = Math.round(dmg * mult);
-              if (mult > 1)
-                addLog("Elemental weakness! Super effective!", "text-yellow-300");
-              if (mult < 1)
-                addLog("Elemental resistance... not very effective.", "text-gray-400");
-            }
-            const shieldAbsorb = Math.min(monsterShield, dmg);
-            const hpDmg = dmg - shieldAbsorb;
-            projectileBlocked = monsterShield >= dmg;
-            if (shieldAbsorb > 0) {
-              setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
-            }
-            setMonsterHp((v) => Math.max(0, v - hpDmg));
-            addLog(
-              `${spell.name}! ${dmg} damage! (MP -${spell.manaCost})`,
-              "text-cyan-300",
-            );
-            projectileWord = spell.name.toUpperCase();
+            const targetSide = action.targetId === PLAYER_TARGET_ID ? "player" : "enemy";
+            const targetName = targetSide === "player" ? "yourself" : monster.name;
+            const hitChance = getActionHitChance(action, stats, targetSide);
+            const critChance = getActionCritChance(action, stats, targetSide);
+            const didHit = targetSide === "player" || Math.random() < hitChance;
+            const didCrit = didHit && Math.random() < critChance;
 
-            if (spell.stunChance > 0 && Math.random() < spell.stunChance) {
-              setMonsterStunned(true);
-              addLog("Enemy stunned!", "text-purple-400");
+            let damage = spell.baseDamage;
+            let elementLog: { text: string; color: string } | null = null;
+            if (targetSide === "enemy" && monster.element) {
+              const mult = getElementMultiplier(spell.element, monster.element);
+              damage = Math.round(damage * mult);
+              if (mult > 1) {
+                elementLog = {
+                  text: "Elemental weakness! Super effective!",
+                  color: "text-yellow-300",
+                };
+              } else if (mult < 1) {
+                elementLog = {
+                  text: "Elemental resistance... not very effective.",
+                  color: "text-gray-400",
+                };
+              }
             }
+
+            if (didCrit) {
+              damage = getCriticalDamage(damage);
+            }
+
+            const willStun =
+              didHit &&
+              targetSide === "enemy" &&
+              spell.stunChance > 0 &&
+              Math.random() < spell.stunChance;
+
+            if (!didHit) {
+              animationRequest = {
+                word: spell.name.toUpperCase(),
+                fromPlayer: true,
+                targetId: action.targetId,
+                targetSide,
+                kind: "projectile",
+                element: spell.element,
+                missed: true,
+                onImpact: () => {
+                  addLog(
+                    `${spell.name} misses ${targetName}! (MP -${spell.manaCost})`,
+                    "text-white/40",
+                  );
+                },
+              };
+              break;
+            }
+
+            if (targetSide === "enemy") {
+              const currentShield = monsterShieldRef.current;
+              const shieldAbsorb = Math.min(currentShield, damage);
+              const hpDmg = damage - shieldAbsorb;
+              animationRequest = {
+                word: spell.name.toUpperCase(),
+                fromPlayer: true,
+                targetId: action.targetId,
+                targetSide,
+                kind: "projectile",
+                element: spell.element,
+                shielded: currentShield > 0,
+                blocked: currentShield >= damage,
+                critical: didCrit,
+                impactDamage: hpDmg,
+                onImpact: () => {
+                  if (shieldAbsorb > 0) {
+                    setMonsterShield((v) => Math.max(0, v - shieldAbsorb));
+                  }
+                  if (elementLog) {
+                    addLog(elementLog.text, elementLog.color);
+                  }
+                  setMonsterHp((v) => Math.max(0, v - hpDmg));
+                  addLog(
+                    didCrit
+                      ? `Critical ${spell.name}! ${damage} damage! (MP -${spell.manaCost})`
+                      : `${spell.name}! ${damage} damage! (MP -${spell.manaCost})`,
+                    didCrit ? "text-yellow-300" : "text-cyan-300",
+                  );
+
+                  if (willStun) {
+                    setMonsterStunned(true);
+                    addLog("Enemy stunned!", "text-purple-400");
+                  }
+                },
+              };
+              break;
+            }
+
+            animationRequest = {
+              word: spell.name.toUpperCase(),
+              fromPlayer: true,
+              targetId: action.targetId,
+              targetSide,
+              kind: "projectile",
+              element: spell.element,
+              critical: didCrit,
+              impactDamage: damage,
+              onImpact: () => {
+                setPlayerHp((v) => Math.max(0, v - damage));
+                addLog(
+                  didCrit
+                    ? `Critical ${spell.name}! You take ${damage} damage. (MP -${spell.manaCost})`
+                    : `${spell.name} hits yourself for ${damage} damage. (MP -${spell.manaCost})`,
+                  didCrit ? "text-yellow-300" : "text-red-400",
+                );
+              },
+            };
           } else {
             // defend mode
             const shield = spell.baseShield + Math.floor(stats.agility * 0.5);
@@ -199,15 +396,15 @@ export default function BattleScene({ onBattleEnd }: Props) {
       }
 
       // Trigger monster turn — delay depends on whether player fired a projectile
-      const turnDelay = projectileWord ? 2200 : 400;
+      const turnDelay = animationRequest ? 1920 : 400;
       window.setTimeout(() => setTurn("monster"), turnDelay);
 
-      projectileFromPlayer; // used by BattleCombat for animation
-      void projectileWord; // used by BattleCombat for animation
-
-      // Pass the projectile info via a ref so BattleCombat can animate it
-      if (projectileCallbackRef.current) {
-        projectileCallbackRef.current(projectileWord, projectileFromPlayer, { blocked: projectileBlocked });
+      if (animationRequest) {
+        if (projectileCallbackRef.current) {
+          projectileCallbackRef.current(animationRequest);
+        } else {
+          animationRequest.onImpact?.();
+        }
       }
     },
     [
@@ -216,14 +413,11 @@ export default function BattleScene({ onBattleEnd }: Props) {
       maxHp,
       playerMana,
       monster,
-      monsterShield,
       addLog,
     ],
   );
 
-  const projectileCallbackRef = useRef<
-    ((word: string, fromPlayer: boolean, opts?: { blocked?: boolean }) => void) | null
-  >(null);
+  const projectileCallbackRef = useRef<((request: CombatAnimationRequest) => void) | null>(null);
 
   // Refs for values the monster-turn effect needs to read WITHOUT re-triggering
   const nextIntentRef = useRef(nextIntent);
@@ -237,18 +431,40 @@ export default function BattleScene({ onBattleEnd }: Props) {
     if (monsterHp <= 0) return;
 
     const timeoutIds: number[] = [];
+    let turnResolved = false;
+    let actionStarted = false;
+    let pendingResolve: (() => void) | null = null;
 
-    // Short delay before monster acts (transition after charge)
-    timeoutIds.push(window.setTimeout(() => {
+    const clearTurnTimeouts = () => {
+      timeoutIds.forEach((id) => window.clearTimeout(id));
+      timeoutIds.length = 0;
+    };
+
+    const finishMonsterTurn = () => {
+      if (turnResolved) return;
+      turnResolved = true;
+      setAmbientIndex((v) => v + 1);
+      rollNextIntent();
+      setTurn("player");
+    };
+
+    const executeMonsterAction = (skipAnimation = false) => {
+      if (turnResolved) return;
+      if (actionStarted) {
+        if (skipAnimation) {
+          pendingResolve?.();
+        }
+        return;
+      }
+      actionStarted = true;
+
       // Clear monster shield each turn
       setMonsterShield(0);
 
       if (monsterStunned) {
         addLog(`${monster.name} is stunned and cannot act!`, "text-purple-300");
         setMonsterStunned(false);
-        setTurn("player");
-        setAmbientIndex((v) => v + 1);
-        rollNextIntent();
+        finishMonsterTurn();
         return;
       }
 
@@ -263,9 +479,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
           `${monster.name} hardens its guard! (Shield ${shieldVal})`,
           "text-orange-300",
         );
-        setAmbientIndex((v) => v + 1);
-        rollNextIntent();
-        timeoutIds.push(window.setTimeout(() => setTurn("player"), 800));
+        pendingResolve = finishMonsterTurn;
+        if (skipAnimation) {
+          finishMonsterTurn();
+        } else {
+          timeoutIds.push(window.setTimeout(finishMonsterTurn, 920));
+        }
         return;
       }
 
@@ -274,16 +493,10 @@ export default function BattleScene({ onBattleEnd }: Props) {
       const absorbed = Math.min(shield, dmg);
       const hpDmg = dmg - absorbed;
       const blocked = shield >= dmg;
+      const shielded = absorbed > 0;
 
-      // Fire projectile animation
-      if (projectileCallbackRef.current) {
-        const word =
-          intent.element?.toUpperCase() ?? intent.kind.toUpperCase();
-        projectileCallbackRef.current(word, false, { blocked });
-      }
-
-      // Apply damage AFTER projectile arrives (~1200ms travel time)
-      timeoutIds.push(window.setTimeout(() => {
+      const resolveMonsterHit = () => {
+        if (turnResolved) return;
         if (absorbed > 0) {
           setPlayerShield((v) => Math.max(0, v - absorbed));
           if (hpDmg > 0) {
@@ -302,15 +515,49 @@ export default function BattleScene({ onBattleEnd }: Props) {
         }
 
         setPlayerHp((v) => Math.max(0, v - hpDmg));
-        setAmbientIndex((v) => v + 1);
-        rollNextIntent();
+        if (skipAnimation) {
+          finishMonsterTurn();
+          return;
+        }
 
-        // Return to player turn after effects settle
-        timeoutIds.push(window.setTimeout(() => setTurn("player"), 600));
-      }, 1200));
-    }, 600));
+        const recoveryDelay = hpDmg > 0 ? 760 : shielded ? 520 : 120;
+        if (recoveryDelay > 0) {
+          timeoutIds.push(window.setTimeout(finishMonsterTurn, recoveryDelay));
+        } else {
+          finishMonsterTurn();
+        }
+      };
+      pendingResolve = resolveMonsterHit;
 
-    return () => timeoutIds.forEach(id => window.clearTimeout(id));
+      // Fire projectile animation
+      if (!skipAnimation && projectileCallbackRef.current) {
+        projectileCallbackRef.current({
+          word: intent.element?.toUpperCase() ?? intent.kind.toUpperCase(),
+          fromPlayer: false,
+          targetId: PLAYER_TARGET_ID,
+          targetSide: "player",
+          kind: "crescent-slash",
+          element: intent.element,
+          shielded,
+          blocked,
+          impactDamage: hpDmg,
+          onImpact: resolveMonsterHit,
+        });
+      } else {
+        resolveMonsterHit();
+      }
+    };
+
+    timeoutIds.push(window.setTimeout(() => executeMonsterAction(document.hidden), 720));
+    monsterTurnFastForwardRef.current = () => {
+      clearTurnTimeouts();
+      executeMonsterAction(true);
+    };
+
+    return () => {
+      monsterTurnFastForwardRef.current = null;
+      clearTurnTimeouts();
+    };
   }, [
     turn,
     monsterHp,
@@ -324,11 +571,11 @@ export default function BattleScene({ onBattleEnd }: Props) {
   useEffect(() => {
     if (phase !== "combat") return;
     if (monsterHp <= 0 && phase === "combat") {
-      // Wait for projectile+hit (1800ms) + death sink animation (1200ms) + buffer
+      // HP now drops on impact, so only wait for the hit flash and death sink.
       const id = window.setTimeout(() => {
         setPhase("victory");
         addLog(`${monster.name} has been slain!`, "text-yellow-400");
-      }, 3200);
+      }, 1900);
       return () => window.clearTimeout(id);
     }
   }, [monsterHp, phase, monster.name, addLog]);
@@ -377,6 +624,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
             playerMaxMana={maxMana}
             playerShield={playerShield}
             playerStats={stats}
+            targetOptions={targetOptions}
             onAction={handlePlayerAction}
             projectileCallbackRef={projectileCallbackRef}
           />

@@ -119,11 +119,11 @@ export default function ManaFlask({ current, max }: ManaFlaskProps) {
         {lines.join("\n")}
       </pre>
       <span
-        className={`pointer-events-none absolute right-[-2.8rem] top-1/2 -translate-y-1/2 whitespace-nowrap text-[0.65rem] text-[rgba(60,140,255,0.8)] transition-opacity duration-300 ${
+        className={`pointer-events-none absolute left-1/2 top-[calc(100%+0.45rem)] -translate-x-1/2 whitespace-nowrap text-[0.62rem] uppercase tracking-[0.08em] text-[rgba(60,140,255,0.82)] transition-opacity duration-300 ${
           hovered ? "opacity-100" : "opacity-0"
         }`}
       >
-        {current}/{max}
+        mp {current}/{max}
       </span>
     </div>
   );

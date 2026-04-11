@@ -194,11 +194,11 @@ export default function HeartHP({ current, max, shield = 0 }: HeartHPProps) {
         </pre>
       )}
       <span
-        className={`pointer-events-none absolute right-[-2.8rem] top-1/2 -translate-y-1/2 whitespace-nowrap text-[0.65rem] text-[rgba(200,60,60,0.8)] transition-opacity duration-300 ${
+        className={`pointer-events-none absolute left-1/2 top-[calc(100%+0.45rem)] -translate-x-1/2 whitespace-nowrap text-[0.62rem] uppercase tracking-[0.08em] text-[rgba(200,60,60,0.82)] transition-opacity duration-300 ${
           hovered ? "opacity-100" : "opacity-0"
         }`}
       >
-        {current}/{max}{shield > 0 ? ` +${shield}` : ""}
+        hp {current}/{max}{shield > 0 ? ` +${shield}` : ""}
       </span>
     </div>
   );

@@ -53,6 +53,19 @@ export function getHealAmount(_stats: PlayerStats): number {
   return 5;
 }
 
+export type BattleTargetSide = "player" | "enemy";
+
+export interface BattleTargetOption {
+  id: string;
+  name: string;
+  side: BattleTargetSide;
+}
+
+export const PLAYER_TARGET_ID = "player";
+export const MONSTER_TARGET_ID = "monster";
+
+export type ActionTargeting = "single" | "self" | "all-enemies";
+
 // ── Spells ──────────────────────────────────────────────────
 export type SpellMode = "attack" | "defend";
 
@@ -66,6 +79,8 @@ export interface Spell {
   baseShield: number; // defend mode shield
   stunChance: number; // 0‑1
   healOnDefend: number; // nature spells heal when used defensively
+  attackTargeting: ActionTargeting;
+  defendTargeting?: ActionTargeting;
   hint: string; // shown as typing hint
 }
 
@@ -81,6 +96,7 @@ export const SPELLS: Spell[] = [
     baseShield: 0,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "single",
     hint: "Fl___e",
   },
   {
@@ -93,6 +109,7 @@ export const SPELLS: Spell[] = [
     baseShield: 0,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "single",
     hint: "Bl__e",
   },
   {
@@ -105,6 +122,7 @@ export const SPELLS: Spell[] = [
     baseShield: 0,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "all-enemies",
     hint: "Inf___o",
   },
 
@@ -119,6 +137,7 @@ export const SPELLS: Spell[] = [
     baseShield: 0,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "single",
     hint: "Ri___e",
   },
   {
@@ -131,6 +150,7 @@ export const SPELLS: Spell[] = [
     baseShield: 0,
     stunChance: 0.2,
     healOnDefend: 0,
+    attackTargeting: "single",
     hint: "Tor___t",
   },
   {
@@ -143,6 +163,7 @@ export const SPELLS: Spell[] = [
     baseShield: 0,
     stunChance: 0.5,
     healOnDefend: 0,
+    attackTargeting: "all-enemies",
     hint: "Del__e",
   },
 
@@ -157,6 +178,8 @@ export const SPELLS: Spell[] = [
     baseShield: 6,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "single",
+    defendTargeting: "self",
     hint: "St__e",
   },
   {
@@ -169,6 +192,8 @@ export const SPELLS: Spell[] = [
     baseShield: 12,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "single",
+    defendTargeting: "self",
     hint: "Bou___r",
   },
   {
@@ -181,6 +206,8 @@ export const SPELLS: Spell[] = [
     baseShield: 20,
     stunChance: 0,
     healOnDefend: 0,
+    attackTargeting: "single",
+    defendTargeting: "self",
     hint: "Bas___n",
   },
 
@@ -195,6 +222,8 @@ export const SPELLS: Spell[] = [
     baseShield: 5,
     stunChance: 0,
     healOnDefend: 3,
+    attackTargeting: "single",
+    defendTargeting: "self",
     hint: "Th__n",
   },
   {
@@ -207,6 +236,8 @@ export const SPELLS: Spell[] = [
     baseShield: 10,
     stunChance: 0,
     healOnDefend: 6,
+    attackTargeting: "single",
+    defendTargeting: "self",
     hint: "Ver___e",
   },
   {
@@ -219,6 +250,8 @@ export const SPELLS: Spell[] = [
     baseShield: 18,
     stunChance: 0,
     healOnDefend: 10,
+    attackTargeting: "single",
+    defendTargeting: "self",
     hint: "Syl__n",
   },
 ];
@@ -302,16 +335,115 @@ export function pickMonsterIntent(monster: MonsterDef): MonsterIntent {
 }
 
 // ── Combat action types ─────────────────────────────────────
-export type PlayerAction =
+export type PlayerActionDraft =
   | { type: "attack" }
   | { type: "defend" }
   | { type: "heal" }
   | { type: "spell"; spell: Spell; mode: SpellMode };
 
+export type PlayerAction =
+  | { type: "attack"; targetId: string }
+  | { type: "defend"; targetId: string }
+  | { type: "heal"; targetId: string }
+  | { type: "spell"; spell: Spell; mode: SpellMode; targetId: string };
+
+function clampChance(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function getAttackHitChance(
+  stats: PlayerStats,
+  targetSide: BattleTargetSide,
+): number {
+  if (targetSide === "player") return 1;
+  return clampChance(0.8 + stats.agility * 0.015, 0.8, 0.97);
+}
+
+export function getSpellHitChance(
+  stats: PlayerStats,
+  targetSide: BattleTargetSide,
+): number {
+  if (targetSide === "player") return 1;
+  return clampChance(0.8 + stats.literacy * 0.015, 0.8, 0.97);
+}
+
+export function getAttackCritChance(stats: PlayerStats): number {
+  return clampChance(0.05 + stats.strength * 0.01, 0.05, 0.45);
+}
+
+export function getSpellCritChance(stats: PlayerStats): number {
+  return clampChance(0.05 + stats.literacy * 0.01, 0.05, 0.45);
+}
+
+export function getCriticalDamage(baseDamage: number): number {
+  return Math.max(1, Math.round(baseDamage * 1.5));
+}
+
+export function getActionTargeting(action: PlayerActionDraft): ActionTargeting {
+  switch (action.type) {
+    case "attack":
+      return "single";
+    case "defend":
+    case "heal":
+      return "self";
+    case "spell":
+      return action.mode === "attack"
+        ? action.spell.attackTargeting
+        : (action.spell.defendTargeting ?? "self");
+  }
+}
+
+export function getActionHitChance(
+  action: PlayerActionDraft | PlayerAction,
+  stats: PlayerStats,
+  targetSide: BattleTargetSide,
+): number {
+  switch (action.type) {
+    case "attack":
+      return getAttackHitChance(stats, targetSide);
+    case "spell":
+      return action.mode === "attack" ? getSpellHitChance(stats, targetSide) : 1;
+    case "defend":
+    case "heal":
+      return 1;
+  }
+}
+
+export function getActionCritChance(
+  action: PlayerActionDraft | PlayerAction,
+  stats: PlayerStats,
+  _targetSide: BattleTargetSide,
+): number {
+  switch (action.type) {
+    case "attack":
+      return getAttackCritChance(stats);
+    case "spell":
+      return action.mode === "attack" ? getSpellCritChance(stats) : 0;
+    case "defend":
+    case "heal":
+      return 0;
+  }
+}
+
 // ── Battle log ──────────────────────────────────────────────
 export interface BattleLogEntry {
   text: string;
   color?: string; // tailwind text color class
+}
+
+export interface CombatAnimationRequest {
+  word: string;
+  fromPlayer: boolean;
+  targetId: string;
+  targetSide: BattleTargetSide;
+  kind?: "projectile" | "crescent-slash";
+  element?: Element;
+  shielded?: boolean;
+  blocked?: boolean;
+  missed?: boolean;
+  critical?: boolean;
+  impactDamage?: number;
+  onImpact?: () => void;
 }
 
 // ── Default starting stats ──────────────────────────────────

@@ -1,5 +1,6 @@
 interface CrtOverlayProps {
   glitchActive?: boolean;
+  noiseLevel?: "off" | "soft" | "strong";
 }
 
 /**
@@ -9,23 +10,30 @@ interface CrtOverlayProps {
  */
 export default function CrtOverlay({
   glitchActive = false,
+  noiseLevel,
 }: CrtOverlayProps) {
+  const resolvedNoiseLevel = noiseLevel ?? (glitchActive ? "strong" : "soft");
+
   return (
     <>
       <div
         aria-hidden="true"
         className={
-          glitchActive
+          resolvedNoiseLevel === "strong"
             ? "pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(to_bottom,transparent_0px,transparent_1px,rgba(0,0,0,0.3)_1px,rgba(0,0,0,0.3)_3px)]"
-            : "pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(to_bottom,transparent_0px,transparent_2px,rgba(0,0,0,0.15)_2px,rgba(0,0,0,0.15)_4px)]"
+            : resolvedNoiseLevel === "soft"
+              ? "pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(to_bottom,transparent_0px,transparent_2px,rgba(0,0,0,0.15)_2px,rgba(0,0,0,0.15)_4px)]"
+              : "pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(to_bottom,transparent_0px,transparent_3px,rgba(0,0,0,0.08)_3px,rgba(0,0,0,0.08)_5px)]"
         }
       />
       <div
         aria-hidden="true"
         className={
-          glitchActive
+          resolvedNoiseLevel === "strong"
             ? "pointer-events-none absolute inset-[-50%] z-20 h-[200%] w-[200%] animate-noise-shift opacity-[0.15]"
-            : "pointer-events-none absolute inset-[-50%] z-20 h-[200%] w-[200%] animate-noise-shift opacity-[0.04]"
+            : resolvedNoiseLevel === "soft"
+              ? "pointer-events-none absolute inset-[-50%] z-20 h-[200%] w-[200%] animate-noise-shift opacity-[0.06]"
+              : "pointer-events-none absolute inset-[-50%] z-20 h-[200%] w-[200%] opacity-0"
         }
         style={{ filter: "url(#noise)" }}
       />
