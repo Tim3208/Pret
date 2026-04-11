@@ -9,20 +9,32 @@ const DITHER_4X4 = [
   [15, 7, 13, 5],
 ];
 
+/**
+ * 값을 지정한 구간으로 제한한다.
+ */
 function clamp(value: number, min: number = 0, max: number = 1): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * 흑점과 백점을 기준으로 밝기 범위를 다시 매핑한다.
+ */
 function remapLevels(value: number, blackPoint: number, whitePoint: number): number {
   if (whitePoint <= blackPoint) return clamp(value);
   return clamp((value - blackPoint) / (whitePoint - blackPoint));
 }
 
+/**
+ * 대비와 노출 값을 적용해 휘도를 보정한다.
+ */
 function toneMap(luminance: number, contrast: number, exposure: number): number {
   const contrasted = (luminance - 0.5) * contrast + 0.5;
   return clamp(contrasted * exposure);
 }
 
+/**
+ * ASCII 결과의 바깥 여백을 잘라 실제 스프라이트 영역만 남긴다.
+ */
 function trimAscii(lines: string[]): string[] {
   if (lines.length === 0) return lines;
 
@@ -52,6 +64,9 @@ function trimAscii(lines: string[]): string[] {
   return croppedRows.map((line) => line.slice(left, right + 1));
 }
 
+/**
+ * 주변 픽셀과의 평균 차이를 구해 로컬 대비를 샘플링한다.
+ */
 function sampleDifference(
   values: number[],
   width: number,
@@ -77,6 +92,9 @@ function sampleDifference(
   return count === 0 ? 0 : sum / count;
 }
 
+/**
+ * 이미지 한 프레임을 ASCII 문자열 배열로 변환한다.
+ */
 function frameToAscii(
   img: HTMLImageElement,
   srcX: number,
@@ -187,6 +205,14 @@ function frameToAscii(
   return trimAscii(result);
 }
 
+/**
+ * 이미지를 ASCII 라인 배열로 변환해 반환하는 훅이다.
+ *
+ * @param src 이미지 경로
+ * @param cols ASCII 열 수
+ * @param options 변환 옵션
+ * @returns 변환된 라인 배열과 로딩 상태
+ */
 export function useImageToAscii(
   src: string,
   cols: number = 50,
@@ -218,10 +244,16 @@ export function useImageToAscii(
   const frameInterval = options?.spriteSheet?.interval ?? 0;
 
   useEffect(() => {
+    let cancelled = false;
     const img = new Image();
     img.crossOrigin = "anonymous";
+    framesRef.current = [];
 
     img.onload = () => {
+      if (cancelled) {
+        return;
+      }
+
       const singleFrameWidth = img.width / frameCount;
       const allFrames: string[][] = [];
 
@@ -246,11 +278,21 @@ export function useImageToAscii(
     };
 
     img.onerror = () => {
+      if (cancelled) {
+        return;
+      }
+
       setLines(["[image load error]"]);
       setLoading(false);
     };
 
     img.src = src;
+
+    return () => {
+      cancelled = true;
+      img.onload = null;
+      img.onerror = null;
+    };
   }, [
     src,
     cols,

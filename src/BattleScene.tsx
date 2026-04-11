@@ -28,11 +28,17 @@ import {
 
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
 
+/**
+ * 조우 직후 출력되는 적 소개 문장이다.
+ */
 const ENCOUNTER_TEXT =
   "A twisted figure emerges from the shadows, its body a mass of writhing dark tendrils, " +
   "two pale eyes burning with cold malice. The Hollow Wraith lets out a guttural screech " +
   "that rattles your bones. The air thickens, and the temperature drops.";
 
+/**
+ * 전투 중 분위기를 보강하는 순환형 배경 문장 목록이다.
+ */
 const AMBIENT_LINES = [
   "Shadows coil around the wraith's tendrils.",
   "The air tastes of iron and decay.",
@@ -54,6 +60,9 @@ interface Props {
   onBattleEnd: (result: BattleResult) => void;
 }
 
+/**
+ * 전투 진입, 턴 진행, 승패 전환을 관리하는 전투 장면 컨테이너다.
+ */
 export default function BattleScene({ onBattleEnd }: Props) {
   const { lines: playerAscii, loading: playerLoading } = useAsciiAsset(
     "/assets/new_hero_ascii.md",
@@ -106,6 +115,9 @@ export default function BattleScene({ onBattleEnd }: Props) {
     addLog("The battle begins!", "text-ember");
   }, [addLog]);
 
+  /**
+   * 포션 사용 가능 여부를 검사하고 실제 회복량을 반환한다.
+   */
   const handlePotionUse = useCallback(() => {
     if (phase !== "combat" || potionUsed || playerHp >= maxHp) {
       return 0;
@@ -122,12 +134,31 @@ export default function BattleScene({ onBattleEnd }: Props) {
     return healAmount;
   }, [addLog, maxHp, phase, playerHp, potionUsed, stats]);
 
+  /**
+   * 현재 몬스터 방어막을 최신값으로 읽기 위한 ref다.
+   */
   const monsterShieldRef = useRef(monsterShield);
+  /**
+   * 플레이어 턴에서 행동이 이미 확정됐는지 추적해 중복 입력을 막는다.
+   */
+  const playerActionCommittedRef = useRef(false);
+  /**
+   * 플레이어 행동 후 몬스터 턴으로 넘기는 지연 타이머를 저장한다.
+   */
+  const monsterTurnTimeoutRef = useRef<number | null>(null);
   const monsterTurnFastForwardRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     monsterShieldRef.current = monsterShield;
   }, [monsterShield]);
+
+  useEffect(() => {
+    return () => {
+      if (monsterTurnTimeoutRef.current) {
+        window.clearTimeout(monsterTurnTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -141,9 +172,12 @@ export default function BattleScene({ onBattleEnd }: Props) {
   }, []);
 
   // ── Resolve player action ──
+  /**
+   * 플레이어가 선택한 행동을 해석하고 몬스터 턴으로 넘긴다.
+   */
   const handlePlayerAction = useCallback(
     (action: PlayerAction) => {
-      if (turn !== "player") return;
+      if (turn !== "player" || playerActionCommittedRef.current) return;
 
       // Clear previous shield (shields expire each turn)
       setPlayerShield(0);
@@ -397,7 +431,14 @@ export default function BattleScene({ onBattleEnd }: Props) {
 
       // Trigger monster turn — delay depends on whether player fired a projectile
       const turnDelay = animationRequest ? 1920 : 400;
-      window.setTimeout(() => setTurn("monster"), turnDelay);
+      playerActionCommittedRef.current = true;
+      if (monsterTurnTimeoutRef.current) {
+        window.clearTimeout(monsterTurnTimeoutRef.current);
+      }
+      monsterTurnTimeoutRef.current = window.setTimeout(() => {
+        monsterTurnTimeoutRef.current = null;
+        setTurn("monster");
+      }, turnDelay);
 
       if (animationRequest) {
         if (projectileCallbackRef.current) {
@@ -446,6 +487,7 @@ export default function BattleScene({ onBattleEnd }: Props) {
     const finishMonsterTurn = () => {
       if (turnResolved) return;
       turnResolved = true;
+      playerActionCommittedRef.current = false;
       setAmbientIndex((v) => v + 1);
       rollNextIntent();
       setTurn("player");
@@ -574,6 +616,10 @@ export default function BattleScene({ onBattleEnd }: Props) {
   useEffect(() => {
     if (phase !== "combat") return;
     if (monsterHp <= 0 && phase === "combat") {
+      if (monsterTurnTimeoutRef.current) {
+        window.clearTimeout(monsterTurnTimeoutRef.current);
+        monsterTurnTimeoutRef.current = null;
+      }
       // HP now drops on impact, so only wait for the hit flash and death sink.
       const id = window.setTimeout(() => {
         setPhase("victory");
@@ -587,6 +633,34 @@ export default function BattleScene({ onBattleEnd }: Props) {
   useEffect(() => {
     if (phase !== "victory") return;
     const id = window.setTimeout(() => onBattleEnd({ won: true }), 3500);
+    return () => window.clearTimeout(id);
+  }, [phase, onBattleEnd]);
+
+  /**
+   * 플레이어 사망 시 짧은 피격 여운 뒤 패배 장면으로 전환한다.
+   */
+  useEffect(() => {
+    if (phase !== "combat") return;
+    if (playerHp > 0) return;
+
+    if (monsterTurnTimeoutRef.current) {
+      window.clearTimeout(monsterTurnTimeoutRef.current);
+      monsterTurnTimeoutRef.current = null;
+    }
+
+    const id = window.setTimeout(() => {
+      setPhase("defeat");
+      addLog("You collapse beneath the wraith's assault.", "text-red-400");
+    }, 1400);
+    return () => window.clearTimeout(id);
+  }, [playerHp, phase, addLog]);
+
+  /**
+   * 패배 연출 후 앱 시작 장면으로 되돌린다.
+   */
+  useEffect(() => {
+    if (phase !== "defeat") return;
+    const id = window.setTimeout(() => onBattleEnd({ won: false }), 3500);
     return () => window.clearTimeout(id);
   }, [phase, onBattleEnd]);
 
@@ -651,11 +725,25 @@ export default function BattleScene({ onBattleEnd }: Props) {
             </p>
           </div>
         )}
+
+        {phase === "defeat" && (
+          <div className="flex flex-col items-center gap-4 animate-fade-in-quick">
+            <p className="text-[1.3rem] tracking-wider text-red-300 [text-shadow:0_0_12px_rgba(220,38,38,0.35)]">
+              You fall in the dark.
+            </p>
+            <p className="text-[0.85rem] text-white/40 tracking-[0.15em]">
+              Returning to the campfire...
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+/**
+ * 소개 문장을 한 글자씩 출력하는 타이프라이터 텍스트 컴포넌트다.
+ */
 function TypewriterText({
   text,
   speed = 30,
