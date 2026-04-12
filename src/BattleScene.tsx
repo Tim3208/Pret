@@ -13,6 +13,7 @@ import {
   type BattleTargetOption,
   type BattleLogEntry,
   type CombatAnimationRequest,
+  type EquippedItems,
   type MonsterIntent,
   type PlayerAction,
   type PlayerStats,
@@ -80,6 +81,7 @@ const BATTLE_SCENE_TEXT = {
     battleBegins: "The battle begins!",
     clickToFight: "[ click to fight ]",
     loadingCombatants: "Loading combatants...",
+    victoryEvent: "Something stirs in the ash...",
     victoryReturn: "Returning to the bonfire...",
     defeatTitle: "You fall in the dark.",
     defeatReturn: "Returning to the campfire...",
@@ -93,6 +95,7 @@ const BATTLE_SCENE_TEXT = {
     battleBegins: "전투가 시작된다!",
     clickToFight: "[ 클릭하여 전투 ]",
     loadingCombatants: "전투원을 불러오는 중...",
+    victoryEvent: "재 속에서 무언가 꿈틀거린다...",
     victoryReturn: "모닥불로 돌아가는 중...",
     defeatTitle: "어둠 속에 쓰러졌다.",
     defeatReturn: "모닥불로 돌아가는 중...",
@@ -107,6 +110,8 @@ export interface BattleResult {
 }
 
 interface Props {
+  equippedItems: EquippedItems;
+  hasPostBattleEvent: boolean;
   language: Language;
   onBattleEnd: (result: BattleResult) => void;
 }
@@ -114,7 +119,12 @@ interface Props {
 /**
  * 전투 진입, 턴 진행, 승패 전환을 관리하는 전투 장면 컨테이너다.
  */
-export default function BattleScene({ language, onBattleEnd }: Props) {
+export default function BattleScene({
+  equippedItems,
+  hasPostBattleEvent,
+  language,
+  onBattleEnd,
+}: Props) {
   const { lines: playerAscii, loading: playerLoading } = useAsciiAsset(
     "/assets/new_hero_ascii.md",
   );
@@ -835,6 +845,7 @@ export default function BattleScene({ language, onBattleEnd }: Props) {
             monsterName={localizedMonsterName}
             monsterAscii={monsterAscii}
             playerAscii={playerAscii}
+            equippedItems={equippedItems}
             monsterHp={monsterHp}
             monsterMaxHp={monster.maxHp}
             monsterShield={monsterShield}
@@ -872,7 +883,7 @@ export default function BattleScene({ language, onBattleEnd }: Props) {
                 : `${localizedMonsterName} has been slain.`}
             </p>
             <p className="text-[0.85rem] text-white/40 tracking-[0.15em]">
-              {sceneText.victoryReturn}
+              {hasPostBattleEvent ? sceneText.victoryEvent : sceneText.victoryReturn}
             </p>
           </div>
         )}

@@ -3,6 +3,7 @@ import {
   type FormEvent,
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useMemo,
   useCallback,
   useEffect,
@@ -29,6 +30,8 @@ import {
   type BattleTargetSide,
   type BattleLogEntry,
   type CombatAnimationRequest,
+  type EquipmentDefinition,
+  type EquippedItems,
   type MonsterIntent,
   type PlayerAction,
   type PlayerActionDraft,
@@ -38,6 +41,8 @@ import {
   getActionCritChance,
   getActionHitChance,
   getActionTargeting,
+  getEquippedItems,
+  getEquipmentSlotLabel,
 } from "./battleTypes";
 import {
   getProjectileTone,
@@ -178,6 +183,7 @@ interface BattleCombatProps {
   monsterName: string;
   monsterAscii: string[];
   playerAscii: string[];
+  equippedItems: EquippedItems;
   monsterHp: number;
   monsterMaxHp: number;
   monsterShield: number;
@@ -258,6 +264,7 @@ interface MonsterAsciiCanvasMetrics {
 }
 
 type CrtNoiseLevel = "off" | "soft" | "strong";
+type GlyphColorMap = Map<string, string>;
 
 const BATTLE_COMBAT_TEXT = {
   en: {
@@ -285,6 +292,8 @@ const BATTLE_COMBAT_TEXT = {
     shieldLabel: "Shield",
     manaLabel: "MP",
     hpLabel: "HP",
+    equipmentEffectLabel: "effect:",
+    equipmentInactiveLabel: "inactive in combat for now",
   },
   ko: {
     attackLabel: "공격",
@@ -311,6 +320,8 @@ const BATTLE_COMBAT_TEXT = {
     shieldLabel: "방어막",
     manaLabel: "MP",
     hpLabel: "HP",
+    equipmentEffectLabel: "효과:",
+    equipmentInactiveLabel: "지금은 전투 반영 없음",
   },
 } as const;
 
@@ -998,6 +1009,37 @@ function buildMonsterAsciiGlyphs(lines: string[]): MonsterAsciiGlyph[] {
   return glyphs;
 }
 
+function getGlyphColorKey(row: number, column: number): string {
+  return `${row}:${column}`;
+}
+
+function buildEquipmentGlyphColorMap(
+  lines: string[],
+  items: EquipmentDefinition[],
+): GlyphColorMap {
+  const glyphColors: GlyphColorMap = new Map();
+
+  for (const item of items) {
+    for (const tintRange of item.tintRanges) {
+      const line = lines[tintRange.row];
+      if (!line) {
+        continue;
+      }
+
+      const endColumn = Math.min(tintRange.endColumn, line.length - 1);
+      for (let column = tintRange.startColumn; column <= endColumn; column += 1) {
+        if (line[column] === " ") {
+          continue;
+        }
+
+        glyphColors.set(getGlyphColorKey(tintRange.row, column), item.fragmentTone);
+      }
+    }
+  }
+
+  return glyphColors;
+}
+
 function renderMonsterAsciiImpactCanvas(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -1087,6 +1129,7 @@ function renderLiveAsciiDisplacementCanvas(
   glyphs: MonsterAsciiGlyph[],
   field: LiveAsciiDisplacementState | null,
   baseColor: string,
+  glyphColors: GlyphColorMap,
   now: number,
 ) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1137,6 +1180,7 @@ function renderLiveAsciiDisplacementCanvas(
       y += dirY * outward * 0.76 + dirX * swirl * 0.62;
     }
 
+    ctx.fillStyle = glyphColors.get(getGlyphColorKey(glyph.row, glyph.column)) ?? baseColor;
     ctx.fillText(glyph.char, x, y);
   }
 
@@ -1176,6 +1220,7 @@ export default function BattleCombat({
   monsterName,
   monsterAscii,
   playerAscii,
+  equippedItems,
   monsterHp,
   monsterMaxHp,
   monsterShield,
@@ -1223,6 +1268,7 @@ export default function BattleCombat({
   const [potionDragging, setPotionDragging] = useState(false);
   const [potionHovered, setPotionHovered] = useState(false);
   const [potionHoveringPlayer, setPotionHoveringPlayer] = useState(false);
+  const [hoveredEquipmentId, setHoveredEquipmentId] = useState<string | null>(null);
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1507,9 +1553,60 @@ export default function BattleCombat({
   );
   const enemyShieldFill = Math.max(0, enemyTotalFill - enemyHealthFill);
   const playerAsciiText = playerAscii.join("\n");
+  const equippedItemList = useMemo(() => getEquippedItems(equippedItems), [equippedItems]);
+  const playerGlyphColorMap = useMemo(
+    () => buildEquipmentGlyphColorMap(playerAscii, equippedItemList),
+    [equippedItemList, playerAscii],
+  );
   const playerAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(playerAscii), [playerAscii]);
   const monsterAsciiText = monsterAscii.join("\n");
   const monsterAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(monsterAscii), [monsterAscii]);
+  const playerAsciiMarkup = useMemo(() => {
+    const nodes: ReactNode[] = [];
+    let tintedKey = 0;
+
+    playerAscii.forEach((line, row) => {
+      let buffer = "";
+      let activeColor: string | null = null;
+
+      const flush = () => {
+        if (!buffer) {
+          return;
+        }
+
+        if (activeColor) {
+          nodes.push(
+            <span key={`player-tint-${tintedKey += 1}`} style={{ color: activeColor }}>
+              {buffer}
+            </span>,
+          );
+        } else {
+          nodes.push(buffer);
+        }
+
+        buffer = "";
+      };
+
+      for (let column = 0; column < line.length; column += 1) {
+        const nextColor = playerGlyphColorMap.get(getGlyphColorKey(row, column)) ?? null;
+        if (nextColor !== activeColor) {
+          flush();
+          activeColor = nextColor;
+        }
+
+        buffer += line[column];
+      }
+
+      flush();
+      activeColor = null;
+
+      if (row < playerAscii.length - 1) {
+        nodes.push("\n");
+      }
+    });
+
+    return nodes;
+  }, [playerAscii, playerGlyphColorMap]);
   const playerAsciiStyle = buildHitWaveTextStyle(
     "rgba(244, 244, 244, 0.98)",
     "rgba(176, 8, 20, 0.99)",
@@ -1534,12 +1631,18 @@ export default function BattleCombat({
   const monsterAsciiClassName = `m-0 whitespace-pre text-[6.1px] leading-[6.4px] select-none sm:text-[6.9px] sm:leading-[7.2px] lg:text-[8px] lg:leading-[8.3px] ${
     hitAbsorbMonster ? "animate-hit-absorb" : ""
   }`;
-  const playerAsciiRenderRef = useRef({ glyphs: playerAsciiGlyphs });
+  const playerAsciiRenderRef = useRef({
+    glyphs: playerAsciiGlyphs,
+    glyphColors: playerGlyphColorMap,
+  });
   const monsterAsciiRenderRef = useRef({ glyphs: monsterAsciiGlyphs, tone: monsterTone });
 
   useEffect(() => {
-    playerAsciiRenderRef.current = { glyphs: playerAsciiGlyphs };
-  }, [playerAsciiGlyphs]);
+    playerAsciiRenderRef.current = {
+      glyphs: playerAsciiGlyphs,
+      glyphColors: playerGlyphColorMap,
+    };
+  }, [playerAsciiGlyphs, playerGlyphColorMap]);
 
   useEffect(() => {
     monsterAsciiRenderRef.current = { glyphs: monsterAsciiGlyphs, tone: monsterTone };
@@ -1685,8 +1788,8 @@ export default function BattleCombat({
     }
 
     const nextHome = {
-      x: playerRect.left - frameRect.left + playerRect.width * 0.55,
-      y: playerRect.top - frameRect.top + playerRect.height * 0.12,
+      x: playerRect.left - frameRect.left + playerRect.width * 0.55 - 50,
+      y: playerRect.top - frameRect.top + playerRect.height * 0 - 150,
     };
 
     setPotionHomePosition((current) => {
@@ -2797,6 +2900,7 @@ export default function BattleCombat({
             playerAsciiRenderRef.current.glyphs,
             playerPotionDisplacementRef.current,
             PLAYER_ASCII_CANVAS_TONE,
+            playerAsciiRenderRef.current.glyphColors,
             now,
           );
         }
@@ -3083,7 +3187,7 @@ export default function BattleCombat({
                 opacity: playerAsciiCanvasActive ? 0 : 1,
               }}
             >
-              {playerAsciiText}
+              {playerAsciiMarkup}
             </pre>
             <canvas
               ref={playerAsciiCanvasRef}
@@ -3096,6 +3200,60 @@ export default function BattleCombat({
               height={980}
               className="pointer-events-none absolute inset-0 z-[2] h-full w-full"
             />
+            {equippedItemList.map((item) => {
+              const isHovered = hoveredEquipmentId === item.id;
+              const tooltipPositionClassName =
+                item.anchor.tooltipSide === "left"
+                  ? "right-[calc(100%+0.55rem)] top-1/2 -translate-y-1/2"
+                  : item.anchor.tooltipSide === "right"
+                    ? "left-[calc(100%+0.55rem)] top-1/2 -translate-y-1/2"
+                    : "bottom-[calc(100%+0.55rem)] left-1/2 -translate-x-1/2";
+              const slotLabel = getEquipmentSlotLabel(item.slot, language);
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-label={`${slotLabel}: ${item.name[language]}`}
+                  className="absolute z-[4] h-[34px] w-[48px] cursor-help border-0 bg-transparent p-0"
+                  style={{
+                    left: `calc(${item.anchor.leftPercent}% + ${item.anchor.offsetX}px)`,
+                    top: `calc(${item.anchor.topPercent}% + ${item.anchor.offsetY}px)`,
+                    transform: `translate(-50%, -50%) rotate(${item.anchor.rotationDeg}deg) scale(${item.anchor.scale})`,
+                  }}
+                  onMouseEnter={() => setHoveredEquipmentId(item.id)}
+                  onMouseLeave={() =>
+                    setHoveredEquipmentId((current) => (current === item.id ? null : current))
+                  }
+                  onFocus={() => setHoveredEquipmentId(item.id)}
+                  onBlur={() =>
+                    setHoveredEquipmentId((current) => (current === item.id ? null : current))
+                  }
+                >
+                  <span className="relative block">
+                    <span className="sr-only">{item.fragment}</span>
+                    <span
+                      className={`pointer-events-none absolute min-w-[180px] max-w-[220px] rounded-[14px] border border-white/12 bg-black/84 px-3 py-2 text-left font-crt transition-opacity duration-150 ${tooltipPositionClassName} ${
+                        isHovered ? "opacity-100" : "opacity-0"
+                      }`}
+                    >
+                      <span className="block text-[0.62rem] uppercase tracking-[0.18em] text-white/42">
+                        {slotLabel}
+                      </span>
+                      <span className="mt-1 block text-[0.74rem] tracking-[0.08em] text-ember">
+                        {item.name[language]}
+                      </span>
+                      <span className="mt-2 block text-[0.68rem] leading-[1.45] text-white/72">
+                        {combatText.equipmentEffectLabel} {item.effectText[language]}
+                      </span>
+                      <span className="mt-1 block text-[0.62rem] leading-[1.4] text-white/36">
+                        {combatText.equipmentInactiveLabel}
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

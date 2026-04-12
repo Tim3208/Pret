@@ -1,7 +1,14 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import BattleScene from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
+import PostBattleEvent from "./PostBattleEvent";
 import type { BattleResult } from "./BattleScene";
+import {
+  type EquipmentDefinition,
+  type EquippedItems,
+  isEquipmentPoolExhausted,
+  rollEquipmentOffer,
+} from "./battleTypes";
 import { type Language, pickText } from "./language";
 
 /**
@@ -66,7 +73,9 @@ export default function App() {
   /**
    * 현재 게임 진행 단계를 저장한다.
    */
-  const [phase, setPhase] = useState<"text" | "transition" | "battle">("text");
+  const [phase, setPhase] = useState<
+    "text" | "transition" | "battle" | "post-battle-event"
+  >("text");
   /**
    * 사용자 인터페이스의 현재 언어 모드다.
    */
@@ -81,6 +90,18 @@ export default function App() {
    * 플레이어가 입력창에 입력한 명령어를 저장한다.
    */
   const [input, setInput] = useState("");
+  /**
+   * 현재 실행 동안 유지되는 장비 장착 상태다.
+   */
+  const [equippedItems, setEquippedItems] = useState<EquippedItems>({});
+  /**
+   * 승리 이벤트에서 제시할 현재 장비다.
+   */
+  const [offeredItem, setOfferedItem] = useState<EquipmentDefinition | null>(null);
+  /**
+   * 같은 장비가 연속 등장하는 빈도를 줄이기 위해 마지막 제시 장비 ID를 저장한다.
+   */
+  const [lastOfferedItemId, setLastOfferedItemId] = useState<string | null>(null);
 
   /**
    * 전투 결과에 따라 다음 장면을 결정한다.
@@ -89,12 +110,42 @@ export default function App() {
    */
   const handleBattleEnd = useCallback((result: BattleResult) => {
     if (result.won) {
-      setPhase("transition");
+      const nextOffer = rollEquipmentOffer(equippedItems, lastOfferedItemId);
+      if (!nextOffer) {
+        setOfferedItem(null);
+        setPhase("transition");
+        return;
+      }
+
+      setOfferedItem(nextOffer);
+      setLastOfferedItemId(nextOffer.id);
+      setPhase("post-battle-event");
       return;
     }
 
+    setOfferedItem(null);
     setInput("");
     setPhase("text");
+  }, [equippedItems, lastOfferedItemId]);
+
+  /**
+   * 이벤트에서 장비를 수락해 현재 실행의 장착 상태에 반영한다.
+   */
+  const handleEquipItem = useCallback((item: EquipmentDefinition) => {
+    setEquippedItems((current) => ({
+      ...current,
+      [item.slot]: item,
+    }));
+    setOfferedItem(null);
+    setPhase("transition");
+  }, []);
+
+  /**
+   * 이벤트에서 장비를 거절하고 다음 장면으로 넘어간다.
+   */
+  const handleDeclineItem = useCallback(() => {
+    setOfferedItem(null);
+    setPhase("transition");
   }, []);
 
   /**
@@ -681,10 +732,25 @@ export default function App() {
             </div>
           )}
 
+          {phase === "post-battle-event" && offeredItem && (
+            <PostBattleEvent
+              language={language}
+              offeredItem={offeredItem}
+              equippedItems={equippedItems}
+              onEquip={handleEquipItem}
+              onDecline={handleDeclineItem}
+            />
+          )}
+
           <CrtOverlay />
         </div>
       ) : (
-        <BattleScene language={language} onBattleEnd={handleBattleEnd} />
+        <BattleScene
+          hasPostBattleEvent={!isEquipmentPoolExhausted(equippedItems)}
+          language={language}
+          equippedItems={equippedItems}
+          onBattleEnd={handleBattleEnd}
+        />
       )}
     </div>
   );

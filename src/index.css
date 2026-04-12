@@ -25,6 +25,7 @@
   --animate-torch-glow: torch-glow 3.2s ease-in-out infinite;
   --animate-potion-orbit: potion-orbit 5.2s cubic-bezier(0.37, 0, 0.18, 1) infinite;
   --animate-potion-spin: potion-spin 7.8s linear infinite;
+  --animate-equipment-rune: equipment-rune 2.8s ease-in-out infinite;
 
   @keyframes fade-in-text {
     from {
@@ -309,6 +310,19 @@
 
     100% {
       filter: saturate(0.96) brightness(0.98);
+    }
+  }
+
+  @keyframes equipment-rune {
+    0%,
+    100% {
+      opacity: 0.82;
+      filter: saturate(0.95) brightness(0.96);
+    }
+
+    50% {
+      opacity: 1;
+      filter: saturate(1.12) brightness(1.06);
     }
   }
 
