@@ -66,6 +66,7 @@ export default function SkullEncounter({ onComplete }: SkullEncounterProps) {
    * 현재 렌더 루프의 requestAnimationFrame ID다.
    */
   const rafRef = useRef<number>(0);
+  const combatAssetPath = `${import.meta.env.BASE_URL}assets/combat.webp`;
 
   useEffect(() => {
     let completed = false;
@@ -78,7 +79,7 @@ export default function SkullEncounter({ onComplete }: SkullEncounterProps) {
       const context = canvas.getContext("2d");
       if (!context) return;
 
-      const response = await fetch("/assets/combat.webp");
+      const response = await fetch(combatAssetPath);
       const decoder = new ImageDecoder({
         data: response.body!,
         type: "image/webp",
@@ -215,7 +216,7 @@ export default function SkullEncounter({ onComplete }: SkullEncounterProps) {
       completed = true;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [onComplete]);
+  }, [combatAssetPath, onComplete]);
 
   return (
     <div className="fixed inset-0 z-50 flex h-screen w-screen items-center justify-center bg-void animate-[fade-in-text_0.5s_ease-out]">

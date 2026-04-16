@@ -125,11 +125,12 @@ export default function BattleScene({
   language,
   onBattleEnd,
 }: Props) {
+  const assetBase = import.meta.env.BASE_URL;
   const { lines: playerAscii, loading: playerLoading } = useAsciiAsset(
-    "/assets/new_hero_ascii.md",
+    `${assetBase}assets/new_hero_ascii.md`,
   );
   const { lines: monsterAscii, loading: monsterLoading } = useAsciiAsset(
-    "/assets/new_enemy_ascii.md",
+    `${assetBase}assets/new_enemy_ascii.md`,
   );
 
   const monster = HOLLOW_WRAITH;
