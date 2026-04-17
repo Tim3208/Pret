@@ -10,14 +10,9 @@ import type { EquipmentDefinition } from "@/entities/equipment";
 import {
   type LiveAsciiDisplacementState,
   type MonsterAsciiCanvasMetrics,
-  type MonsterAsciiGlyph,
 } from "../lib/core";
+import type { PlayerAsciiRenderState } from "./battleStageScene.types";
 import { buildHitWaveTextStyle, buildMonsterAsciiGlyphs } from "../lib/visuals";
-
-interface PlayerAsciiRenderState {
-  glyphColors: Map<string, string>;
-  glyphs: MonsterAsciiGlyph[];
-}
 
 interface UsePlayerAsciiPresentationParams {
   /** 플레이어 ASCII 원본 라인 */

@@ -29,7 +29,9 @@ App
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
 - `widgets/battle-outcome/ui/BattleOutcomePanel.tsx` owns the victory/defeat result screen presentation.
 - `widgets/encounter-scene/ui/BattleEncounterSequence.tsx` owns the pre-combat encounter and intro sequence composition.
-- `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
+- `widgets/battle-stage/model/useBattleFlow.ts` owns battle state progression, turn flow, logs, potion usage, and combat animation scheduling.
+- `widgets/battle-stage/model/resolvePlayerAction.ts` owns player action resolution branches so combat rule edits do not accumulate inside the hook body.
+- `widgets/battle-stage/model/useBattleStageCanvasLoop.ts` owns the RAF canvas loop, console redraws, projectile travel, and sprite overlay rendering.
 - `widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` owns the player ASCII markup, equipment tint composition, canvas metric syncing, and render refs.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
 - `features/potion-use/model/usePotionUseInteraction.ts` owns potion home/rest/drag state, hover detection, hover displacement state, and drop resolution.
@@ -38,7 +40,7 @@ App
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
 - `widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` owns the player equipment hotspot and tooltip overlay.
 - `widgets/battle-stage/ui/BattleMonsterPanel.tsx` owns the monster sprite block, intent overlay canvas placement, and HP bar rendering.
-- `BattleStage` owns the live combat scene, DOM/canvas refs, potion consume effect callback, and effect orchestration while consuming shared helpers from `widgets/battle-stage/lib/*`.
+- `BattleStage` owns live combat scene composition, DOM refs, potion consume effect callbacks, and projectile registration while consuming shared helpers from `widgets/battle-stage/lib/*`.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
 
@@ -61,7 +63,9 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
 | `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx` | Renders the victory and defeat result panel markup from page-selected copy. |
 | `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | Composes the pre-combat encounter animation and typewriter intro prompt. |
-| `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
+| `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn progression, logs, potion usage, and combat animation scheduling. |
+| `src/widgets/battle-stage/model/resolvePlayerAction.ts` | Resolves player action branches into state updates and combat animation requests. |
+| `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts` | Runs the combat RAF loop for console text, projectile travel, sprite-local canvases, and overlay effects. |
 | `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` | Owns player ASCII markup generation, tint mapping, and canvas metric/render refs. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
 | `src/features/potion-use/model/usePotionUseInteraction.ts` | Owns potion drag state, home/rest positioning, hover detection, hover displacement state, and drop resolution. |
@@ -104,13 +108,14 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 
 ## Extending Combat
 
-- Add new turn logic or damage rules in `widgets/battle-stage/model/useBattleFlow.ts` and the relevant `entities/*` slice.
+- Add new turn scheduling in `widgets/battle-stage/model/useBattleFlow.ts`, and add new player action rule branches in `widgets/battle-stage/model/resolvePlayerAction.ts` with the relevant `entities/*` slice.
 - Add new command selection or prompt parsing rules in `src/features/battle-command-input/ui/BattleCommandInput.tsx`.
 - Add new potion drag/drop, hover, or player-sprite displacement rules in `src/features/potion-use/model/usePotionUseInteraction.ts`.
 - Add new resource HUD composition or layout changes in `src/widgets/resource-panel/ui/ResourcePanel.tsx`.
 - Add new pre-combat encounter or intro presentation changes in `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx`.
 - Add new victory or defeat result presentation changes in `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx`.
 - Add new player ASCII sprite markup or canvas metric rules in `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx`.
+- Add new RAF canvas orchestration or projectile/render loop changes in `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
 - Add new particle systems or canvas-only visuals in `widgets/battle-stage/lib/visuals.ts`.
 - Keep `src/pages/battle/ui/BattlePage.tsx` focused on scene composition and keep `widgets/battle-stage/ui/BattleStage.tsx` focused on wiring those pieces together rather than holding new pure helper code.

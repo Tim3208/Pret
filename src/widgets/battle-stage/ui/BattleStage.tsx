@@ -31,48 +31,24 @@ import { ResourcePanel } from "@/widgets/resource-panel";
 import BattleEquipmentOverlay from "./BattleEquipmentOverlay";
 import BattleMonsterPanel from "./BattleMonsterPanel";
 import {
-  BASE_FONT_SIZE,
-  DISPLACE_RADIUS,
   H,
-  LINE_H,
   SCENE_H,
   SCENE_W,
-  SLASH_THICKNESS,
   W,
   buildSlashSamples,
   clamp01,
-  easeInCubic,
-  easeInOutCubic,
-  easeOutCubic,
   getProjectileSceneAnchors,
   type MonsterAsciiCanvasMetrics,
   getSceneAnchors,
-  lerp,
-  mapScenePointToConsolePoint,
   sampleMonsterImpactPoint,
-  sampleQuadraticPoint,
-  sampleQuadraticTangent,
   sampleRandomOffscreenPoint,
 } from "../lib/core";
 import {
-  CRT_FONT,
   buildHitWaveTextStyle,
   buildMonsterAsciiGlyphs,
-  classToCanvasColor,
-  drawAsciiConsoleFrame,
-  drawAsciiConsoleRule,
   getHitWaveScale,
   getMonsterImpactBandDuration,
   getMonsterImpactSettleDelay,
-  getProjectileTone,
-  getProjectileVisual,
-  makeFont,
-  renderConsolePulse,
-  renderIntentSparks,
-  renderLiveAsciiDisplacementCanvas,
-  renderMonsterAsciiImpactCanvas,
-  renderOverlayEffects,
-  renderTextBlockPhysics,
   spawnChargeParticles,
   spawnDefendParticles,
   spawnHealParticles,
@@ -84,99 +60,18 @@ import {
   spawnSlashParticles,
   spawnSpellParticles,
 } from "../lib/visuals";
+import type {
+  ConsolePulse,
+  EffectParticle,
+  ForceField,
+  MonsterAsciiImpactState,
+  Point,
+  Projectile,
+  SlashWave,
+  SpriteEffect,
+} from "../model/battleStageScene.types";
+import { useBattleStageCanvasLoop } from "../model/useBattleStageCanvasLoop";
 import { usePlayerAsciiPresentation } from "../model/usePlayerAsciiPresentation";
-
-interface Projectile {
-  chars: string[];
-  x: number;
-  y: number;
-  startX: number;
-  startY: number;
-  controlX?: number;
-  controlY?: number;
-  turnX?: number;
-  turnY?: number;
-  targetX: number;
-  targetY: number;
-  startTime: number;
-  duration: number;
-  alive: boolean;
-  fromPlayer: boolean;
-  element?: string;
-  shielded?: boolean;
-  blocked?: boolean;
-  critical?: boolean;
-  missed?: boolean;
-  impactTriggered?: boolean;
-  onImpact?: () => void;
-  offsets: { dx: number; dy: number; rot: number }[];
-}
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface SlashSample {
-  x: number;
-  y: number;
-  nx: number;
-  ny: number;
-  t: number;
-}
-
-interface SlashWave {
-  label: string;
-  points: SlashSample[];
-  blocked?: boolean;
-  shielded?: boolean;
-  alive: boolean;
-  startTime: number;
-  duration: number;
-  recoveryDuration: number;
-  impactTriggered?: boolean;
-  onImpact?: () => void;
-}
-
-interface SlashField {
-  points: SlashSample[];
-  intensity: number;
-  thickness: number;
-  strength: number;
-  alphaLoss: number;
-}
-
-interface EffectParticle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  char: string;
-  color: string;
-  alpha: number;
-  life: number;
-  maxLife: number;
-  size: number;
-}
-
-interface SpriteEffect {
-  type: "heal" | "slash" | "defend" | "spell" | "charge" | "shieldCharge" | "hit";
-  target: "player" | "monster";
-  element?: string;
-  startTime: number;
-  duration: number;
-  particles: EffectParticle[];
-  persistent?: boolean;
-}
-
-interface ForceField {
-  x: number;
-  y: number;
-  radius: number;
-  strength: number; // positive = repel, negative = attract
-  startTime: number;
-  duration: number;
-}
 
 interface BattleStageProps {
   monsterName: string;
@@ -204,32 +99,7 @@ interface BattleStageProps {
   onPotionUse: () => number;
   projectileCallbackRef: MutableRefObject<((request: CombatAnimationRequest) => void) | null>;
 }
-
-interface ConsolePulse {
-  color: "blue" | "red";
-  startTime: number;
-  duration: number;
-  strength: "soft" | "strong";
-}
-
-interface MonsterAsciiImpactState {
-  startedAt: number;
-  duration: number;
-  direction: -1 | 1;
-  strength: number;
-  centerRatio: number;
-  columnRatio: number;
-  radiusRatio: number;
-}
-
 type CrtNoiseLevel = "off" | "soft" | "strong";
-/* ================================================================
-   Effect particle spawners
-   ================================================================ */
-
-/* ================================================================
-   Component
-   ================================================================ */
 
 /**
  * 전투 콘솔, ASCII 캐릭터, 투사체 연출을 함께 렌더링하는 메인 전투 UI다.
@@ -1030,570 +900,31 @@ export default function BattleStage({
     sceneAnchors,
   ]);
 
-  // ── Canvas loop — pretext dynamic layout + projectiles + effects ──
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const sceneFxCanvas = sceneFxCanvasRef.current;
-    const sceneFxCtx = sceneFxCanvas?.getContext("2d") ?? null;
-
-    canvas.width = W;
-    canvas.height = H;
-    if (sceneFxCanvas) {
-      sceneFxCanvas.width = SCENE_W;
-      sceneFxCanvas.height = SCENE_H;
-    }
-
-    const animate = () => {
-      ctx.clearRect(0, 0, W, H);
-      sceneFxCtx?.clearRect(0, 0, SCENE_W, SCENE_H);
-      const sceneRect = sceneFxCanvas?.getBoundingClientRect() ?? null;
-      const consoleRect = canvas.getBoundingClientRect();
-      const canProjectToConsole =
-        !!sceneRect && sceneRect.width > 0 && sceneRect.height > 0 && consoleRect.width > 0 && consoleRect.height > 0;
-      const {
-        nextIntent: intent,
-        nextIntentLabel: intentLabel,
-        monsterShield: mShield,
-        ambientText: ambient,
-        battleLog: log,
-        monsterHp: currentMonsterHp,
-        turn: currentTurn,
-        shieldLabel,
-      } = textRef.current;
-      const projectiles = projectilesRef.current;
-      const slashes = slashesRef.current;
-      const forceFields = forceFieldsRef.current;
-      const now = performance.now();
-      const intentSparkFrameDuration = 1000 / 12;
-      const advanceIntentSparkFrame =
-        now - lastIntentSparkFrameRef.current >= intentSparkFrameDuration;
-      if (advanceIntentSparkFrame) {
-        lastIntentSparkFrameRef.current = now;
-      }
-      const activeSlashFields: SlashField[] = [];
-      const activeSlashRender: Array<{
-        slash: SlashWave;
-        visiblePoints: SlashSample[];
-        intensity: number;
-        sweep: number;
-      }> = [];
-      const torchFlicker = Math.max(
-        0.58,
-        Math.min(
-          0.94,
-          0.76 +
-            Math.sin(now * 0.0042) * 0.08 +
-            Math.sin(now * 0.0018 + 1.4) * 0.05,
-        ),
-      );
-      const torchInk = 0.08 + torchFlicker * 0.16;
-
-      // Prune expired force fields
-      forceFieldsRef.current = forceFields.filter(
-        (ff) => now - ff.startTime < ff.duration,
-      );
-
-      for (const slash of slashes) {
-        if (!slash.alive) continue;
-
-        const elapsed = now - slash.startTime;
-        const totalDuration = slash.duration + slash.recoveryDuration;
-        if (elapsed > totalDuration) {
-          slash.alive = false;
-          continue;
-        }
-
-        const sweep = clamp01(elapsed / slash.duration);
-        const recover =
-          elapsed <= slash.duration
-            ? 0
-            : clamp01((elapsed - slash.duration) / slash.recoveryDuration);
-        const intensity =
-          sweep < 1
-            ? 0.18 + easeOutCubic(sweep) * 0.82
-            : 1 - easeOutCubic(easeInOutCubic(recover));
-        const visiblePoints = slash.points.filter((point) => point.t <= Math.max(0.08, sweep));
-
-        activeSlashFields.push({
-          points: visiblePoints,
-          intensity: intensity * (slash.blocked ? 0.72 : 1),
-          thickness: slash.blocked ? SLASH_THICKNESS * 0.88 : SLASH_THICKNESS * 1.18,
-          strength: slash.blocked ? 21 : 30,
-          alphaLoss: slash.blocked ? 0.3 : 0.5,
-        });
-        activeSlashRender.push({ slash, visiblePoints, intensity, sweep });
-
-        if (!slash.impactTriggered && sweep >= 0.72) {
-          slash.impactTriggered = true;
-          slash.onImpact?.();
-        }
-      }
-
-      slashesRef.current = slashes.filter((slash) => slash.alive);
-
-      ctx.font = makeFont(560, BASE_FONT_SIZE);
-      ctx.textBaseline = "top";
-      const frame = drawAsciiConsoleFrame(
-        ctx,
-        `rgba(214, 184, 124, ${(0.24 + torchFlicker * 0.16).toFixed(2)})`,
-      );
-
-      ctx.font = CRT_FONT;
-      const consoleCharWidth = ctx.measureText("M").width;
-
-      const consolePulses = consolePulsesRef.current.filter(
-        (pulse) => now - pulse.startTime < pulse.duration,
-      );
-      consolePulsesRef.current = consolePulses;
-      const consoleInnerStartX = frame.startX + consoleCharWidth * 2;
-      const consoleInnerWidth = consoleCharWidth * Math.max(1, frame.cols - 4);
-      const textBounds = {
-        startX: consoleInnerStartX,
-        maxWidth: consoleInnerWidth,
-        lineHeight: LINE_H,
-      };
-      const consoleProjectiles: Projectile[] = [];
-      const projectileRenderState: Array<{
-        projectile: Projectile;
-        angle: number;
-        progress: number;
-        travel: number;
-      }> = [];
-
-      for (const p of projectiles) {
-        if (!p.alive) continue;
-
-        const progress = clamp01((now - p.startTime) / p.duration);
-        const hasReturnTurn = p.turnX !== undefined && p.turnY !== undefined;
-        const travel = hasReturnTurn
-          ? progress
-          : p.controlX !== undefined && p.controlY !== undefined
-            ? easeInOutCubic(progress)
-            : easeInCubic(progress);
-        const basePoint = hasReturnTurn
-          ? (() => {
-              const split = 0.54;
-              if (travel <= split) {
-                const outbound = easeOutCubic(travel / split);
-                return sampleQuadraticPoint(
-                  { x: p.startX, y: p.startY },
-                  {
-                    x: lerp(p.startX, p.turnX!, 0.78),
-                    y: Math.min(p.startY, p.turnY!) - SCENE_H * 0.035,
-                  },
-                  { x: p.turnX!, y: p.turnY! },
-                  outbound,
-                );
-              }
-
-              const returning = easeInOutCubic((travel - split) / (1 - split));
-              return sampleQuadraticPoint(
-                { x: p.turnX!, y: p.turnY! },
-                {
-                  x: p.controlX ?? lerp(p.turnX!, p.targetX, 0.35),
-                  y: p.controlY ?? lerp(p.turnY!, p.targetY, 0.45),
-                },
-                { x: p.targetX, y: p.targetY },
-                returning,
-              );
-            })()
-          : p.controlX !== undefined && p.controlY !== undefined
-            ? sampleQuadraticPoint(
-                { x: p.startX, y: p.startY },
-                { x: p.controlX, y: p.controlY },
-                { x: p.targetX, y: p.targetY },
-                travel,
-              )
-            : {
-                x: lerp(p.startX, p.targetX, travel),
-                y: lerp(p.startY, p.targetY, travel),
-              };
-        const tangent = hasReturnTurn
-          ? (() => {
-              const split = 0.54;
-              if (travel <= split) {
-                const outbound = easeOutCubic(travel / split);
-                return sampleQuadraticTangent(
-                  { x: p.startX, y: p.startY },
-                  {
-                    x: lerp(p.startX, p.turnX!, 0.78),
-                    y: Math.min(p.startY, p.turnY!) - SCENE_H * 0.035,
-                  },
-                  { x: p.turnX!, y: p.turnY! },
-                  outbound,
-                );
-              }
-
-              const returning = easeInOutCubic((travel - split) / (1 - split));
-              return sampleQuadraticTangent(
-                { x: p.turnX!, y: p.turnY! },
-                {
-                  x: p.controlX ?? lerp(p.turnX!, p.targetX, 0.35),
-                  y: p.controlY ?? lerp(p.turnY!, p.targetY, 0.45),
-                },
-                { x: p.targetX, y: p.targetY },
-                returning,
-              );
-            })()
-          : p.controlX !== undefined && p.controlY !== undefined
-            ? sampleQuadraticTangent(
-                { x: p.startX, y: p.startY },
-                { x: p.controlX, y: p.controlY },
-                { x: p.targetX, y: p.targetY },
-                travel,
-              )
-            : {
-                x: p.targetX - p.startX,
-                y: p.targetY - p.startY,
-              };
-        const angle = Math.atan2(tangent.y, tangent.x);
-
-        p.x = basePoint.x;
-        p.y = basePoint.y;
-
-        p.offsets.forEach((offset) => {
-          offset.dx = 0;
-          offset.dy = 0;
-          offset.rot = 0;
-        });
-
-        projectileRenderState.push({ projectile: p, angle, progress, travel });
-
-        if (!canProjectToConsole || !sceneRect) {
-          continue;
-        }
-
-        const consolePoint = mapScenePointToConsolePoint({ x: p.x, y: p.y }, sceneRect, consoleRect);
-        if (
-          consolePoint.x >= -DISPLACE_RADIUS &&
-          consolePoint.x <= W + DISPLACE_RADIUS &&
-          consolePoint.y >= -DISPLACE_RADIUS &&
-          consolePoint.y <= H + DISPLACE_RADIUS
-        ) {
-          consoleProjectiles.push({
-            ...p,
-            x: consolePoint.x,
-            y: consolePoint.y,
-          });
-        }
-      }
-
-      let y = frame.topY + LINE_H + 14;
-
-      // 1. Monster intent (orange, highest priority)
-      y = renderTextBlockPhysics(
-        ctx,
-        `> ${intentLabel}`,
-        `rgba(255, 170, 60, ${(0.72 + torchFlicker * 0.14).toFixed(2)})`,
-        y,
-        consoleProjectiles,
-        forceFields,
-        activeSlashFields,
-        { fontWeight: 700, inkBleed: 0.22 + torchInk },
-        textBounds,
-      );
-      y += 4;
-
-      if (mShield > 0) {
-        y = renderTextBlockPhysics(
-          ctx,
-          `  [${shieldLabel}: ${mShield}]`,
-          "rgba(100, 180, 255, 0.68)",
-          y,
-          consoleProjectiles,
-          forceFields,
-          activeSlashFields,
-          { fontWeight: 620, inkBleed: 0.08 + torchInk * 0.28 },
-          textBounds,
-        );
-      }
-
-      // 2. Ambient text (dim, medium priority)
-      y = renderTextBlockPhysics(
-        ctx,
-        ambient,
-        `rgba(180, 180, 180, ${(0.4 + torchFlicker * 0.08).toFixed(2)})`,
-        y,
-        consoleProjectiles,
-        forceFields,
-        activeSlashFields,
-        { fontWeight: 430, inkBleed: 0.03 + torchInk * 0.15 },
-        textBounds,
-      );
-      y += 4;
-
-      // Separator
-      drawAsciiConsoleRule(
-        ctx,
-        y,
-        frame,
-        `rgba(255, 255, 255, ${(0.12 + torchFlicker * 0.04).toFixed(2)})`,
-      );
-      y += 8;
-
-      // 3. Battle log (scrolls up)
-      const maxLogLines = Math.floor((frame.bottomY - y - 8) / LINE_H);
-      const visibleLog = log.slice(-maxLogLines);
-
-      for (let entryIndex = 0; entryIndex < visibleLog.length; entryIndex += 1) {
-        const entry = visibleLog[entryIndex];
-        const recency =
-          visibleLog.length <= 1
-            ? 1
-            : entryIndex / (visibleLog.length - 1);
-        ctx.font = CRT_FONT;
-        y = renderTextBlockPhysics(
-          ctx,
-          entry.text,
-          classToCanvasColor(entry.color),
-          y,
-          consoleProjectiles,
-          forceFields,
-          activeSlashFields,
-          {
-            fontWeight: 480 + recency * 180,
-            inkBleed: 0.03 + recency * 0.12 + torchInk * 0.25,
-          },
-          textBounds,
-        );
-      }
-
-      // ── Crescent slash sweep ──
-      for (const { slash, visiblePoints, intensity, sweep } of activeSlashRender) {
-        ctx.save();
-        ctx.font = "bold 18px 'Courier New', monospace";
-        ctx.shadowBlur = 18;
-        ctx.shadowColor = slash.blocked
-          ? "rgba(140, 210, 255, 0.4)"
-          : "rgba(255, 240, 240, 0.42)";
-
-        for (let index = 0; index < visiblePoints.length; index += 1) {
-          const point = visiblePoints[index];
-          const localWidth = (6 + point.t * 26) * intensity;
-          const bandCount = Math.max(1, Math.round(localWidth / 6));
-
-          for (let band = -bandCount; band <= bandCount; band += 1) {
-            const bandT = bandCount === 0 ? 0 : band / bandCount;
-            const edgeWeight = 1 - Math.abs(bandT);
-            const ripple = Math.sin(now * 0.014 + index * 0.42 + band * 0.7) * (2.1 + edgeWeight * 1.4);
-            const offsetX = point.nx * bandT * localWidth;
-            const offsetY = point.ny * bandT * localWidth * 0.94;
-            const char =
-              Math.abs(band) === bandCount
-                ? band < 0
-                  ? "/"
-                  : "\\"
-                : edgeWeight > 0.6
-                  ? "#"
-                  : edgeWeight > 0.32
-                    ? "="
-                    : "-";
-            const alpha = Math.min(
-              0.92,
-              (0.12 + intensity * 0.76) * (0.28 + point.t * 0.72) * (0.34 + edgeWeight * 0.66),
-            );
-            ctx.fillStyle = slash.blocked
-              ? `rgba(150, 215, 255, ${alpha.toFixed(2)})`
-              : `rgba(255, 238, 238, ${alpha.toFixed(2)})`;
-            ctx.fillText(
-              char,
-              point.x + offsetX + point.nx * ripple,
-              point.y + offsetY + point.ny * ripple * 0.85,
-            );
-          }
-        }
-
-        const head = visiblePoints[visiblePoints.length - 1];
-        if (head && sweep > 0.3) {
-          const label = slash.label.slice(0, 6).split("");
-          ctx.font = "bold 14px 'Courier New', monospace";
-          for (let index = 0; index < label.length; index += 1) {
-            const trail = index / Math.max(1, label.length - 1);
-            ctx.fillStyle = slash.blocked
-              ? `rgba(170, 220, 255, ${(0.24 + intensity * 0.28).toFixed(2)})`
-              : `rgba(255, 255, 255, ${(0.22 + intensity * 0.32).toFixed(2)})`;
-            ctx.fillText(
-              label[index],
-              head.x - index * 12 + head.nx * (12 + trail * 8),
-              head.y - index * 6 + head.ny * (10 + trail * 6),
-            );
-          }
-        }
-
-        ctx.restore();
-      }
-
-      for (const pulse of consolePulses) {
-        renderConsolePulse(ctx, frame, consoleCharWidth, pulse, now);
-      }
-
-      // ── Projectiles ──
-
-      for (const { projectile: p, angle, progress, travel } of projectileRenderState) {
-        if (!p.alive) continue;
-
-        if (sceneFxCtx) {
-          const projectileTone = getProjectileTone(p.element, p.critical);
-          const projectileVisual = getProjectileVisual(projectileTone);
-          const criticalScaleBoost = p.critical ? 1.34 : 1;
-          const projectileScale = lerp(1.06, 0.82, travel) * criticalScaleBoost;
-          const trailSpacing = lerp(16, 12.5, travel) * (p.critical ? 1.14 : 1);
-          const glowBlur = lerp(22, 15, travel) * (p.critical ? 1.42 : 1);
-          sceneFxCtx.save();
-          sceneFxCtx.font = `bold ${Math.round(24 * projectileScale)}px 'Courier New', monospace`;
-          sceneFxCtx.fillStyle = projectileVisual.fill;
-          sceneFxCtx.shadowColor = projectileVisual.shadow;
-          sceneFxCtx.shadowBlur = glowBlur;
-
-          for (let index = 0; index < p.chars.length; index += 1) {
-            const along = -(p.chars.length - 1 - index) * trailSpacing;
-            sceneFxCtx.save();
-            sceneFxCtx.translate(
-              p.x + Math.cos(angle) * along,
-              p.y + Math.sin(angle) * along,
-            );
-            sceneFxCtx.rotate(angle * 0.12);
-            sceneFxCtx.scale(projectileScale, projectileScale);
-            sceneFxCtx.fillText(p.chars[index], 0, 0);
-            sceneFxCtx.restore();
-          }
-
-          const headChar = p.blocked ? "#" : projectileVisual.head;
-          sceneFxCtx.globalAlpha = (0.26 + Math.sin(travel * Math.PI) * 0.38) * (p.missed ? 0.86 : 1);
-          sceneFxCtx.save();
-          sceneFxCtx.translate(p.x + Math.cos(angle) * 8, p.y + Math.sin(angle) * 8);
-          sceneFxCtx.scale(projectileScale * (p.critical ? 1.22 : 1.12), projectileScale * (p.critical ? 1.22 : 1.12));
-          sceneFxCtx.font = "bold 32px 'Courier New', monospace";
-          sceneFxCtx.fillText(headChar, 0, 0);
-          sceneFxCtx.restore();
-          sceneFxCtx.restore();
-        }
-
-        if (!p.impactTriggered && progress >= 1) {
-          p.impactTriggered = true;
-          p.onImpact?.();
-          p.alive = false;
-        }
-      }
-
-      projectilesRef.current = projectiles.filter((p) => p.alive);
-
-      // ── Scene scatter particles (shield breaks / impact bursts) ──
-      const scatter = sceneScatterRef.current;
-      for (let si = scatter.length - 1; si >= 0; si--) {
-        const sp = scatter[si];
-        sp.x += sp.vx;
-        sp.y += sp.vy;
-        sp.vx *= 0.94;
-        sp.vy *= 0.94;
-        sp.life += 1;
-        if (sp.life > sp.maxLife) {
-          scatter.splice(si, 1);
-          continue;
-        }
-        if (!sceneFxCtx) {
-          continue;
-        }
-        const ratio = sp.life / sp.maxLife;
-        const fade = ratio > 0.45 ? 1 - (ratio - 0.45) / 0.55 : 1;
-        sceneFxCtx.save();
-        sceneFxCtx.globalAlpha = fade * sp.alpha;
-        sceneFxCtx.font = `bold ${sp.size}px 'Courier New', monospace`;
-        sceneFxCtx.fillStyle = sp.color;
-        sceneFxCtx.shadowColor = sp.color;
-        sceneFxCtx.shadowBlur = 10;
-        sceneFxCtx.fillText(sp.char, sp.x, sp.y);
-        sceneFxCtx.restore();
-      }
-
-      const playerAsciiCanvas = playerAsciiCanvasRef.current;
-      if (playerAsciiCanvas) {
-        const playerAsciiCtx = playerAsciiCanvas.getContext("2d");
-        if (playerAsciiCtx) {
-          renderLiveAsciiDisplacementCanvas(
-            playerAsciiCtx,
-            playerAsciiCanvas,
-            playerAsciiMetricsRef.current,
-            playerAsciiRenderRef.current.glyphs,
-            playerPotionDisplacementRef.current,
-            "rgba(244, 244, 244, 0.98)",
-            playerAsciiRenderRef.current.glyphColors,
-            now,
-          );
-        }
-      }
-
-      const monsterAsciiCanvas = monsterAsciiCanvasRef.current;
-      if (monsterAsciiCanvas) {
-        const monsterAsciiCtx = monsterAsciiCanvas.getContext("2d");
-        if (monsterAsciiCtx) {
-          renderMonsterAsciiImpactCanvas(
-            monsterAsciiCtx,
-            monsterAsciiCanvas,
-            monsterAsciiMetricsRef.current,
-            monsterAsciiRenderRef.current.glyphs,
-            monsterImpactRef.current,
-            monsterAsciiRenderRef.current.tone,
-            now,
-          );
-        }
-      }
-
-      // ── Sprite overlay effects ──
-      const effects = effectsRef.current;
-      const playerOverlay = playerOverlayRef.current;
-      const monsterOverlay = monsterOverlayRef.current;
-      const monsterIntentOverlay = monsterIntentOverlayRef.current;
-
-      if (playerOverlay) {
-        const pCtx = playerOverlay.getContext("2d");
-        if (pCtx) {
-          renderOverlayEffects(pCtx, effects, "player", playerOverlay.width, playerOverlay.height);
-        }
-      }
-      if (monsterOverlay) {
-        const mCtx = monsterOverlay.getContext("2d");
-        if (mCtx) {
-          renderOverlayEffects(mCtx, effects, "monster", monsterOverlay.width, monsterOverlay.height);
-        }
-      }
-      if (monsterIntentOverlay) {
-        const intentCtx = monsterIntentOverlay.getContext("2d");
-        if (intentCtx) {
-          intentCtx.clearRect(0, 0, monsterIntentOverlay.width, monsterIntentOverlay.height);
-          renderIntentSparks(
-            intentCtx,
-            intentSparksRef.current,
-            now,
-            intent,
-            currentTurn === "player" && currentMonsterHp > 0,
-            advanceIntentSparkFrame,
-            monsterIntentOverlay.width,
-            monsterIntentOverlay.height,
-          );
-        }
-      }
-
-      // Prune finished effects
-      effectsRef.current = effects.filter(
-        (e) => now - e.startTime < e.duration,
-      );
-
-      rafRef.current = requestAnimationFrame(animate);
-    };
-
-    rafRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [
+  useBattleStageCanvasLoop({
+    canvasRef,
+    consolePulsesRef,
+    effectsRef,
+    forceFieldsRef,
+    intentSparksRef,
+    lastIntentSparkFrameRef,
+    monsterAsciiCanvasRef,
     monsterAsciiMetricsRef,
+    monsterAsciiRenderRef,
+    monsterImpactRef,
+    monsterIntentOverlayRef,
+    monsterOverlayRef,
     playerAsciiCanvasRef,
     playerAsciiMetricsRef,
     playerAsciiRenderRef,
     playerPotionDisplacementRef,
-  ]); // stable — reads from refs updated outside the RAF loop
+    playerOverlayRef,
+    projectilesRef,
+    rafRef,
+    sceneFxCanvasRef,
+    sceneScatterRef,
+    slashesRef,
+    textRef,
+  });
 
   return (
     <div className="flex w-full flex-col items-center gap-4 px-3 pb-8 animate-fade-in-quick sm:px-4">

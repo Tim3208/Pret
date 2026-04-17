@@ -9,9 +9,6 @@ import {
   type BattleTargetOption,
   type CombatAnimationRequest,
   type PlayerAction,
-  getActionCritChance,
-  getActionHitChance,
-  getCriticalDamage,
   MONSTER_TARGET_ID,
   PLAYER_TARGET_ID,
 } from "@/entities/combat";
@@ -19,7 +16,6 @@ import {
   type Language,
   getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
-  getLocalizedSpellName,
   interpolateText,
 } from "@/entities/locale";
 import {
@@ -29,15 +25,12 @@ import {
 } from "@/entities/monster";
 import {
   DEFAULT_STATS,
-  getBaseAttackDamage,
-  getBaseShield,
   getHealAmount,
-  getLiteracyTier,
   getMaxHp,
   getMaxMana,
   type PlayerStats,
 } from "@/entities/player";
-import { getElementMultiplier } from "@/entities/spell";
+import { resolvePlayerAction } from "./resolvePlayerAction";
 
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
 
@@ -198,307 +191,28 @@ export function useBattleFlow({
 
       setPlayerShield(0);
 
-      let animationRequest: CombatAnimationRequest | null = null;
+      const { animationRequest, shouldAdvanceTurn } = resolvePlayerAction({
+        action,
+        addLog,
+        battleLogText,
+        currentMonsterShield: monsterShieldRef.current,
+        language,
+        localizedMonsterName,
+        monsterElement: monster.element,
+        playerMana,
+        playerMaxHp,
+        playerStats,
+        sceneText,
+        setMonsterHp,
+        setMonsterShield,
+        setMonsterStunned,
+        setPlayerHp,
+        setPlayerMana,
+        setPlayerShield,
+      });
 
-      switch (action.type) {
-        case "attack": {
-          const targetSide = action.targetId === PLAYER_TARGET_ID ? "player" : "enemy";
-          const targetName =
-            targetSide === "player" ? sceneText.yourself : localizedMonsterName;
-          const hitChance = getActionHitChance(action, playerStats, targetSide);
-          const critChance = getActionCritChance(action, playerStats, targetSide);
-          const didHit = targetSide === "player" || Math.random() < hitChance;
-          const didCrit = didHit && Math.random() < critChance;
-          const totalDamage = didCrit
-            ? getCriticalDamage(getBaseAttackDamage(playerStats))
-            : getBaseAttackDamage(playerStats);
-
-          if (!didHit) {
-            animationRequest = {
-              word: "STRIKE",
-              fromPlayer: true,
-              targetId: action.targetId,
-              targetSide,
-              kind: "projectile",
-              missed: true,
-              onImpact: () => {
-                addLog(
-                  interpolateText(battleLogText.attackMiss, { targetName }),
-                  "text-white/40",
-                );
-              },
-            };
-            break;
-          }
-
-          if (targetSide === "enemy") {
-            const currentShield = monsterShieldRef.current;
-            const shieldAbsorb = Math.min(currentShield, totalDamage);
-            const hpDamage = totalDamage - shieldAbsorb;
-            animationRequest = {
-              word: "STRIKE",
-              fromPlayer: true,
-              targetId: action.targetId,
-              targetSide,
-              kind: "projectile",
-              shielded: currentShield > 0,
-              blocked: currentShield >= totalDamage,
-              critical: didCrit,
-              impactDamage: hpDamage,
-              onImpact: () => {
-                if (shieldAbsorb > 0) {
-                  setMonsterShield((value) => Math.max(0, value - shieldAbsorb));
-                }
-                setMonsterHp((value) => Math.max(0, value - hpDamage));
-
-                if (shieldAbsorb > 0) {
-                  addLog(
-                    interpolateText(
-                      didCrit
-                        ? battleLogText.attackShieldCriticalHit
-                        : battleLogText.attackShieldHit,
-                      { hpDamage, shieldAbsorb },
-                    ),
-                    didCrit ? "text-yellow-300" : "text-sky-400",
-                  );
-                } else {
-                  addLog(
-                    interpolateText(
-                      didCrit
-                        ? battleLogText.attackCriticalHit
-                        : battleLogText.attackHit,
-                      { damage: totalDamage },
-                    ),
-                    didCrit ? "text-yellow-300" : "text-sky-400",
-                  );
-                }
-              },
-            };
-            break;
-          }
-
-          animationRequest = {
-            word: "STRIKE",
-            fromPlayer: true,
-            targetId: action.targetId,
-            targetSide,
-            kind: "projectile",
-            critical: didCrit,
-            impactDamage: totalDamage,
-            onImpact: () => {
-              setPlayerHp((value) => Math.max(0, value - totalDamage));
-              addLog(
-                interpolateText(
-                  didCrit
-                    ? battleLogText.attackSelfCriticalHit
-                    : battleLogText.attackSelfHit,
-                  { damage: totalDamage },
-                ),
-                didCrit ? "text-yellow-300" : "text-red-400",
-              );
-            },
-          };
-          break;
-        }
-        case "defend": {
-          const shield = getBaseShield(playerStats);
-          setPlayerShield(shield);
-          addLog(
-            interpolateText(battleLogText.defend, { shield }),
-            "text-blue-400",
-          );
-          break;
-        }
-        case "heal": {
-          const heal = getHealAmount(playerStats);
-          setPlayerHp((value) => Math.min(playerMaxHp, value + heal));
-          addLog(
-            interpolateText(battleLogText.heal, { heal }),
-            "text-green-400",
-          );
-          break;
-        }
-        case "spell": {
-          const { spell, mode } = action;
-          const spellDisplayName = getLocalizedSpellName(spell.name, language);
-          const tier = getLiteracyTier(playerStats.literacy);
-          if (spell.tier > tier) {
-            addLog(
-              interpolateText(battleLogText.spellNeedLiteracy, {
-                tier: spell.tier,
-              }),
-              "text-red-400",
-            );
-            return;
-          }
-          if (playerMana < spell.manaCost) {
-            addLog(
-              interpolateText(battleLogText.spellNeedMana, {
-                manaCost: spell.manaCost,
-              }),
-              "text-red-400",
-            );
-            return;
-          }
-          setPlayerMana((value) => value - spell.manaCost);
-
-          if (mode === "attack") {
-            const targetSide = action.targetId === PLAYER_TARGET_ID ? "player" : "enemy";
-            const targetName =
-              targetSide === "player" ? sceneText.yourself : localizedMonsterName;
-            const hitChance = getActionHitChance(action, playerStats, targetSide);
-            const critChance = getActionCritChance(action, playerStats, targetSide);
-            const didHit = targetSide === "player" || Math.random() < hitChance;
-            const didCrit = didHit && Math.random() < critChance;
-
-            let damage = spell.baseDamage;
-            let elementLog: { color: string; text: string } | null = null;
-            if (targetSide === "enemy" && monster.element) {
-              const multiplier = getElementMultiplier(spell.element, monster.element);
-              damage = Math.round(damage * multiplier);
-              if (multiplier > 1) {
-                elementLog = {
-                  text: sceneText.elementalWeakness,
-                  color: "text-yellow-300",
-                };
-              } else if (multiplier < 1) {
-                elementLog = {
-                  text: sceneText.elementalResistance,
-                  color: "text-gray-400",
-                };
-              }
-            }
-
-            if (didCrit) {
-              damage = getCriticalDamage(damage);
-            }
-
-            const willStun =
-              didHit &&
-              targetSide === "enemy" &&
-              spell.stunChance > 0 &&
-              Math.random() < spell.stunChance;
-
-            if (!didHit) {
-              animationRequest = {
-                word: spell.name.toUpperCase(),
-                fromPlayer: true,
-                targetId: action.targetId,
-                targetSide,
-                kind: "projectile",
-                element: spell.element,
-                missed: true,
-                onImpact: () => {
-                  addLog(
-                    interpolateText(battleLogText.spellMiss, {
-                      manaCost: spell.manaCost,
-                      spellName: spellDisplayName,
-                      targetName,
-                    }),
-                    "text-white/40",
-                  );
-                },
-              };
-              break;
-            }
-
-            if (targetSide === "enemy") {
-              const currentShield = monsterShieldRef.current;
-              const shieldAbsorb = Math.min(currentShield, damage);
-              const hpDamage = damage - shieldAbsorb;
-              animationRequest = {
-                word: spell.name.toUpperCase(),
-                fromPlayer: true,
-                targetId: action.targetId,
-                targetSide,
-                kind: "projectile",
-                element: spell.element,
-                shielded: currentShield > 0,
-                blocked: currentShield >= damage,
-                critical: didCrit,
-                impactDamage: hpDamage,
-                onImpact: () => {
-                  if (shieldAbsorb > 0) {
-                    setMonsterShield((value) => Math.max(0, value - shieldAbsorb));
-                  }
-                  if (elementLog) {
-                    addLog(elementLog.text, elementLog.color);
-                  }
-                  setMonsterHp((value) => Math.max(0, value - hpDamage));
-                  addLog(
-                    interpolateText(
-                      didCrit
-                        ? battleLogText.spellCriticalHit
-                        : battleLogText.spellHit,
-                      {
-                        damage,
-                        manaCost: spell.manaCost,
-                        spellName: spellDisplayName,
-                      },
-                    ),
-                    didCrit ? "text-yellow-300" : "text-cyan-300",
-                  );
-
-                  if (willStun) {
-                    setMonsterStunned(true);
-                    addLog(sceneText.enemyStunned, "text-purple-400");
-                  }
-                },
-              };
-              break;
-            }
-
-            animationRequest = {
-              word: spell.name.toUpperCase(),
-              fromPlayer: true,
-              targetId: action.targetId,
-              targetSide,
-              kind: "projectile",
-              element: spell.element,
-              critical: didCrit,
-              impactDamage: damage,
-              onImpact: () => {
-                setPlayerHp((value) => Math.max(0, value - damage));
-                addLog(
-                  interpolateText(
-                    didCrit
-                      ? battleLogText.spellSelfCriticalHit
-                      : battleLogText.spellSelfHit,
-                    {
-                      damage,
-                      manaCost: spell.manaCost,
-                      spellName: spellDisplayName,
-                    },
-                  ),
-                  didCrit ? "text-yellow-300" : "text-red-400",
-                );
-              },
-            };
-          } else {
-            const shield = spell.baseShield + Math.floor(playerStats.agility * 0.5);
-            setPlayerShield(shield);
-            addLog(
-              interpolateText(battleLogText.spellWard, {
-                manaCost: spell.manaCost,
-                shield,
-                spellName: spellDisplayName,
-              }),
-              "text-teal-300",
-            );
-            if (spell.healOnDefend > 0) {
-              setPlayerHp((value) =>
-                Math.min(playerMaxHp, value + spell.healOnDefend),
-              );
-              addLog(
-                interpolateText(battleLogText.spellDefendHeal, {
-                  heal: spell.healOnDefend,
-                }),
-                "text-green-300",
-              );
-            }
-          }
-          break;
-        }
+      if (!shouldAdvanceTurn) {
+        return;
       }
 
       const turnDelay = animationRequest ? 1920 : 400;
