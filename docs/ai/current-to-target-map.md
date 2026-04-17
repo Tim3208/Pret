@@ -60,7 +60,7 @@
 |---|---|---|---|
 | `src/content/text/app/campfire.ts` | `src/content/text/app/campfire.ts` | 완료 | 캠프파이어 장면 텍스트 분리 완료 |
 | `src/content/text/battle/scene.ts` | `src/content/text/battle/scene.ts` | 1차 완료 | 전투 장면 고정 텍스트 분리 완료 |
-| `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 분리 | 전투 로그 텍스트 |
+| `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 완료 | 전투 로그 및 동적 결과 문구 분리 완료 |
 | `src/content/text/battle/ui.ts` | `src/content/text/battle/ui.ts` | 1차 완료 | 입력, 버튼, 안내 문구 분리 완료 |
 | `src/content/text/event/postBattle.ts` | `src/content/text/event/postBattle.ts` | 완료 | 전투 후 이벤트 문구 분리 완료 |
 | `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 분리 검토 | 규칙 데이터와 설명 데이터 분리 여부 확정 필요 |

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BATTLE_LOG_TEXT } from "@/content/text/battle/log";
 import {
   BATTLE_AMBIENT_LINES,
   BATTLE_ENCOUNTER_TEXT,
@@ -9,6 +10,7 @@ import {
   getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
   getLocalizedSpellName,
+  interpolateText,
   pickText,
 } from "@/entities/locale";
 import BattleCombat from "./BattleCombat";
@@ -70,6 +72,7 @@ export default function BattleScene({
   );
 
   const monster = HOLLOW_WRAITH;
+  const battleLogText = BATTLE_LOG_TEXT[language];
   const sceneText = BATTLE_SCENE_TEXT[language];
   const localizedMonsterName = getLocalizedMonsterName(monster.name, language);
   const [stats] = useState<PlayerStats>({ ...DEFAULT_STATS });
@@ -139,13 +142,11 @@ export default function BattleScene({
     setPotionUsed(true);
     setPlayerHp((value) => Math.min(maxHp, value + healAmount));
     addLog(
-      language === "ko"
-        ? `진홍 물약이 몸 위에서 터진다... HP +${healAmount}`
-        : `The crimson flask bursts over you... +${healAmount} HP`,
+      interpolateText(battleLogText.potionUse, { healAmount }),
       "text-green-300",
     );
     return healAmount;
-  }, [addLog, language, maxHp, phase, playerHp, potionUsed, stats]);
+  }, [addLog, battleLogText, maxHp, phase, playerHp, potionUsed, stats]);
 
   /**
    * 현재 몬스터 방어막을 최신값으로 읽기 위한 ref다.
@@ -219,9 +220,7 @@ export default function BattleScene({
               missed: true,
               onImpact: () => {
                 addLog(
-                  language === "ko"
-                    ? `일격이 ${targetName}에게 빗나갔다!`
-                    : `Strike misses ${targetName}!`,
+                  interpolateText(battleLogText.attackMiss, { targetName }),
                   "text-white/40",
                 );
               },
@@ -251,24 +250,22 @@ export default function BattleScene({
 
                 if (shieldAbsorb > 0) {
                   addLog(
-                    didCrit
-                      ? language === "ko"
-                        ? `치명타! 방어막이 ${shieldAbsorb} 막아내고 ${hpDmg} 피해를 입혔다!`
-                        : `Critical strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`
-                      : language === "ko"
-                        ? `일격! 방어막이 ${shieldAbsorb} 막아내고 ${hpDmg} 피해를 입혔다!`
-                        : `Strike! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
+                    interpolateText(
+                      didCrit
+                        ? battleLogText.attackShieldCriticalHit
+                        : battleLogText.attackShieldHit,
+                      { hpDamage: hpDmg, shieldAbsorb },
+                    ),
                     didCrit ? "text-yellow-300" : "text-sky-400",
                   );
                 } else {
                   addLog(
-                    didCrit
-                      ? language === "ko"
-                        ? `치명타! ${totalDamage} 피해!`
-                        : `Critical strike! ${totalDamage} damage!`
-                      : language === "ko"
-                        ? `일격! ${totalDamage} 피해!`
-                        : `Strike! ${totalDamage} damage!`,
+                    interpolateText(
+                      didCrit
+                        ? battleLogText.attackCriticalHit
+                        : battleLogText.attackHit,
+                      { damage: totalDamage },
+                    ),
                     didCrit ? "text-yellow-300" : "text-sky-400",
                   );
                 }
@@ -288,13 +285,12 @@ export default function BattleScene({
             onImpact: () => {
               setPlayerHp((v) => Math.max(0, v - totalDamage));
               addLog(
-                didCrit
-                  ? language === "ko"
-                    ? `치명타! 당신 자신에게 ${totalDamage} 피해를 입혔다!`
-                    : `Critical strike! You hit yourself for ${totalDamage} damage!`
-                  : language === "ko"
-                    ? `당신 자신을 공격해 ${totalDamage} 피해를 입었다!`
-                    : `You strike yourself for ${totalDamage} damage!`,
+                interpolateText(
+                  didCrit
+                    ? battleLogText.attackSelfCriticalHit
+                    : battleLogText.attackSelfHit,
+                  { damage: totalDamage },
+                ),
                 didCrit ? "text-yellow-300" : "text-red-400",
               );
             },
@@ -305,7 +301,7 @@ export default function BattleScene({
           const shield = getBaseShield(stats);
           setPlayerShield(shield);
           addLog(
-            language === "ko" ? `방어 태세! 방어막 +${shield}!` : `Brace! Shield +${shield}!`,
+            interpolateText(battleLogText.defend, { shield }),
             "text-blue-400",
           );
           break;
@@ -314,7 +310,7 @@ export default function BattleScene({
           const heal = getHealAmount(stats);
           setPlayerHp((v) => Math.min(maxHp, v + heal));
           addLog(
-            language === "ko" ? `호흡을 가다듬는다... HP +${heal}.` : `Steady breath... +${heal} HP.`,
+            interpolateText(battleLogText.heal, { heal }),
             "text-green-400",
           );
           break;
@@ -325,18 +321,18 @@ export default function BattleScene({
           const tier = getLiteracyTier(stats.literacy);
           if (spell.tier > tier) {
             addLog(
-              language === "ko"
-                ? `문해력이 부족하다... (필요 티어 ${spell.tier})`
-                : `Not enough literacy... (need tier ${spell.tier})`,
+              interpolateText(battleLogText.spellNeedLiteracy, {
+                tier: spell.tier,
+              }),
               "text-red-400",
             );
             return;
           }
           if (playerMana < spell.manaCost) {
             addLog(
-              language === "ko"
-                ? `마나가 부족하다! (${spell.manaCost} 필요)`
-                : `Not enough mana! (need ${spell.manaCost})`,
+              interpolateText(battleLogText.spellNeedMana, {
+                manaCost: spell.manaCost,
+              }),
               "text-red-400",
             );
             return;
@@ -390,9 +386,11 @@ export default function BattleScene({
                 missed: true,
                 onImpact: () => {
                   addLog(
-                    language === "ko"
-                      ? `${spellDisplayName}이(가) ${targetName}에게 빗나갔다! (MP -${spell.manaCost})`
-                      : `${spellDisplayName} misses ${targetName}! (MP -${spell.manaCost})`,
+                    interpolateText(battleLogText.spellMiss, {
+                      manaCost: spell.manaCost,
+                      spellName: spellDisplayName,
+                      targetName,
+                    }),
                     "text-white/40",
                   );
                 },
@@ -424,13 +422,16 @@ export default function BattleScene({
                   }
                   setMonsterHp((v) => Math.max(0, v - hpDmg));
                   addLog(
-                    didCrit
-                      ? language === "ko"
-                        ? `치명적인 ${spellDisplayName}! ${damage} 피해! (MP -${spell.manaCost})`
-                        : `Critical ${spellDisplayName}! ${damage} damage! (MP -${spell.manaCost})`
-                      : language === "ko"
-                        ? `${spellDisplayName}! ${damage} 피해! (MP -${spell.manaCost})`
-                        : `${spellDisplayName}! ${damage} damage! (MP -${spell.manaCost})`,
+                    interpolateText(
+                      didCrit
+                        ? battleLogText.spellCriticalHit
+                        : battleLogText.spellHit,
+                      {
+                        damage,
+                        manaCost: spell.manaCost,
+                        spellName: spellDisplayName,
+                      },
+                    ),
                     didCrit ? "text-yellow-300" : "text-cyan-300",
                   );
 
@@ -455,13 +456,16 @@ export default function BattleScene({
               onImpact: () => {
                 setPlayerHp((v) => Math.max(0, v - damage));
                 addLog(
-                  didCrit
-                    ? language === "ko"
-                      ? `치명적인 ${spellDisplayName}! 당신이 ${damage} 피해를 입었다. (MP -${spell.manaCost})`
-                      : `Critical ${spellDisplayName}! You take ${damage} damage. (MP -${spell.manaCost})`
-                    : language === "ko"
-                      ? `${spellDisplayName}이(가) 당신 자신에게 ${damage} 피해를 주었다. (MP -${spell.manaCost})`
-                      : `${spellDisplayName} hits yourself for ${damage} damage. (MP -${spell.manaCost})`,
+                  interpolateText(
+                    didCrit
+                      ? battleLogText.spellSelfCriticalHit
+                      : battleLogText.spellSelfHit,
+                    {
+                      damage,
+                      manaCost: spell.manaCost,
+                      spellName: spellDisplayName,
+                    },
+                  ),
                   didCrit ? "text-yellow-300" : "text-red-400",
                 );
               },
@@ -471,17 +475,19 @@ export default function BattleScene({
             const shield = spell.baseShield + Math.floor(stats.agility * 0.5);
             setPlayerShield(shield);
             addLog(
-              language === "ko"
-                ? `${spellDisplayName} 수호! 방어막 +${shield}! (MP -${spell.manaCost})`
-                : `${spellDisplayName} ward! Shield +${shield}! (MP -${spell.manaCost})`,
+              interpolateText(battleLogText.spellWard, {
+                manaCost: spell.manaCost,
+                shield,
+                spellName: spellDisplayName,
+              }),
               "text-teal-300",
             );
             if (spell.healOnDefend > 0) {
               setPlayerHp((v) => Math.min(maxHp, v + spell.healOnDefend));
               addLog(
-                language === "ko"
-                  ? `자연의 힘이 상처를 메운다... HP +${spell.healOnDefend}`
-                  : `Nature mends your wounds... +${spell.healOnDefend} HP`,
+                interpolateText(battleLogText.spellDefendHeal, {
+                  heal: spell.healOnDefend,
+                }),
                 "text-green-300",
               );
             }
@@ -516,6 +522,7 @@ export default function BattleScene({
       playerMana,
       monster,
       addLog,
+      battleLogText,
       language,
       localizedMonsterName,
       sceneText,
@@ -572,9 +579,9 @@ export default function BattleScene({
 
       if (monsterStunned) {
         addLog(
-          language === "ko"
-            ? `${localizedMonsterName}은(는) 기절해 움직이지 못한다!`
-            : `${localizedMonsterName} is stunned and cannot act!`,
+          interpolateText(battleLogText.monsterStunned, {
+            monsterName: localizedMonsterName,
+          }),
           "text-purple-300",
         );
         setMonsterStunned(false);
@@ -590,9 +597,10 @@ export default function BattleScene({
         const shieldVal = 8;
         setMonsterShield(shieldVal);
         addLog(
-          language === "ko"
-            ? `${localizedMonsterName}이(가) 몸을 굳히며 방어한다! (방어막 ${shieldVal})`
-            : `${localizedMonsterName} hardens its guard! (Shield ${shieldVal})`,
+          interpolateText(battleLogText.monsterDefend, {
+            monsterName: localizedMonsterName,
+            shield: shieldVal,
+          }),
           "text-orange-300",
         );
         pendingResolve = finishMonsterTurn;
@@ -618,24 +626,27 @@ export default function BattleScene({
           setPlayerShield((v) => Math.max(0, v - absorbed));
           if (hpDmg > 0) {
             addLog(
-              language === "ko"
-                ? `${localizedIntent} - ${absorbed} 막아내고 ${hpDmg} 피해!`
-                : `${localizedIntent} - ${absorbed} blocked, ${hpDmg} damage!`,
+              interpolateText(battleLogText.monsterHitThroughShield, {
+                absorbed,
+                hpDamage: hpDmg,
+                intentLabel: localizedIntent,
+              }),
               "text-red-400",
             );
           } else {
             addLog(
-              language === "ko"
-                ? `${localizedIntent} - 방어막이 완전히 막아냈다!`
-                : `${localizedIntent} - fully blocked by shield!`,
+              interpolateText(battleLogText.monsterHitBlocked, {
+                intentLabel: localizedIntent,
+              }),
               "text-blue-400",
             );
           }
         } else {
           addLog(
-            language === "ko"
-              ? `${localizedIntent} - ${dmg} 피해!`
-              : `${localizedIntent} - ${dmg} damage!`,
+            interpolateText(battleLogText.monsterHit, {
+              damage: dmg,
+              intentLabel: localizedIntent,
+            }),
             "text-red-400",
           );
         }
@@ -690,6 +701,7 @@ export default function BattleScene({
     monsterStunned,
     monster,
     addLog,
+    battleLogText,
     language,
     localizedMonsterName,
     rollNextIntent,
@@ -708,15 +720,15 @@ export default function BattleScene({
       const id = window.setTimeout(() => {
         setPhase("victory");
         addLog(
-          language === "ko"
-            ? `${localizedMonsterName}을(를) 쓰러뜨렸다!`
-            : `${localizedMonsterName} has been slain!`,
+          interpolateText(battleLogText.victoryLog, {
+            monsterName: localizedMonsterName,
+          }),
           "text-yellow-400",
         );
       }, 1900);
       return () => window.clearTimeout(id);
     }
-  }, [monsterHp, phase, addLog, language, localizedMonsterName]);
+  }, [monsterHp, phase, addLog, battleLogText, localizedMonsterName]);
 
   // Victory → return to bonfire after delay
   useEffect(() => {
@@ -739,15 +751,10 @@ export default function BattleScene({
 
     const id = window.setTimeout(() => {
       setPhase("defeat");
-      addLog(
-        language === "ko"
-          ? "망령의 맹공에 무너졌다."
-          : "You collapse beneath the wraith's assault.",
-        "text-red-400",
-      );
+      addLog(battleLogText.defeatLog, "text-red-400");
     }, 1400);
     return () => window.clearTimeout(id);
-  }, [playerHp, phase, addLog, language]);
+  }, [playerHp, phase, addLog, battleLogText]);
 
   /**
    * 패배 연출 후 앱 시작 장면으로 되돌린다.
@@ -815,9 +822,9 @@ export default function BattleScene({
         {phase === "victory" && (
           <div className="flex flex-col items-center gap-4 animate-fade-in-quick">
             <p className="text-[1.3rem] text-ember tracking-wider [text-shadow:0_0_12px_rgba(255,170,0,0.4)]">
-              {language === "ko"
-                ? `${localizedMonsterName}을(를) 쓰러뜨렸다.`
-                : `${localizedMonsterName} has been slain.`}
+              {interpolateText(battleLogText.victoryBanner, {
+                monsterName: localizedMonsterName,
+              })}
             </p>
             <p className="text-[0.85rem] text-white/40 tracking-[0.15em]">
               {hasPostBattleEvent ? sceneText.victoryEvent : sceneText.victoryReturn}

@@ -3,6 +3,7 @@ export {
   getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
   getLocalizedSpellName,
+  interpolateText,
   LOCALE_OPTIONS,
   LOCALE_STORAGE_KEY,
   normalizeSpellQuery,

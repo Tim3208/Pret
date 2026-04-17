@@ -8,6 +8,7 @@ export type Language = "en" | "ko";
 export type Locale = Language;
 
 type LocalizedText = Record<Language, string>;
+type TextTemplateValues = Record<string, number | string>;
 
 /**
  * 언어 설정을 브라우저에 저장할 때 사용할 키다.
@@ -31,6 +32,19 @@ export const LOCALE_OPTIONS: ReadonlyArray<{
  */
 export function pickText(language: Language, text: LocalizedText): string {
   return text[language];
+}
+
+/**
+ * `{key}` 형태의 플레이스홀더를 실제 표시 문자열로 치환한다.
+ */
+export function interpolateText(
+  template: string,
+  values: TextTemplateValues = {},
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = values[key];
+    return value === undefined ? match : String(value);
+  });
 }
 
 /**
