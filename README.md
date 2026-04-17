@@ -31,6 +31,7 @@ App
 - `widgets/encounter-scene/ui/BattleEncounterSequence.tsx` owns the pre-combat encounter and intro sequence composition.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle state progression, turn flow, logs, potion usage, and combat animation scheduling.
 - `widgets/battle-stage/model/resolvePlayerAction.ts` owns player action resolution branches so combat rule edits do not accumulate inside the hook body.
+- `widgets/battle-stage/model/resolveMonsterTurn.ts` owns monster turn resolution branches so turn damage and timing edits do not accumulate inside the hook body.
 - `widgets/battle-stage/model/useBattleStageCanvasLoop.ts` owns the RAF canvas loop, console redraws, projectile travel, and sprite overlay rendering.
 - `widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` owns the player ASCII markup, equipment tint composition, canvas metric syncing, and render refs.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
@@ -65,6 +66,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | Composes the pre-combat encounter animation and typewriter intro prompt. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn progression, logs, potion usage, and combat animation scheduling. |
 | `src/widgets/battle-stage/model/resolvePlayerAction.ts` | Resolves player action branches into state updates and combat animation requests. |
+| `src/widgets/battle-stage/model/resolveMonsterTurn.ts` | Resolves monster turn branches into shield/damage updates, logs, and animation timing. |
 | `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts` | Runs the combat RAF loop for console text, projectile travel, sprite-local canvases, and overlay effects. |
 | `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` | Owns player ASCII markup generation, tint mapping, and canvas metric/render refs. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
@@ -108,7 +110,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 
 ## Extending Combat
 
-- Add new turn scheduling in `widgets/battle-stage/model/useBattleFlow.ts`, and add new player action rule branches in `widgets/battle-stage/model/resolvePlayerAction.ts` with the relevant `entities/*` slice.
+- Add new turn scheduling in `widgets/battle-stage/model/useBattleFlow.ts`, add new player action rule branches in `widgets/battle-stage/model/resolvePlayerAction.ts`, and add new monster action rule branches in `widgets/battle-stage/model/resolveMonsterTurn.ts` with the relevant `entities/*` slice.
 - Add new command selection or prompt parsing rules in `src/features/battle-command-input/ui/BattleCommandInput.tsx`.
 - Add new potion drag/drop, hover, or player-sprite displacement rules in `src/features/potion-use/model/usePotionUseInteraction.ts`.
 - Add new resource HUD composition or layout changes in `src/widgets/resource-panel/ui/ResourcePanel.tsx`.

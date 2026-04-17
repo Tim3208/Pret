@@ -30,6 +30,7 @@ import {
   getMaxMana,
   type PlayerStats,
 } from "@/entities/player";
+import { resolveMonsterTurn } from "./resolveMonsterTurn";
 import { resolvePlayerAction } from "./resolvePlayerAction";
 
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
@@ -296,115 +297,27 @@ export function useBattleFlow({
       }
       actionStarted = true;
 
-      setMonsterShield(0);
-
-      if (monsterStunned) {
-        addLog(
-          interpolateText(battleLogText.monsterStunned, {
-            monsterName: localizedMonsterName,
-          }),
-          "text-purple-300",
-        );
-        setMonsterStunned(false);
-        finishMonsterTurn();
-        return;
-      }
-
-      const intent = nextIntentRef.current;
-      const shield = playerShieldRef.current;
-
-      if (intent.kind === "defend") {
-        const shieldValue = 8;
-        setMonsterShield(shieldValue);
-        addLog(
-          interpolateText(battleLogText.monsterDefend, {
-            monsterName: localizedMonsterName,
-            shield: shieldValue,
-          }),
-          "text-orange-300",
-        );
-        pendingResolve = finishMonsterTurn;
-        if (skipAnimation) {
-          finishMonsterTurn();
-        } else {
-          timeoutIds.push(window.setTimeout(finishMonsterTurn, 920));
-        }
-        return;
-      }
-
-      const damage = intent.damage;
-      const absorbed = Math.min(shield, damage);
-      const hpDamage = damage - absorbed;
-      const blocked = shield >= damage;
-      const shielded = absorbed > 0;
-      const localizedIntent = trimIntentLabel(
-        getLocalizedMonsterIntentLabel(intent.label, language),
-      );
-
-      const resolveMonsterHit = () => {
-        if (turnResolved) {
-          return;
-        }
-        if (absorbed > 0) {
-          setPlayerShield((value) => Math.max(0, value - absorbed));
-          if (hpDamage > 0) {
-            addLog(
-              interpolateText(battleLogText.monsterHitThroughShield, {
-                absorbed,
-                hpDamage,
-                intentLabel: localizedIntent,
-              }),
-              "text-red-400",
-            );
-          } else {
-            addLog(
-              interpolateText(battleLogText.monsterHitBlocked, {
-                intentLabel: localizedIntent,
-              }),
-              "text-blue-400",
-            );
-          }
-        } else {
-          addLog(
-            interpolateText(battleLogText.monsterHit, {
-              damage,
-              intentLabel: localizedIntent,
-            }),
-            "text-red-400",
-          );
-        }
-
-        setPlayerHp((value) => Math.max(0, value - hpDamage));
-        if (skipAnimation) {
-          finishMonsterTurn();
-          return;
-        }
-
-        const recoveryDelay = hpDamage > 0 ? 760 : shielded ? 520 : 120;
-        if (recoveryDelay > 0) {
-          timeoutIds.push(window.setTimeout(finishMonsterTurn, recoveryDelay));
-        } else {
-          finishMonsterTurn();
-        }
-      };
-      pendingResolve = resolveMonsterHit;
-
-      if (!skipAnimation && projectileCallbackRef.current) {
-        projectileCallbackRef.current({
-          word: intent.element?.toUpperCase() ?? intent.kind.toUpperCase(),
-          fromPlayer: false,
-          targetId: PLAYER_TARGET_ID,
-          targetSide: "player",
-          kind: "crescent-slash",
-          element: intent.element,
-          shielded,
-          blocked,
-          impactDamage: hpDamage,
-          onImpact: resolveMonsterHit,
-        });
-      } else {
-        resolveMonsterHit();
-      }
+      pendingResolve = resolveMonsterTurn({
+        addLog,
+        battleLogText,
+        finishMonsterTurn,
+        isTurnResolved: () => turnResolved,
+        language,
+        localizedMonsterName,
+        monsterStunned,
+        nextIntent: nextIntentRef.current,
+        playerShield: playerShieldRef.current,
+        projectileCallback: projectileCallbackRef.current,
+        scheduleTimeout: (callback, delay) => {
+          timeoutIds.push(window.setTimeout(callback, delay));
+        },
+        setMonsterShield,
+        setMonsterStunned,
+        setPlayerHp,
+        setPlayerShield,
+        skipAnimation,
+        trimIntentLabel,
+      });
     };
 
     timeoutIds.push(
