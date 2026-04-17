@@ -16,14 +16,14 @@ import {
   layoutWithLines,
   prepareWithSegments,
 } from "@chenglou/pretext";
-import CrtOverlay from "@/shared/ui/crt-overlay";
-import HealthPotion from "@/features/potion-use";
-import { HeartHP, ManaFlask } from "@/widgets/resource-panel";
 import {
   type Language,
   getLocalizedSpellName,
   normalizeSpellQuery,
-} from "./language";
+} from "@/entities/locale";
+import CrtOverlay from "@/shared/ui/crt-overlay";
+import HealthPotion from "@/features/potion-use";
+import { HeartHP, ManaFlask } from "@/widgets/resource-panel";
 import {
   type BattleTargetOption,
   type BattleTargetSide,

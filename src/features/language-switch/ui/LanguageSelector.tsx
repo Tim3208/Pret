@@ -1,9 +1,9 @@
-import { LOCALE_OPTIONS, type Locale } from "./i18n";
+import { LOCALE_OPTIONS, type Language } from "@/entities/locale";
 
 interface LanguageSelectorProps {
-  currentLocale: Locale;
+  currentLocale: Language;
   label: string;
-  onChange: (locale: Locale) => void;
+  onChange: (locale: Language) => void;
 }
 
 /**

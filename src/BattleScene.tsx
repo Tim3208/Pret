@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import BattleCombat from "./BattleCombat";
-import { useAsciiAsset } from "@/shared/lib/ascii";
-import { SkullEncounter } from "@/widgets/encounter-scene";
 import {
   type Language,
   getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
   getLocalizedSpellName,
   pickText,
-} from "./language";
+} from "@/entities/locale";
+import BattleCombat from "./BattleCombat";
+import { useAsciiAsset } from "@/shared/lib/ascii";
+import { SkullEncounter } from "@/widgets/encounter-scene";
 import {
   type BattleTargetOption,
   type BattleLogEntry,
