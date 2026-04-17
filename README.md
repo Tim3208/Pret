@@ -30,11 +30,12 @@ App
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
+- `features/potion-use/ui/PotionUseButton.tsx` owns the draggable potion button shell, tooltip, and orbit presentation.
 - `widgets/battle-log/ui/BattleLogPanel.tsx` owns the central CRT console shell and canvas mounting point.
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
 - `widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` owns the player equipment hotspot and tooltip overlay.
 - `widgets/battle-stage/ui/BattleMonsterPanel.tsx` owns the monster sprite block, intent overlay canvas placement, and HP bar rendering.
-- `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag/drop, and effect orchestration.
+- `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag state, and effect orchestration.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
 
@@ -57,17 +58,18 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
+| `src/features/potion-use/ui/PotionUseButton.tsx` | Renders the draggable potion shell, orbit animation, and tooltip around the potion asset. |
 | `src/widgets/battle-log/ui/BattleLogPanel.tsx` | Owns the CRT console shell and the mounted battle log canvas container. |
 | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | Composes the HP and MP widgets into the battle resource HUD. |
 | `src/widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` | Renders equipment hotspots and tooltips on top of the player ASCII sprite. |
 | `src/widgets/battle-stage/ui/BattleMonsterPanel.tsx` | Renders the monster sprite block, intent overlay canvas, and HP bar. |
-| `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion interaction, and effect orchestration. |
+| `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion drag state, and effect orchestration. |
 | `src/widgets/battle-stage/lib/core.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/widgets/battle-stage/lib/visuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
 | `src/entities/combat/*`, `src/entities/player/*`, `src/entities/monster/*`, `src/entities/spell/*`, `src/entities/equipment/*` | Combat domain rules split by responsibility into entity slices. |
 | `src/widgets/resource-panel/ui/HeartHP.tsx` | Animated ASCII heart resource widget. |
 | `src/widgets/resource-panel/ui/ManaFlask.tsx` | Animated ASCII mana flask resource widget. |
-| `src/features/potion-use/ui/HealthPotion.tsx` | Small animated ASCII health potion used in combat. |
+| `src/features/potion-use/ui/HealthPotion.tsx` | Small animated ASCII health potion body used inside the potion interaction feature. |
 | `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | Canvas-based resource change effect that reuses the monster charge motion pattern. |
 | `src/shared/lib/ascii/useAsciiAsset.ts` | Loads pre-authored ASCII `.md` assets and trims annotation padding. |
 | `src/app/styles/index.css` | Theme tokens and global animation keyframes. |
@@ -76,7 +78,8 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 
 - `new_hero_ascii.md` and `new_enemy_ascii.md` are treated as source-of-truth combat sprites.
 - `useAsciiAsset` trims surrounding whitespace and strips guide/annotation lines before rendering.
-- The older image-to-ASCII hook still exists in the repo, but the battle scene now uses authored ASCII assets directly.
+- Legacy image-to-ASCII conversion code and unused PNG source sprites were removed after the FSD audit.
+- The battle scene now uses authored ASCII assets directly for combatants.
 
 ## Rendering Notes
 

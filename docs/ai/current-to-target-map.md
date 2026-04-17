@@ -19,12 +19,12 @@
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
 | `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, content 분리, 상태/턴 model 분리 완료 |
-| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. 캔버스 렌더 루프 추가 분해 잔여 |
+| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/features/potion-use/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 포션 버튼 표현 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. 캔버스 렌더 루프 및 포션 판정 상태 추가 분해 잔여 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
 | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 완료 | 페이지 이동 및 텍스트 분리 완료 |
 | `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | 완료 | 전투 조우 연출 위젯 이동 완료 |
-| `src/SwordEncounter.tsx` | `src/widgets/encounter-scene/ui/SwordEncounter.tsx` 또는 제거 | 검토 | 현재 사용 여부 재확인 필요 |
+| `src/SwordEncounter.tsx` | 제거 | 완료 | 저장소 전역 참조 0건 확인 후 제거 완료 |
 
 ## 3. 도메인 파일 매핑
 
@@ -39,7 +39,7 @@
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
 | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | 완료 | 공용 시각 오버레이 이동 완료 |
-| `src/features/potion-use/ui/HealthPotion.tsx` | `src/features/potion-use/ui/HealthPotion.tsx` | 완료 | 사용자 행동과 직접 연결된 UI 이동 완료 |
+| `src/features/potion-use/ui/HealthPotion.tsx` | `src/features/potion-use/ui/HealthPotion.tsx` + `src/features/potion-use/ui/PotionUseButton.tsx` | 완료 | 포션 ASCII 본체와 드래그 버튼 표현 분리 완료 |
 | `src/widgets/resource-panel/ui/HeartHP.tsx` | `src/widgets/resource-panel/ui/HeartHP.tsx` | 완료 | 자원 패널 표현 요소 이동 완료 |
 | `src/widgets/resource-panel/ui/ManaFlask.tsx` | `src/widgets/resource-panel/ui/ManaFlask.tsx` | 완료 | 자원 패널 표현 요소 이동 완료 |
 | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | 완료 | 자원 패널 조합 컴포넌트 추가 완료 |
@@ -51,9 +51,9 @@
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
 | `src/shared/lib/ascii/useAsciiAsset.ts` | `src/shared/lib/ascii/useAsciiAsset.ts` | 완료 | 공용 ASCII 자산 로더 이동 완료 |
-| `src/useImageToAscii.ts` | `src/shared/lib/ascii/useImageToAscii.ts` 또는 제거 | 검토 | 현재 사용 여부 재확인 필요 |
-| `src/assets/*` | `src/shared/assets/*` 또는 제거 | 검토 | 실제 사용 중인 자산만 유지 |
-| `public/assets/*` | `public/assets/*` 유지 | 유지 | 정적 배포 자산 경로는 현행 유지 가능 |
+| `src/useImageToAscii.ts` | 제거 | 완료 | 저장소 전역 참조 0건 확인 후 제거 완료 |
+| `src/assets/*` | 제거 | 완료 | Vite 기본 자산 및 미사용 이미지 제거 완료 |
+| `public/assets/*` | `public/assets/*` 일부 유지 | 정리 완료 | `combat.webp`, `new_hero_ascii.md`, `new_enemy_ascii.md`만 유지하고 미사용 PNG 제거 완료 |
 
 ## 6. 텍스트 자산 매핑
 
@@ -66,23 +66,23 @@
 | `src/content/text/event/postBattle.ts` | `src/content/text/event/postBattle.ts` | 완료 | 전투 후 이벤트 문구 분리 완료 |
 | `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 완료 | 장비 이름/설명/효과 텍스트 분리 완료 |
 
-## 7. 제거 또는 보류 후보
+## 7. 정리 결과
 
-아래 파일은 새 구조로 바로 이동하지 않고, 사용 여부를 먼저 확인한다.
+사용 여부 점검 후 아래 레거시 항목을 제거했다.
 
 - `src/SwordEncounter.tsx`
 - `src/useImageToAscii.ts`
-- `src/assets/*` 중 현재 참조되지 않는 자산
+- `src/assets/*`
+- `public/assets/*` 중 미사용 PNG
 
 ## 8. 작업 우선순위
 
 권장 순서는 다음과 같다.
 
-1. `widgets/battle-stage/ui/BattleStage.tsx`에서 포션 상호작용 블록 또는 캔버스 렌더 보조 로직 추가 분해
-2. 미사용 파일 정리
-3. `src/SwordEncounter.tsx` 사용 여부 정리
-4. `src/useImageToAscii.ts` 유지 여부 정리
-5. `src/assets/*` 미사용 자산 정리
+1. `widgets/battle-stage/ui/BattleStage.tsx`에서 캔버스 렌더 보조 로직 또는 포션 판정 상태 추가 분해
+2. `widgets/battle-stage/ui/BattleStage.tsx`의 포션 판정 상태를 feature/model로 추가 분리 검토
+3. `widgets/encounter-scene`와 `pages/battle` 사이의 조우 상태 연결 정리
+4. 남은 자산 경로와 README 설명 동기화 유지
 
 ## 9. 갱신 규칙
 
