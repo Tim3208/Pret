@@ -1,5 +1,4 @@
 import {
-  type CSSProperties,
   type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -9,12 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  type LayoutLine,
-  type PreparedTextWithSegments,
-  layoutWithLines,
-  prepareWithSegments,
-} from "@chenglou/pretext";
 import { BATTLE_COMBAT_TEXT } from "@/content/text/battle/ui";
 import {
   type BattleLogEntry,
@@ -42,10 +35,49 @@ import { ResourcePanel } from "@/widgets/resource-panel";
 import BattleEquipmentOverlay from "./BattleEquipmentOverlay";
 import BattleMonsterPanel from "./BattleMonsterPanel";
 import {
+  BASE_FONT_SIZE,
+  DISPLACE_RADIUS,
+  H,
+  LINE_H,
+  PLAYER_ASCII_CANVAS_TONE,
+  SCENE_H,
+  SCENE_W,
+  SLASH_THICKNESS,
+  W,
+  buildSlashSamples,
+  clamp01,
+  easeInCubic,
+  easeInOutCubic,
+  easeOutCubic,
+  getProjectileSceneAnchors,
+  getSceneAnchors,
+  lerp,
+  mapScenePointToConsolePoint,
+  pointInsideDomRect,
+  sampleMonsterImpactPoint,
+  sampleQuadraticPoint,
+  sampleQuadraticTangent,
+  sampleRandomOffscreenPoint,
+} from "../lib/core";
+import {
+  CRT_FONT,
+  buildHitWaveTextStyle,
+  buildMonsterAsciiGlyphs,
+  classToCanvasColor,
+  drawAsciiConsoleFrame,
+  drawAsciiConsoleRule,
+  getHitWaveScale,
+  getMonsterImpactBandDuration,
+  getMonsterImpactSettleDelay,
   getProjectileTone,
   getProjectileVisual,
+  makeFont,
+  renderConsolePulse,
   renderIntentSparks,
+  renderLiveAsciiDisplacementCanvas,
+  renderMonsterAsciiImpactCanvas,
   renderOverlayEffects,
+  renderTextBlockPhysics,
   spawnChargeParticles,
   spawnDefendParticles,
   spawnHealParticles,
@@ -89,14 +121,6 @@ interface Point {
   y: number;
 }
 
-interface ShieldPlane {
-  topLeft: Point;
-  topRight: Point;
-  bottomLeft: Point;
-  bottomRight: Point;
-  center: Point;
-}
-
 interface SlashSample {
   x: number;
   y: number;
@@ -124,24 +148,6 @@ interface SlashField {
   thickness: number;
   strength: number;
   alphaLoss: number;
-}
-
-interface SceneAnchors {
-  playerMuzzle: Point;
-  monsterCore: Point;
-  playerShield: ShieldPlane;
-  monsterShield: ShieldPlane;
-  slashStart: Point;
-  slashControl: Point;
-  slashEnd: Point;
-}
-
-interface ProjectileSceneAnchors {
-  playerMuzzle: Point;
-  playerCore: Point;
-  playerShield: Point;
-  monsterCore: Point;
-  monsterShield: Point;
 }
 
 interface EffectParticle {
@@ -203,20 +209,6 @@ interface BattleStageProps {
   projectileCallbackRef: MutableRefObject<((request: CombatAnimationRequest) => void) | null>;
 }
 
-interface TextRenderOptions {
-  fontWeight?: number;
-  fontSize?: number;
-  inkBleed?: number;
-}
-
-interface AsciiConsoleFrame {
-  startX: number;
-  cols: number;
-  rows: number;
-  topY: number;
-  bottomY: number;
-}
-
 interface ConsolePulse {
   color: "blue" | "red";
   startTime: number;
@@ -242,14 +234,6 @@ interface LiveAsciiDisplacementState {
   radiusRatio: number;
 }
 
-interface MonsterAsciiGlyph {
-  char: string;
-  row: number;
-  column: number;
-  rowRatio: number;
-  columnRatio: number;
-}
-
 interface MonsterAsciiCanvasMetrics {
   dpr: number;
   width: number;
@@ -261,886 +245,32 @@ interface MonsterAsciiCanvasMetrics {
 }
 
 type CrtNoiseLevel = "off" | "soft" | "strong";
-type GlyphColorMap = Map<string, string>;
-
-/* ================================================================
-   Pretext helpers — character-level physics displacement
-   ================================================================ */
-
-const CRT_FONT_FAMILY = "'Courier New', Courier, monospace";
-const BASE_FONT_SIZE = 12;
-const W = 480;
-const H = 320;
-const SCENE_W = 1140;
-const SCENE_H = 712;
-const LINE_H = 18;
-const PAD = 14;
-const TEXT_W = W - PAD * 2;
-/** Radius within which a projectile displaces characters */
-const DISPLACE_RADIUS = 90;
-/** Maximum pixel push in Y */
-const DISPLACE_Y = 28;
-/** Maximum pixel push in X */
-const DISPLACE_X = 16;
-const SLASH_THICKNESS = 34;
-const PLAYER_ASCII_CANVAS_TONE = "rgba(244, 244, 244, 0.98)";
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function lerp(start: number, end: number, amount: number): number {
-  return start + (end - start) * amount;
-}
-
-function pointInsideDomRect(point: Point, rect: DOMRect, padding = 0): boolean {
-  return (
-    point.x >= rect.left - padding &&
-    point.x <= rect.right + padding &&
-    point.y >= rect.top - padding &&
-    point.y <= rect.bottom + padding
-  );
-}
-
-function easeOutCubic(value: number): number {
-  const clamped = clamp01(value);
-  return 1 - (1 - clamped) ** 3;
-}
-
-function easeInCubic(value: number): number {
-  const clamped = clamp01(value);
-  return clamped * clamped * clamped;
-}
-
-function easeInOutCubic(value: number): number {
-  const clamped = clamp01(value);
-  return clamped < 0.5
-    ? 4 * clamped * clamped * clamped
-    : 1 - ((-2 * clamped + 2) ** 3) / 2;
-}
-
-function sampleQuadraticPoint(start: Point, control: Point, end: Point, t: number): Point {
-  const inv = 1 - t;
-  return {
-    x: inv * inv * start.x + 2 * inv * t * control.x + t * t * end.x,
-    y: inv * inv * start.y + 2 * inv * t * control.y + t * t * end.y,
-  };
-}
-
-function sampleQuadraticNormal(start: Point, control: Point, end: Point, t: number): Point {
-  const dx = 2 * (1 - t) * (control.x - start.x) + 2 * t * (end.x - control.x);
-  const dy = 2 * (1 - t) * (control.y - start.y) + 2 * t * (end.y - control.y);
-  const length = Math.max(1, Math.hypot(dx, dy));
-  return {
-    x: -dy / length,
-    y: dx / length,
-  };
-}
-
-function sampleQuadraticTangent(start: Point, control: Point, end: Point, t: number): Point {
-  const dx = 2 * (1 - t) * (control.x - start.x) + 2 * t * (end.x - control.x);
-  const dy = 2 * (1 - t) * (control.y - start.y) + 2 * t * (end.y - control.y);
-  const length = Math.max(1, Math.hypot(dx, dy));
-  return {
-    x: dx / length,
-    y: dy / length,
-  };
-}
-
-function makeShieldPlane(
-  topLeft: Point,
-  topRight: Point,
-  depthX: number,
-  depthY: number,
-): ShieldPlane {
-  const bottomLeft = { x: topLeft.x + depthX, y: topLeft.y + depthY };
-  const bottomRight = { x: topRight.x + depthX, y: topRight.y + depthY };
-
-  return {
-    topLeft,
-    topRight,
-    bottomLeft,
-    bottomRight,
-    center: {
-      x: (topLeft.x + topRight.x + bottomLeft.x + bottomRight.x) / 4,
-      y: (topLeft.y + topRight.y + bottomLeft.y + bottomRight.y) / 4,
-    },
-  };
-}
-
-function buildSlashSamples(start: Point, control: Point, end: Point): SlashSample[] {
-  return Array.from({ length: 28 }, (_, index) => {
-    const t = index / 27;
-    const point = sampleQuadraticPoint(start, control, end, t);
-    const normal = sampleQuadraticNormal(start, control, end, t);
-    return {
-      x: point.x,
-      y: point.y,
-      nx: normal.x,
-      ny: normal.y,
-      t,
-    };
-  });
-}
-
-function getSceneAnchors(width: number, height: number): SceneAnchors {
-  return {
-    playerMuzzle: { x: width * 0.18, y: height * 0.78 },
-    monsterCore: { x: width * 0.955, y: height * 0.118 },
-    playerShield: makeShieldPlane(
-      { x: width * 0.24, y: height * 0.28 },
-      { x: width * 0.36, y: height * 0.23 },
-      width * 0.06,
-      height * 0.34,
-    ),
-    monsterShield: makeShieldPlane(
-      { x: width * 0.73, y: height * 0.14 },
-      { x: width * 0.845, y: height * 0.18 },
-      -width * 0.06,
-      height * 0.27,
-    ),
-    slashStart: { x: width * 0.18, y: height * 0.16 },
-    slashControl: { x: width * 0.63, y: height * 0.06 },
-    slashEnd: { x: width * 0.77, y: height * 0.73 },
-  };
-}
-
-function getProjectileSceneAnchors(width: number, height: number): ProjectileSceneAnchors {
-  return {
-    playerMuzzle: { x: width * 0.28, y: height * 0.71 },
-    playerCore: { x: width * 0.235, y: height * 0.63 },
-    playerShield: { x: width * 0.292, y: height * 0.56 },
-    monsterCore: { x: width * 0.774, y: height * 0.198 },
-    monsterShield: { x: width * 0.736, y: height * 0.162 },
-  };
-}
-
-function sampleRandomOffscreenPoint(origin: Point, heading?: Point): Point {
-  const padding = 150;
-  const candidates = [
-    { x: -padding, y: Math.random() * SCENE_H },
-    { x: SCENE_W + padding, y: Math.random() * SCENE_H },
-    { x: Math.random() * SCENE_W, y: -padding },
-    { x: Math.random() * SCENE_W, y: SCENE_H + padding },
-  ].filter((point) => {
-    if (Math.hypot(point.x - origin.x, point.y - origin.y) <= 260) {
-      return false;
-    }
-
-    if (!heading) {
-      return true;
-    }
-
-    const headingLength = Math.max(1, Math.hypot(heading.x, heading.y));
-    const normalizedHeading = { x: heading.x / headingLength, y: heading.y / headingLength };
-    const towardCandidate = { x: point.x - origin.x, y: point.y - origin.y };
-    const candidateLength = Math.max(1, Math.hypot(towardCandidate.x, towardCandidate.y));
-    const normalizedCandidate = {
-      x: towardCandidate.x / candidateLength,
-      y: towardCandidate.y / candidateLength,
-    };
-
-    // Keep misses within the forward 180-degree arc so they still fly enemy-ward.
-    return normalizedHeading.x * normalizedCandidate.x + normalizedHeading.y * normalizedCandidate.y >= 0;
-  });
-
-  return candidates[Math.floor(Math.random() * candidates.length)] ?? {
-    x: SCENE_W + padding,
-    y: origin.y - padding,
-  };
-}
-
-function sampleMonsterImpactPoint(anchors: ProjectileSceneAnchors): Point {
-  const horizontalSpan = Math.max(22, Math.abs(anchors.monsterCore.x - anchors.monsterShield.x));
-  const verticalSpan = Math.max(18, Math.abs(anchors.monsterCore.y - anchors.monsterShield.y));
-
-  // Keep direct hits inside a loose left/lower pocket so repeated shots do not pin the same right-edge pixel.
-  return {
-    x: anchors.monsterCore.x - horizontalSpan * (0.55 + Math.random() * 1.25),
-    y: anchors.monsterCore.y + verticalSpan * (0.45 + Math.random() * 1.45),
-  };
-}
-
-function mapScenePointToConsolePoint(
-  point: Point,
-  sceneRect: DOMRect,
-  consoleRect: DOMRect,
-): Point {
-  const screenX = sceneRect.left + (point.x / SCENE_W) * sceneRect.width;
-  const screenY = sceneRect.top + (point.y / SCENE_H) * sceneRect.height;
-
-  return {
-    x: ((screenX - consoleRect.left) / consoleRect.width) * W,
-    y: ((screenY - consoleRect.top) / consoleRect.height) * H,
-  };
-}
-
-function drawAsciiConsoleFrame(
-  ctx: CanvasRenderingContext2D,
-  color: string,
-): AsciiConsoleFrame {
-  const charW = ctx.measureText("M").width;
-  const startX = 20;
-  const topY = 18;
-  const cols = Math.max(44, Math.floor((W - startX * 2) / charW));
-  const rows = Math.max(15, Math.floor((H - topY * 2) / LINE_H));
-  const rightX = startX + (cols - 1) * charW;
-
-  ctx.fillStyle = color;
-  ctx.fillText(`┌${"─".repeat(cols - 2)}┐`, startX, topY);
-  for (let row = 1; row < rows - 1; row += 1) {
-    const y = topY + row * LINE_H;
-    ctx.fillText("│", startX, y);
-    ctx.fillText("│", rightX, y);
-  }
-  ctx.fillText(`└${"─".repeat(cols - 2)}┘`, startX, topY + (rows - 1) * LINE_H);
-
-  return {
-    startX,
-    cols,
-    rows,
-    topY,
-    bottomY: topY + (rows - 1) * LINE_H,
-  };
-}
-
-function drawAsciiConsoleRule(
-  ctx: CanvasRenderingContext2D,
-  y: number,
-  frame: AsciiConsoleFrame,
-  color: string,
-): void {
-  ctx.fillStyle = color;
-  ctx.fillText(`├${"─".repeat(frame.cols - 2)}┤`, frame.startX, y);
-}
-
-function getConsolePerimeterPoint(
-  frame: AsciiConsoleFrame,
-  charWidth: number,
-  slot: number,
-): Point {
-  const innerCols = Math.max(1, frame.cols - 2);
-  const innerRows = Math.max(1, frame.rows - 2);
-  const total = innerCols * 2 + innerRows * 2;
-  const wrapped = ((slot % total) + total) % total;
-  const rightX = frame.startX + (frame.cols - 1) * charWidth;
-
-  if (wrapped < innerCols) {
-    return {
-      x: frame.startX + (wrapped + 1) * charWidth,
-      y: frame.topY,
-    };
-  }
-  if (wrapped < innerCols + innerRows) {
-    return {
-      x: rightX,
-      y: frame.topY + (wrapped - innerCols + 1) * LINE_H,
-    };
-  }
-  if (wrapped < innerCols * 2 + innerRows) {
-    return {
-      x: rightX - (wrapped - innerCols - innerRows + 1) * charWidth,
-      y: frame.bottomY,
-    };
-  }
-
-  return {
-    x: frame.startX,
-    y: frame.bottomY - (wrapped - innerCols * 2 - innerRows + 1) * LINE_H,
-  };
-}
-
-function renderConsolePulse(
-  ctx: CanvasRenderingContext2D,
-  frame: AsciiConsoleFrame,
-  charWidth: number,
-  pulse: ConsolePulse,
-  now: number,
-): void {
-  const progress = clamp01((now - pulse.startTime) / pulse.duration);
-  if (progress >= 1) return;
-
-  const strength = pulse.strength === "strong" ? 1 : 0.65;
-
-  const color =
-    pulse.color === "blue"
-      ? `rgba(120, 190, 255, ${(0.16 + (1 - progress) * 0.52 * strength).toFixed(2)})`
-      : `rgba(255, 86, 68, ${(0.2 + (1 - progress) * 0.56 * strength).toFixed(2)})`;
-  drawAsciiConsoleFrame(ctx, color);
-
-  const innerCols = Math.max(1, frame.cols - 2);
-  const innerRows = Math.max(1, frame.rows - 2);
-  const total = innerCols * 2 + innerRows * 2;
-  const head = Math.floor(progress * total * 1.2);
-  const markerCount = pulse.strength === "strong" ? 20 : 14;
-
-  ctx.save();
-  ctx.font = "bold 14px 'Courier New', monospace";
-  ctx.shadowBlur = 10;
-  ctx.shadowColor = color;
-
-  for (let index = 0; index < markerCount; index += 1) {
-    const slot = head - index * 2;
-    const point = getConsolePerimeterPoint(frame, charWidth, slot);
-    const alpha = Math.max(0.12, 1 - index / markerCount) * (1 - progress * 0.38) * (0.8 + strength * 0.4);
-    ctx.fillStyle = pulse.color === "blue"
-      ? `rgba(170, 228, 255, ${alpha.toFixed(2)})`
-      : `rgba(255, 116, 102, ${alpha.toFixed(2)})`;
-    ctx.fillText(index % 3 === 0 ? "#" : index % 2 === 0 ? "*" : "+", point.x, point.y);
-  }
-
-  ctx.restore();
-}
-
-function makeFont(weight: number = 500, size: number = BASE_FONT_SIZE): string {
-  return `${weight} ${size}px ${CRT_FONT_FAMILY}`;
-}
-
-const CRT_FONT = makeFont();
-
-const preparedCache = new Map<string, PreparedTextWithSegments>();
-
-function getPrepared(text: string, font: string): PreparedTextWithSegments {
-  const key = font + "::" + text;
-  const cached = preparedCache.get(key);
-  if (cached) return cached;
-  const prepared = prepareWithSegments(text, font);
-  preparedCache.set(key, prepared);
-  if (preparedCache.size > 200) {
-    const first = preparedCache.keys().next().value;
-    if (first) preparedCache.delete(first);
-  }
-  return prepared;
-}
-
-function getLayoutLines(
-  text: string,
-  font: string = CRT_FONT,
-  maxWidth: number = TEXT_W,
-): LayoutLine[] {
-  if (!text) return [];
-  try {
-    const prepared = getPrepared(text, font);
-    return layoutWithLines(prepared, maxWidth, LINE_H).lines;
-  } catch {
-    return [{ text, width: maxWidth, start: { segmentIndex: 0, graphemeIndex: 0 }, end: { segmentIndex: 0, graphemeIndex: 0 } }];
-  }
-}
-
-/**
- * Render a text block character-by-character.
- * Each character is displaced away from nearby projectiles
- * using a smooth force falloff — producing the "water flowing
- * around a rock" effect from the old version.
- */
-function renderTextBlockPhysics(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  fillStyle: string,
-  startY: number,
-  projectiles: Projectile[],
-  forceFields?: ForceField[],
-  slashFields?: SlashField[],
-  options: TextRenderOptions = {},
-  bounds?: { startX?: number; maxWidth?: number; lineHeight?: number },
-): number {
-  const font = makeFont(options.fontWeight ?? 500, options.fontSize ?? BASE_FONT_SIZE);
-  const lineHeight = bounds?.lineHeight ?? LINE_H;
-  const startX = bounds?.startX ?? PAD;
-  const maxWidth = bounds?.maxWidth ?? TEXT_W;
-  const lines = getLayoutLines(text, font, maxWidth);
-  if (lines.length === 0) return startY;
-
-  ctx.font = font;
-  const now = performance.now();
-  const bleed = options.inkBleed ?? 0;
-
-  for (let li = 0; li < lines.length; li++) {
-    const line = lines[li];
-    const baseY = startY + li * lineHeight;
-    let cx = startX;
-
-    for (let ci = 0; ci < line.text.length; ci++) {
-      const ch = line.text[ci];
-      const charW = ctx.measureText(ch).width;
-
-      // Accumulate displacement from all nearby projectiles
-      let offsetX = 0;
-      let offsetY = 0;
-      let alpha = parseBaseAlpha(fillStyle);
-
-      for (const p of projectiles) {
-        if (!p.alive) continue;
-        const dx = cx - p.x;
-        const dy = baseY - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < DISPLACE_RADIUS) {
-          const force = (DISPLACE_RADIUS - dist) / DISPLACE_RADIUS;
-          const forceSquared = force * force; // smoother falloff
-          offsetY += (dy > 0 ? 1 : -1) * forceSquared * DISPLACE_Y;
-          offsetX += (dx > 0 ? 1 : -1) * forceSquared * DISPLACE_X;
-          alpha = Math.max(0.08, alpha - force * 0.45);
-        }
-      }
-
-      // Force fields (for charge suction / defend repulsion)
-      if (forceFields) {
-        for (const ff of forceFields) {
-          const elapsed = now - ff.startTime;
-          if (elapsed < 0 || elapsed > ff.duration) continue;
-          const progress = elapsed / ff.duration;
-          const fadeIn = Math.min(progress * 4, 1);
-          const fadeOut = progress > 0.8 ? 1 - (progress - 0.8) / 0.2 : 1;
-          const intensity = fadeIn * fadeOut;
-          const dx = cx - ff.x;
-          const dy = baseY - ff.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < ff.radius && dist > 1) {
-            const t = (ff.radius - dist) / ff.radius;
-            const pull = t * t * ff.strength * intensity;
-            // Negative strength = attract (toward center), positive = repel
-            const nx = dx / dist;
-            const ny = dy / dist;
-            offsetX += nx * pull * DISPLACE_X * 1.5;
-            offsetY += ny * pull * DISPLACE_Y * 1.5;
-            alpha = Math.max(0.08, alpha - Math.abs(t * intensity) * 0.3);
-          }
-        }
-      }
-
-      if (slashFields) {
-        for (const slash of slashFields) {
-          let nearestPoint: SlashSample | null = null;
-          let nearestDistance = Number.POSITIVE_INFINITY;
-
-          for (const point of slash.points) {
-            const dx = cx - point.x;
-            const dy = baseY - point.y;
-            const distance = Math.hypot(dx, dy);
-            if (distance < nearestDistance) {
-              nearestDistance = distance;
-              nearestPoint = point;
-            }
-          }
-
-          if (!nearestPoint || nearestDistance >= slash.thickness) continue;
-
-          const influence = ((slash.thickness - nearestDistance) / slash.thickness) ** 2;
-          const side =
-            (cx - nearestPoint.x) * nearestPoint.nx +
-              (baseY - nearestPoint.y) * nearestPoint.ny >=
-            0
-              ? 1
-              : -1;
-
-          offsetX += nearestPoint.nx * side * influence * slash.strength * slash.intensity;
-          offsetY += nearestPoint.ny * side * influence * slash.strength * 1.35 * slash.intensity;
-          alpha = Math.max(
-            0.05,
-            alpha - influence * slash.alphaLoss * Math.max(0.4, slash.intensity),
-          );
-        }
-      }
-
-      if (bleed > 0.02) {
-        const bleedAlpha = Math.min(alpha, alpha * (0.28 + bleed));
-        ctx.fillStyle = replaceAlpha(fillStyle, bleedAlpha);
-        ctx.fillText(ch, cx + offsetX + bleed, baseY + offsetY);
-        ctx.fillText(ch, cx + offsetX, baseY + offsetY + bleed * 0.55);
-      }
-
-      ctx.fillStyle = replaceAlpha(fillStyle, alpha);
-      ctx.fillText(ch, cx + offsetX, baseY + offsetY);
-      cx += charW;
-    }
-  }
-
-  return startY + lines.length * lineHeight;
-}
-
-/** Extract the alpha value from an rgba() string, default 0.75. */
-function parseBaseAlpha(rgba: string): number {
-  const m = rgba.match(/,\s*([\d.]+)\s*\)/);
-  return m ? Number(m[1]) : 0.75;
-}
-
-/** Replace the alpha in an rgba() string. */
-function replaceAlpha(rgba: string, alpha: number): string {
-  return rgba.replace(/,\s*[\d.]+\s*\)/, `, ${alpha.toFixed(2)})`);
-}
-
-function parseRgbaChannels(color: string): {
-  red: number;
-  green: number;
-  blue: number;
-  alpha: number;
-} {
-  const match = color.match(
-    /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+)\s*)?\)/,
-  );
-
-  if (!match) {
-    return { red: 255, green: 255, blue: 255, alpha: 1 };
-  }
-
-  return {
-    red: Number(match[1]),
-    green: Number(match[2]),
-    blue: Number(match[3]),
-    alpha: match[4] ? Number(match[4]) : 1,
-  };
-}
-
-function mixRgbaColors(from: string, to: string, amount: number): string {
-  const t = clamp01(amount);
-  const fromColor = parseRgbaChannels(from);
-  const toColor = parseRgbaChannels(to);
-
-  const red = Math.round(lerp(fromColor.red, toColor.red, t));
-  const green = Math.round(lerp(fromColor.green, toColor.green, t));
-  const blue = Math.round(lerp(fromColor.blue, toColor.blue, t));
-  const alpha = lerp(fromColor.alpha, toColor.alpha, t);
-
-  return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(2)})`;
-}
-
-function buildHitWaveTextStyle(
-  baseColor: string,
-  hitColor: string,
-  baseShadow: string,
-  hitShadow: string,
-  waveProgress: number | null,
-  waveScale: number,
-  shakeActive: boolean,
-): CSSProperties {
-  const shadow = shakeActive || waveProgress !== null ? `${hitShadow}, ${baseShadow}` : baseShadow;
-
-  if (waveProgress === null) {
-    return {
-      color: baseColor,
-      textShadow: shadow,
-    };
-  }
-
-  const progress = Math.max(0, waveProgress);
-  const mainProgress = clamp01(progress);
-  const tailProgress = progress <= 1 ? 0 : clamp01((progress - 1) / 0.58);
-  const expansion = easeOutCubic(mainProgress);
-  const pulse = Math.sin(Math.PI * mainProgress) * (1 - tailProgress * 0.75);
-  const ringCenter =
-    8 +
-    expansion * (84 + waveScale * 11) +
-    tailProgress * (34 + waveScale * 16);
-  const ringWidth = 9 + waveScale * 6.4 + pulse * 6;
-  const inner = Math.max(0, ringCenter - ringWidth);
-  const outer = ringCenter + ringWidth;
-  const baseSolid = replaceAlpha(baseColor, Math.min(0.99, parseBaseAlpha(baseColor) + 0.02));
-  const hitStrong = replaceAlpha(hitColor, Math.max(0.22, 0.96 - tailProgress * 0.58));
-  const hitMid = replaceAlpha(hitColor, Math.max(0.16, 0.66 + pulse * 0.16 - tailProgress * 0.4));
-  const hitSoft = replaceAlpha(hitColor, Math.max(0.08, 0.26 + pulse * 0.12 - tailProgress * 0.2));
-  const coreGlow = replaceAlpha(
-    hitColor,
-    Math.max(0.02, 0.2 + waveScale * 0.03 - mainProgress * 0.32 - tailProgress * 0.1),
-  );
-  const earlyCore = 8 + waveScale * 8 + (1 - mainProgress) * 12;
-  const outerStop = Math.max(100, outer + 10);
-  const weight = Math.round(500 + pulse * 115 + waveScale * 12 - tailProgress * 55);
-  const letterSpacing = `${(-0.003 - pulse * 0.004 - waveScale * 0.0012).toFixed(4)}em`;
-  const stroke = `${(0.08 + pulse * 0.12 + waveScale * 0.02 - tailProgress * 0.05).toFixed(2)}px ${replaceAlpha(hitColor, Math.max(0.04, 0.08 + pulse * 0.1 - tailProgress * 0.06))}`;
-  const returnPhase =
-    tailProgress <= 0.2 ? 0 : easeInOutCubic((tailProgress - 0.2) / 0.8);
-
-  if (mainProgress < 0.18 && tailProgress === 0) {
-    return {
-      backgroundImage: `radial-gradient(circle at 50% 50%, ${hitStrong} 0%, ${hitMid} ${earlyCore.toFixed(2)}%, ${baseSolid} ${(earlyCore + 12).toFixed(2)}%, ${baseSolid} 100%)`,
-      WebkitBackgroundClip: "text",
-      backgroundClip: "text",
-      WebkitTextFillColor: "transparent",
-      color: "transparent",
-      textShadow: shadow,
-      fontWeight: weight,
-      letterSpacing,
-      WebkitTextStroke: stroke,
-    };
-  }
-
-  if (returnPhase > 0) {
-    const returnStartColor = mixRgbaColors(hitColor, baseColor, 0.88);
-    const returnColor = mixRgbaColors(returnStartColor, baseColor, returnPhase);
-    const returnWeight = Math.round(520 - returnPhase * 26);
-    const returnLetterSpacing = `${(-0.0018 * (1 - returnPhase)).toFixed(4)}em`;
-    const returnStroke = `${(0.05 * (1 - returnPhase)).toFixed(2)}px ${replaceAlpha(hitColor, Math.max(0.01, 0.06 * (1 - returnPhase)))}`;
-
-    return {
-      color: returnColor,
-      WebkitTextFillColor: returnColor,
-      textShadow: returnPhase > 0.45 ? baseShadow : shadow,
-      fontWeight: returnWeight,
-      letterSpacing: returnLetterSpacing,
-      WebkitTextStroke: returnStroke,
-    };
-  }
-
-  const ringLead = Math.max(0, inner - 5);
-
-  return {
-    backgroundImage: `radial-gradient(circle at 50% 50%, ${coreGlow} 0%, ${coreGlow} ${Math.max(4, earlyCore * 0.72).toFixed(2)}%, ${baseSolid} ${ringLead.toFixed(2)}%, ${hitStrong} ${inner.toFixed(2)}%, ${hitMid} ${ringCenter.toFixed(2)}%, ${hitSoft} ${outer.toFixed(2)}%, ${baseSolid} ${outerStop.toFixed(2)}%)`,
-    WebkitBackgroundClip: "text",
-    backgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    color: "transparent",
-    textShadow: shadow,
-    fontWeight: weight,
-    letterSpacing,
-    WebkitTextStroke: stroke,
-  };
-}
-
-function getHitWaveScale(damage: number, maxHp: number): number {
-  const normalizedDamage = clamp01(damage / Math.max(1, maxHp));
-  return 1.35 + normalizedDamage * 2.8;
-}
-
-function getMonsterImpactBandDuration(critical: boolean): number {
-  return critical ? 960 : 780;
-}
-
-function getMonsterImpactSettleDelay(critical: boolean): number {
-  return critical ? 860 : 700;
-}
-
-function getRadialHoleInfluence(normalizedDistance: number): number {
-  const raw = clamp01(1 - normalizedDistance);
-  return raw * raw * (3 - 2 * raw);
-}
-
-function getMonsterImpactPulse(progress: number): number {
-  const clamped = clamp01(progress);
-  const swell = Math.sin(Math.PI * clamped);
-  const settle =
-    clamped <= 0.42 ? 1 : 1 - easeInOutCubic((clamped - 0.42) / 0.58) * 0.9;
-  return swell * settle;
-}
-
-function buildMonsterAsciiGlyphs(lines: string[]): MonsterAsciiGlyph[] {
-  const rowCount = Math.max(1, lines.length);
-  const maxColumns = Math.max(1, ...lines.map((line) => Math.max(1, line.length - 1)));
-  const glyphs: MonsterAsciiGlyph[] = [];
-
-  lines.forEach((line, row) => {
-    for (let column = 0; column < line.length; column += 1) {
-      const char = line[column];
-      if (char === " ") continue;
-
-      glyphs.push({
-        char,
-        row,
-        column,
-        rowRatio: rowCount <= 1 ? 0.5 : row / (rowCount - 1),
-        columnRatio: maxColumns <= 1 ? 0.5 : column / maxColumns,
-      });
-    }
-  });
-
-  return glyphs;
-}
-
-function getGlyphColorKey(row: number, column: number): string {
-  return `${row}:${column}`;
-}
 
 function buildEquipmentGlyphColorMap(
-  lines: string[],
-  items: EquipmentDefinition[],
-): GlyphColorMap {
-  const glyphColors: GlyphColorMap = new Map();
+  playerAscii: string[],
+  equippedItems: EquipmentDefinition[],
+): Map<string, string> {
+  const glyphColorMap = new Map<string, string>();
 
-  for (const item of items) {
-    for (const tintRange of item.tintRanges) {
-      const line = lines[tintRange.row];
+  for (const item of equippedItems) {
+    for (const range of item.tintRanges) {
+      const line = playerAscii[range.row];
       if (!line) {
         continue;
       }
 
-      const endColumn = Math.min(tintRange.endColumn, line.length - 1);
-      for (let column = tintRange.startColumn; column <= endColumn; column += 1) {
-        if (line[column] === " ") {
-          continue;
+      const startColumn = Math.max(0, range.startColumn);
+      const endColumn = Math.min(range.endColumn, line.length - 1);
+      for (let column = startColumn; column <= endColumn; column += 1) {
+        if (line[column] !== " ") {
+          glyphColorMap.set(`${range.row}:${column}`, item.fragmentTone);
         }
-
-        glyphColors.set(getGlyphColorKey(tintRange.row, column), item.fragmentTone);
       }
     }
   }
 
-  return glyphColors;
+  return glyphColorMap;
 }
-
-function renderMonsterAsciiImpactCanvas(
-  ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-  metrics: MonsterAsciiCanvasMetrics | null,
-  glyphs: MonsterAsciiGlyph[],
-  impact: MonsterAsciiImpactState | null,
-  baseColor: string,
-  now: number,
-) {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!metrics || !impact) {
-    return;
-  }
-
-  const progress = clamp01((now - impact.startedAt) / impact.duration);
-  const pulse = getMonsterImpactPulse(progress);
-  const expansion = easeOutCubic(progress);
-  const radiusXRatio = Math.max(0.12, impact.radiusRatio * 1.22);
-  const radiusYRatio = Math.max(0.11, impact.radiusRatio * 0.98);
-  const maxPush = 14 + impact.strength * 24 + Math.min(metrics.width, metrics.height) * impact.radiusRatio * 0.12;
-  const hitColor = "rgba(198, 18, 34, 0.99)";
-  const waveFront = Math.min(1.28, 0.08 + expansion * 1.04);
-  const waveWidth = Math.max(0.12, 0.34 - expansion * 0.1);
-
-  ctx.setTransform(metrics.dpr, 0, 0, metrics.dpr, 0, 0);
-  ctx.font = metrics.font;
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-  ctx.fillStyle = baseColor;
-
-  for (const glyph of glyphs) {
-    const dxRatio = (glyph.columnRatio - impact.columnRatio) / radiusXRatio;
-    const dyRatio = (glyph.rowRatio - impact.centerRatio) / radiusYRatio;
-    const distance = Math.hypot(dxRatio, dyRatio);
-    const influence = getRadialHoleInfluence(distance);
-
-    let x = glyph.column * metrics.charWidth;
-    let y = glyph.row * metrics.lineHeight + metrics.baseline;
-
-    if (influence > 0.0001) {
-      let dirX = dxRatio;
-      let dirY = dyRatio;
-      const directionLength = Math.hypot(dirX, dirY);
-
-      if (directionLength < 0.0001) {
-        dirX = impact.direction;
-        dirY = 0;
-      } else {
-        dirX /= directionLength;
-        dirY /= directionLength;
-      }
-
-      const outward = pulse * influence * maxPush * (0.52 + (1 - Math.min(1, distance)) * 0.84);
-      const swirl = Math.sin((1 - Math.min(1, distance)) * Math.PI) * pulse * 2.4;
-
-      x += dirX * outward - dirY * swirl;
-      y += dirY * outward * 0.88 + dirX * swirl * 0.45;
-    }
-
-    const waveBand = clamp01(1 - Math.abs(distance - waveFront) / waveWidth);
-    const innerHeat = influence * Math.max(0, 0.34 - expansion * 0.22);
-    const redMix = clamp01(Math.max(innerHeat, waveBand * (0.52 + pulse * 0.34)));
-    if (redMix > 0.02) {
-      ctx.fillStyle = mixRgbaColors(baseColor, hitColor, Math.min(0.98, 0.08 + redMix * 0.9));
-      ctx.shadowColor = replaceAlpha(hitColor, 0.08 + redMix * 0.18);
-      ctx.shadowBlur = 3 + redMix * 7;
-    } else {
-      ctx.fillStyle = baseColor;
-      ctx.shadowColor = "transparent";
-      ctx.shadowBlur = 0;
-    }
-
-    ctx.fillText(glyph.char, x, y);
-  }
-
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-}
-
-function renderLiveAsciiDisplacementCanvas(
-  ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-  metrics: MonsterAsciiCanvasMetrics | null,
-  glyphs: MonsterAsciiGlyph[],
-  field: LiveAsciiDisplacementState | null,
-  baseColor: string,
-  glyphColors: GlyphColorMap,
-  now: number,
-) {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!metrics || !field) {
-    return;
-  }
-
-  const wobble = 0.94 + Math.sin(now * 0.018) * 0.06;
-  const radiusXRatio = Math.max(0.14, field.radiusRatio * 1.08);
-  const radiusYRatio = Math.max(0.14, field.radiusRatio * 0.96);
-  const maxPush = 8 + field.strength * 18 + Math.min(metrics.width, metrics.height) * 0.02;
-
-  ctx.setTransform(metrics.dpr, 0, 0, metrics.dpr, 0, 0);
-  ctx.font = metrics.font;
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-  ctx.fillStyle = baseColor;
-
-  for (const glyph of glyphs) {
-    const dxRatio = (glyph.columnRatio - field.columnRatio) / radiusXRatio;
-    const dyRatio = (glyph.rowRatio - field.centerRatio) / radiusYRatio;
-    const distance = Math.hypot(dxRatio, dyRatio);
-    const influence = getRadialHoleInfluence(distance);
-
-    let x = glyph.column * metrics.charWidth;
-    let y = glyph.row * metrics.lineHeight + metrics.baseline;
-
-    if (influence > 0.0001) {
-      let dirX = dxRatio;
-      let dirY = dyRatio;
-      const directionLength = Math.hypot(dirX, dirY);
-
-      if (directionLength < 0.0001) {
-        dirX = field.direction;
-        dirY = 0;
-      } else {
-        dirX /= directionLength;
-        dirY /= directionLength;
-      }
-
-      const edgeBias = 1 - Math.min(1, distance);
-      const outward = influence * maxPush * wobble * (0.68 + edgeBias * 0.52);
-      const swirl = Math.sin(edgeBias * Math.PI) * (0.7 + field.strength * 0.34) * wobble;
-
-      x += dirX * outward - dirY * swirl * 1.1;
-      y += dirY * outward * 0.76 + dirX * swirl * 0.62;
-    }
-
-    ctx.fillStyle = glyphColors.get(getGlyphColorKey(glyph.row, glyph.column)) ?? baseColor;
-    ctx.fillText(glyph.char, x, y);
-  }
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-}
-
-
-/** Map tailwind color classes to approximate canvas RGBA */
-function classToCanvasColor(cls?: string): string {
-  if (!cls) return "rgba(180, 180, 180, 0.6)";
-  if (cls.includes("ember")) return "rgba(255, 170, 0, 0.85)";
-  if (cls.includes("sky")) return "rgba(100, 200, 255, 0.8)";
-  if (cls.includes("blue")) return "rgba(80, 160, 255, 0.75)";
-  if (cls.includes("cyan")) return "rgba(80, 220, 240, 0.8)";
-  if (cls.includes("teal")) return "rgba(80, 200, 180, 0.75)";
-  if (cls.includes("red")) return "rgba(255, 90, 70, 0.8)";
-  if (cls.includes("orange")) return "rgba(255, 170, 80, 0.8)";
-  if (cls.includes("green")) return "rgba(80, 220, 100, 0.75)";
-  if (cls.includes("purple")) return "rgba(180, 120, 255, 0.75)";
-  if (cls.includes("yellow")) return "rgba(255, 220, 80, 0.85)";
-  if (cls.includes("gray")) return "rgba(150, 150, 150, 0.5)";
-  return "rgba(180, 180, 180, 0.6)";
-}
-
 /* ================================================================
    Effect particle spawners
    ================================================================ */
@@ -1441,7 +571,7 @@ export default function BattleStage({
       };
 
       for (let column = 0; column < line.length; column += 1) {
-        const nextColor = playerGlyphColorMap.get(getGlyphColorKey(row, column)) ?? null;
+        const nextColor = playerGlyphColorMap.get(`${row}:${column}`) ?? null;
         if (nextColor !== activeColor) {
           flush();
           activeColor = nextColor;

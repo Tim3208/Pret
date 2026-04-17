@@ -598,7 +598,8 @@ export function renderLiveAsciiDisplacementCanvas(
   glyphs: MonsterAsciiGlyph[],
   field: LiveAsciiDisplacementState | null,
   baseColor: string = PLAYER_ASCII_CANVAS_TONE,
-  now: number,
+  glyphColors?: Map<string, string>,
+  now: number = performance.now(),
 ): void {
   // Player potion hover reuses the same glyph-local redraw approach, minus the damage tinting.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -649,6 +650,7 @@ export function renderLiveAsciiDisplacementCanvas(
       y += dirY * outward * 0.76 + dirX * swirl * 0.62;
     }
 
+    ctx.fillStyle = glyphColors?.get(`${glyph.row}:${glyph.column}`) ?? baseColor;
     ctx.fillText(glyph.char, x, y);
   }
 

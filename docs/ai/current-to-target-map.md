@@ -19,7 +19,7 @@
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
 | `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, content 분리, 상태/턴 model 분리 완료 |
-| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/features/potion-use/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 포션 버튼 표현 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. 캔버스 렌더 루프 및 포션 판정 상태 추가 분해 잔여 |
+| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/features/potion-use/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 포션 버튼 표현 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. `BattleStage` 내부의 core/visuals 중복 helper 제거 완료. 포션 판정 상태 및 조우 상태 추가 분해 잔여 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
 | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 완료 | 페이지 이동 및 텍스트 분리 완료 |
@@ -79,10 +79,9 @@
 
 권장 순서는 다음과 같다.
 
-1. `widgets/battle-stage/ui/BattleStage.tsx`에서 캔버스 렌더 보조 로직 또는 포션 판정 상태 추가 분해
-2. `widgets/battle-stage/ui/BattleStage.tsx`의 포션 판정 상태를 feature/model로 추가 분리 검토
-3. `widgets/encounter-scene`와 `pages/battle` 사이의 조우 상태 연결 정리
-4. 남은 자산 경로와 README 설명 동기화 유지
+1. `widgets/battle-stage/ui/BattleStage.tsx`의 포션 판정 상태를 `features/potion-use` 쪽 model로 추가 분리 검토
+2. `widgets/encounter-scene`와 `pages/battle` 사이의 조우 상태 연결 정리
+3. 남은 자산 경로와 README 설명 동기화 유지
 
 ## 9. 갱신 규칙
 

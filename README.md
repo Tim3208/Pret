@@ -35,7 +35,7 @@ App
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
 - `widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` owns the player equipment hotspot and tooltip overlay.
 - `widgets/battle-stage/ui/BattleMonsterPanel.tsx` owns the monster sprite block, intent overlay canvas placement, and HP bar rendering.
-- `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag state, and effect orchestration.
+- `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag state, and effect orchestration while consuming shared helpers from `widgets/battle-stage/lib/*`.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
 
