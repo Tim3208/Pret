@@ -18,7 +18,7 @@
 | `src/app/main.tsx` | `src/app/main.tsx` | 완료 | 앱 진입점 이동 완료 |
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
-| `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/encounter-scene/*` + `src/widgets/battle-outcome/*` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, pre-combat sequence 분리, outcome 화면 위젯 분리, content 분리, 상태/턴 model 분리 완료 |
+| `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/encounter-scene/*` + `src/widgets/battle-loading/*` + `src/widgets/battle-outcome/*` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, pre-combat sequence 분리, combat loading 화면 위젯 분리, outcome 화면 위젯 분리, content 분리, 상태/턴 model 분리 완료 |
 | `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/model/*` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/features/potion-use/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 포션 버튼 표현 분리, 포션 드래그/드롭 상태 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. `BattleStage` 내부의 core/visuals 중복 helper 제거 완료. 포션 hover 시각 브리지 제거 완료. 플레이어 ASCII metric/markup 보조 로직을 `widgets/battle-stage/model/usePlayerAsciiPresentation.tsx`로 분리 완료. RAF canvas loop를 `widgets/battle-stage/model/useBattleStageCanvasLoop.ts`로 분리했고, 플레이어 액션 판정 분기를 `widgets/battle-stage/model/resolvePlayerAction.ts`로, 몬스터 턴 판정 분기를 `widgets/battle-stage/model/resolveMonsterTurn.ts`로 분리 완료 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
@@ -83,8 +83,7 @@
 권장 순서는 다음과 같다.
 
 1. 남은 자산 경로와 README 설명 동기화 유지
-2. `pages/battle/ui/BattlePage.tsx`의 combat loading 문구를 별도 화면 위젯으로 묶을지 검토
-3. 몬스터 ASCII impact/metric 보조 로직도 플레이어와 유사한 형태로 추가 분리할지 검토
+2. 몬스터 ASCII impact/metric 보조 로직도 플레이어와 유사한 형태로 추가 분리할지 검토
 
 ## 9. 갱신 규칙
 

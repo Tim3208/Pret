@@ -27,6 +27,7 @@ App
 ## Combat Architecture
 
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
+- `widgets/battle-loading/ui/BattleLoadingPanel.tsx` owns the combat asset loading screen shown before the live battle widget mounts.
 - `widgets/battle-outcome/ui/BattleOutcomePanel.tsx` owns the victory/defeat result screen presentation.
 - `widgets/encounter-scene/ui/BattleEncounterSequence.tsx` owns the pre-combat encounter and intro sequence composition.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle state progression, turn flow, logs, potion usage, and combat animation scheduling.
@@ -62,6 +63,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 |------|---------|
 | `src/app/App.tsx` | Top-level phase switching between non-battle and battle states. |
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
+| `src/widgets/battle-loading/ui/BattleLoadingPanel.tsx` | Renders the combat loading message while ASCII assets are still being prepared. |
 | `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx` | Renders the victory and defeat result panel markup from page-selected copy. |
 | `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | Composes the pre-combat encounter animation and typewriter intro prompt. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn progression, logs, potion usage, and combat animation scheduling. |
@@ -115,6 +117,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 - Add new potion drag/drop, hover, or player-sprite displacement rules in `src/features/potion-use/model/usePotionUseInteraction.ts`.
 - Add new resource HUD composition or layout changes in `src/widgets/resource-panel/ui/ResourcePanel.tsx`.
 - Add new pre-combat encounter or intro presentation changes in `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx`.
+- Add new combat loading presentation changes in `src/widgets/battle-loading/ui/BattleLoadingPanel.tsx`.
 - Add new victory or defeat result presentation changes in `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx`.
 - Add new player ASCII sprite markup or canvas metric rules in `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx`.
 - Add new RAF canvas orchestration or projectile/render loop changes in `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts`.

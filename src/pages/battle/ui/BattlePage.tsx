@@ -1,6 +1,7 @@
 import type { EquippedItems } from "@/entities/equipment";
 import { type Language } from "@/entities/locale";
 import { useAsciiAsset } from "@/shared/lib/ascii";
+import { BattleLoadingPanel } from "@/widgets/battle-loading";
 import { BattleOutcomePanel } from "@/widgets/battle-outcome";
 import BattleStage, { useBattleFlow } from "@/widgets/battle-stage";
 import { BattleEncounterSequence } from "@/widgets/encounter-scene";
@@ -105,9 +106,7 @@ export default function BattlePage({
         )}
 
         {phase === "combat" && (playerLoading || monsterLoading) && (
-          <p className="px-6 text-[1.15rem] leading-[1.9] text-ash [text-shadow:0_0_4px_rgba(255,255,255,0.1)]">
-            {sceneText.loadingCombatants}
-          </p>
+          <BattleLoadingPanel message={sceneText.loadingCombatants} />
         )}
 
         {phase === "victory" && (
