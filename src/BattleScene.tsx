@@ -21,6 +21,7 @@ import {
   HOLLOW_WRAITH,
   MONSTER_TARGET_ID,
   PLAYER_TARGET_ID,
+  applyEquipmentModifiers,
   getActionCritChance,
   getActionHitChance,
   getBaseAttackDamage,
@@ -28,9 +29,10 @@ import {
   getCriticalDamage,
   getElementMultiplier,
   getHealAmount,
-  getLiteracyTier,
   getMaxHp,
   getMaxMana,
+  getMonsterIntentTelegraph,
+  getStabilityTier,
   pickMonsterIntent,
 } from "./battleTypes";
 
@@ -136,10 +138,13 @@ export default function BattleScene({
   const monster = HOLLOW_WRAITH;
   const sceneText = BATTLE_SCENE_TEXT[language];
   const localizedMonsterName = getLocalizedMonsterName(monster.name, language);
-  const [stats] = useState<PlayerStats>({ ...DEFAULT_STATS });
-
-  const maxHp = getMaxHp(stats);
-  const maxMana = getMaxMana(stats);
+  const combatStats = useMemo(
+    () => applyEquipmentModifiers(DEFAULT_STATS, equippedItems),
+    [equippedItems],
+  );
+  const stats: PlayerStats = combatStats.stats;
+  const maxHp = getMaxHp(stats) + combatStats.maxHpBonus;
+  const maxMana = getMaxMana(stats) + combatStats.maxManaBonus;
 
   const [phase, setPhase] = useState<BattlePhase>("encounter");
   const [playerHp, setPlayerHp] = useState(maxHp);
@@ -160,8 +165,8 @@ export default function BattleScene({
     return lines[ambientIndex % lines.length];
   }, [ambientIndex, language]);
   const nextIntentLabel = useMemo(
-    () => getLocalizedMonsterIntentLabel(nextIntent.label, language),
-    [language, nextIntent.label],
+    () => getMonsterIntentTelegraph(nextIntent, stats.decipher, language),
+    [language, nextIntent, stats.decipher],
   );
   const targetOptions = useMemo<BattleTargetOption[]>(
     () => [
@@ -366,7 +371,7 @@ export default function BattleScene({
           break;
         }
         case "defend": {
-          const shield = getBaseShield(stats);
+          const shield = getBaseShield(stats) + combatStats.shieldOnDefendBonus;
           setPlayerShield(shield);
           addLog(
             language === "ko" ? `방어 태세! 방어막 +${shield}!` : `Brace! Shield +${shield}!`,
@@ -383,15 +388,193 @@ export default function BattleScene({
           );
           break;
         }
+        case "prompt": {
+          const { evaluation } = action;
+          const promptShieldGain = evaluation.shieldGain > 0
+            ? evaluation.shieldGain + combatStats.shieldOnDefendBonus
+            : 0;
+          const actionWord = evaluation.runeCount > 0
+            ? "XLEW"
+            : evaluation.contrastCount > 0
+              ? "UBT"
+              : evaluation.connectorCount > 0
+                ? "MOR"
+                : evaluation.steps[0]?.verb === "defend"
+                  ? "WARD"
+                  : "STRIKE";
+
+          if (evaluation.outcome === "failure") {
+            setPlayerMana((value) => Math.max(0, value - evaluation.selfManaCost));
+            setPlayerHp((value) => Math.max(0, value - evaluation.selfHpCost));
+            addLog(
+              language === "ko"
+                ? `문장이 폭주하며 당신을 되문다... HP -${evaluation.selfHpCost}, MP -${evaluation.selfManaCost}`
+                : `The phrase ruptures and lashes back... HP -${evaluation.selfHpCost}, MP -${evaluation.selfManaCost}`,
+              "text-red-400",
+            );
+            break;
+          }
+
+          const applyBacklash = () => {
+            if (evaluation.selfManaCost > 0) {
+              setPlayerMana((value) => Math.max(0, value - evaluation.selfManaCost));
+            }
+            if (evaluation.selfHpCost > 0) {
+              setPlayerHp((value) => Math.max(0, value - evaluation.selfHpCost));
+              addLog(
+                language === "ko"
+                  ? `반동이 몸을 파고든다... HP -${evaluation.selfHpCost}, MP -${evaluation.selfManaCost}`
+                  : `Backlash bites into you... HP -${evaluation.selfHpCost}, MP -${evaluation.selfManaCost}`,
+                "text-amber-300",
+              );
+            }
+          };
+
+          if (evaluation.attackDamage > 0) {
+            const hitChance = getActionHitChance(action, stats, "enemy");
+            const critChance = getActionCritChance(action, stats, "enemy");
+            const didHit = Math.random() < hitChance;
+            const didCrit = didHit && Math.random() < critChance;
+
+            let damage = evaluation.attackDamage;
+            let elementLog: { text: string; color: string } | null = null;
+            if (monster.element && evaluation.element) {
+              const multiplier = getElementMultiplier(evaluation.element, monster.element);
+              damage = Math.round(damage * multiplier);
+              if (multiplier > 1) {
+                elementLog = {
+                  text: sceneText.elementalWeakness,
+                  color: "text-yellow-300",
+                };
+              } else if (multiplier < 1) {
+                elementLog = {
+                  text: sceneText.elementalResistance,
+                  color: "text-gray-400",
+                };
+              }
+            }
+
+            if (didCrit) {
+              damage = getCriticalDamage(damage);
+            }
+
+            if (!didHit) {
+              animationRequest = {
+                word: actionWord,
+                fromPlayer: true,
+                targetId: MONSTER_TARGET_ID,
+                targetSide: "enemy",
+                kind: "projectile",
+                element: evaluation.element,
+                missed: true,
+                onImpact: () => {
+                  if (promptShieldGain > 0) {
+                    setPlayerShield(promptShieldGain);
+                    addLog(
+                      language === "ko"
+                        ? `문장은 빗나갔지만 잔문이 응고된다... 방어막 +${promptShieldGain}`
+                        : `The phrase misses, but its residue hardens into shield +${promptShieldGain}.`,
+                      "text-blue-300",
+                    );
+                  }
+                  applyBacklash();
+                  addLog(
+                    language === "ko"
+                      ? `${actionWord} 구문이 허공을 가른다.`
+                      : `${actionWord} slips through the dark.`,
+                    "text-white/40",
+                  );
+                },
+              };
+              break;
+            }
+
+            const currentShield = monsterShieldRef.current;
+            const shieldAbsorb = Math.min(currentShield, damage);
+            const hpDmg = damage - shieldAbsorb;
+            animationRequest = {
+              word: actionWord,
+              fromPlayer: true,
+              targetId: MONSTER_TARGET_ID,
+              targetSide: "enemy",
+              kind: "projectile",
+              element: evaluation.element,
+              shielded: currentShield > 0,
+              blocked: currentShield >= damage,
+              critical: didCrit,
+              impactDamage: hpDmg,
+              onImpact: () => {
+                if (shieldAbsorb > 0) {
+                  setMonsterShield((value) => Math.max(0, value - shieldAbsorb));
+                }
+                if (elementLog) {
+                  addLog(elementLog.text, elementLog.color);
+                }
+                setMonsterHp((value) => Math.max(0, value - hpDmg));
+                if (promptShieldGain > 0) {
+                  setPlayerShield(promptShieldGain);
+                }
+
+                if (shieldAbsorb > 0) {
+                  addLog(
+                    didCrit
+                      ? language === "ko"
+                        ? `${actionWord} 구문이 치명적으로 파고든다! ${shieldAbsorb} 막히고 ${hpDmg} 피해!`
+                        : `${actionWord} lands critically! ${shieldAbsorb} absorbed, ${hpDmg} damage!`
+                      : language === "ko"
+                        ? `${actionWord} 구문이 적중한다! ${shieldAbsorb} 막히고 ${hpDmg} 피해!`
+                        : `${actionWord} lands! ${shieldAbsorb} absorbed, ${hpDmg} damage!`,
+                    didCrit ? "text-yellow-300" : "text-cyan-300",
+                  );
+                } else {
+                  addLog(
+                    didCrit
+                      ? language === "ko"
+                        ? `${actionWord} 구문이 치명적으로 파고든다! ${damage} 피해!`
+                        : `${actionWord} lands critically! ${damage} damage!`
+                      : language === "ko"
+                        ? `${actionWord} 구문이 적중한다! ${damage} 피해!`
+                        : `${actionWord} lands! ${damage} damage!`,
+                    didCrit ? "text-yellow-300" : "text-cyan-300",
+                  );
+                }
+
+                if (promptShieldGain > 0) {
+                  addLog(
+                    language === "ko"
+                      ? `구문이 재정렬되며 방어막 +${promptShieldGain}`
+                      : `The phrase knits itself closed into shield +${promptShieldGain}.`,
+                    "text-blue-300",
+                  );
+                }
+
+                applyBacklash();
+              },
+            };
+            break;
+          }
+
+          if (promptShieldGain > 0) {
+            setPlayerShield(promptShieldGain);
+            addLog(
+              language === "ko"
+                ? `문장이 몸 둘레에 감기며 방어막 +${promptShieldGain}`
+                : `The phrase coils around you. Shield +${promptShieldGain}.`,
+              "text-blue-300",
+            );
+          }
+          applyBacklash();
+          break;
+        }
         case "spell": {
           const { spell, mode } = action;
           const spellDisplayName = getLocalizedSpellName(spell.name, language);
-          const tier = getLiteracyTier(stats.literacy);
+          const tier = getStabilityTier(stats.stability);
           if (spell.tier > tier) {
             addLog(
               language === "ko"
-                ? `문해력이 부족하다... (필요 티어 ${spell.tier})`
-                : `Not enough literacy... (need tier ${spell.tier})`,
+                ? `안정성이 부족하다... (필요 티어 ${spell.tier})`
+                : `Not enough stability... (need tier ${spell.tier})`,
               "text-red-400",
             );
             return;
@@ -532,7 +715,8 @@ export default function BattleScene({
             };
           } else {
             // defend mode
-            const shield = spell.baseShield + Math.floor(stats.agility * 0.5);
+            const shield =
+              spell.baseShield + Math.floor(stats.agility * 0.5) + combatStats.shieldOnDefendBonus;
             setPlayerShield(shield);
             addLog(
               language === "ko"
@@ -576,6 +760,7 @@ export default function BattleScene({
     [
       turn,
       stats,
+      combatStats.shieldOnDefendBonus,
       maxHp,
       playerMana,
       monster,

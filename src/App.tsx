@@ -2,14 +2,18 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import BattleScene from "./BattleScene";
 import CrtOverlay from "./CrtOverlay";
 import PostBattleEvent from "./PostBattleEvent";
+import VocaLexicon from "./VocaLexicon";
 import type { BattleResult } from "./BattleScene";
 import {
   type EquipmentDefinition,
   type EquippedItems,
+  DEFAULT_STATS,
+  applyEquipmentModifiers,
   isEquipmentPoolExhausted,
   rollEquipmentOffer,
 } from "./battleTypes";
 import { type Language, pickText } from "./language";
+import { getDefaultUnlockedLexiconIds } from "./lexicon";
 
 /**
  * 캠프파이어 장면에서 출력할 도입 내레이션이다.
@@ -102,6 +106,10 @@ export default function App() {
    * 같은 장비가 연속 등장하는 빈도를 줄이기 위해 마지막 제시 장비 ID를 저장한다.
    */
   const [lastOfferedItemId, setLastOfferedItemId] = useState<string | null>(null);
+  /**
+   * 현재 실행 동안 해금된 사전 항목 목록이다.
+   */
+  const [learnedLexiconIds] = useState<string[]>(() => getDefaultUnlockedLexiconIds());
 
   /**
    * 전투 결과에 따라 다음 장면을 결정한다.
@@ -147,6 +155,8 @@ export default function App() {
     setOfferedItem(null);
     setPhase("transition");
   }, []);
+
+  const lexiconDecipher = applyEquipmentModifiers(DEFAULT_STATS, equippedItems).stats.decipher;
 
   /**
    * 모닥불 애니메이션 프레임을 취소하기 위해 최근 requestAnimationFrame ID를 보관한다.
@@ -752,6 +762,12 @@ export default function App() {
           onBattleEnd={handleBattleEnd}
         />
       )}
+
+      <VocaLexicon
+        language={language}
+        decipher={lexiconDecipher}
+        learnedEntryIds={learnedLexiconIds}
+      />
     </div>
   );
 }

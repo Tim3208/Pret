@@ -36,7 +36,10 @@ import {
   type PlayerAction,
   type PlayerActionDraft,
   type PlayerStats,
+  type PromptEvaluation,
+  type PromptTokenKind,
   PLAYER_TARGET_ID,
+  evaluatePromptAction,
   findSpell,
   getActionCritChance,
   getActionHitChance,
@@ -266,6 +269,20 @@ interface MonsterAsciiCanvasMetrics {
 type CrtNoiseLevel = "off" | "soft" | "strong";
 type GlyphColorMap = Map<string, string>;
 
+interface PromptJudgementCopy {
+  title: string;
+  detail: string;
+}
+
+interface PromptEffectState {
+  text: string;
+  charKinds: Array<PromptTokenKind | "space">;
+  evaluation: PromptEvaluation;
+  judgement: PromptJudgementCopy;
+  startedAt: number;
+  duration: number;
+}
+
 const BATTLE_COMBAT_TEXT = {
   en: {
     attackLabel: "Attack",
@@ -274,7 +291,7 @@ const BATTLE_COMBAT_TEXT = {
     defendHint: "Raise a shield",
     healLabel: "Heal",
     promptLabel: ">_",
-    promptHint: "Spell or freeform",
+    promptHint: "Word-weave / spell",
     targetSuffix: "target",
     chooseEnemyHint: "Choose an enemy. This spell still strikes every enemy in range.",
     chooseSingleHint: "Self-targets always hit. Other targets use your current hit and crit chances.",
@@ -282,9 +299,17 @@ const BATTLE_COMBAT_TEXT = {
     hitLabel: "hit",
     critLabel: "crit",
     cancelLabel: "cancel",
-    promptPlaceholder: "cast a spell, heal, or act...",
+    promptPlaceholder: "attack MOR defense",
     promptHelp:
-      'Spell names, "defend:Stone", "heal", or anything you can think of. Offensive actions will ask for a target.',
+      'Word-weaves accept attack/defense with MOR, UBT, or XLEW alone as a fire rune. Other spell names still cast normally.',
+    promptBusyLabel: "phrase is binding...",
+    judgementLabel: "JUDGMENT",
+    lexiconLabel: "LEXICON",
+    decipherLabel: "Decipher",
+    combinationLabel: "Combine",
+    stabilityLabel: "Stability",
+    strengthLabel: "STR",
+    agilityLabel: "AGI",
     potionAriaLabel: "Drag the health potion onto the player",
     potionLabel: "POTION",
     potionTooltip: "heal +8 hp, free action",
@@ -302,7 +327,7 @@ const BATTLE_COMBAT_TEXT = {
     defendHint: "방어막 전개",
     healLabel: "회복",
     promptLabel: ">_",
-    promptHint: "주문 또는 자유 입력",
+    promptHint: "문장 / 주문",
     targetSuffix: "대상",
     chooseEnemyHint: "대상을 고르세요. 이 주문은 범위 안의 모든 적에게 적중합니다.",
     chooseSingleHint: "자기 자신을 고르면 반드시 맞습니다. 다른 대상은 현재 명중률과 치명타 확률을 따릅니다.",
@@ -310,9 +335,17 @@ const BATTLE_COMBAT_TEXT = {
     hitLabel: "명중",
     critLabel: "치명",
     cancelLabel: "취소",
-    promptPlaceholder: "주문을 외우거나, 회복하거나, 행동을 입력하세요...",
+    promptPlaceholder: "attack MOR defense",
     promptHelp:
-      '주문명, "방어:돌", "회복" 또는 자유 입력이 가능합니다. 공격 행동은 대상을 다시 고르게 됩니다.',
+      '공격/방어 구문에는 MOR, UBT를 쓰고, XLEW는 단독 화염 룬으로 쓸 수 있다. 그 외 주문명은 기존처럼 시전된다.',
+    promptBusyLabel: "문장이 결속되는 중...",
+    judgementLabel: "판정",
+    lexiconLabel: "어휘력",
+    decipherLabel: "해독력",
+    combinationLabel: "조합력",
+    stabilityLabel: "안정성",
+    strengthLabel: "힘",
+    agilityLabel: "민첩",
     potionAriaLabel: "체력 물약을 플레이어에게 드래그하기",
     potionLabel: "물약",
     potionTooltip: "HP +8, 무료 행동",
@@ -324,6 +357,267 @@ const BATTLE_COMBAT_TEXT = {
     equipmentInactiveLabel: "지금은 전투 반영 없음",
   },
 } as const;
+
+const WORD_PROMPT_TOKENS = new Set([
+  "attack",
+  "공격",
+  "defense",
+  "defend",
+  "방어",
+  "mor",
+  "ubt",
+  "xlew",
+]);
+
+function isWordPromptCandidate(raw: string): boolean {
+  return raw
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .some((part) => WORD_PROMPT_TOKENS.has(part));
+}
+
+function buildPromptEffectText(evaluation: PromptEvaluation): string {
+  return evaluation.tokens.map((token) => token.specialWord ?? token.raw).join(" ");
+}
+
+function buildPromptCharKinds(
+  evaluation: PromptEvaluation,
+): Array<PromptTokenKind | "space"> {
+  const charKinds: Array<PromptTokenKind | "space"> = [];
+
+  evaluation.tokens.forEach((token, index) => {
+    const display = token.specialWord ?? token.raw;
+    for (const _char of display) {
+      charKinds.push(token.kind);
+    }
+
+    if (index < evaluation.tokens.length - 1) {
+      charKinds.push("space");
+    }
+  });
+
+  return charKinds;
+}
+
+function seededWave(index: number, salt: number): number {
+  return Math.sin(index * 12.9898 + salt * 78.233);
+}
+
+function getPromptJudgementCopy(
+  evaluation: PromptEvaluation,
+  stats: PlayerStats,
+  language: Language,
+): PromptJudgementCopy {
+  const decipher = stats.decipher;
+  const combinationShort = !evaluation.combinationAdequate && evaluation.combinationLoad > 0;
+
+  if (evaluation.outcome === "failure") {
+    if (evaluation.failureReason === "stability-overload") {
+      if (decipher >= 3) {
+        return language === "ko"
+          ? {
+              title: "안정성 파단",
+              detail: `코스트 ${evaluation.stabilityCost}가 안정성 ${stats.stability}을 넘어 문장이 스스로 찢어진다.`,
+            }
+          : {
+              title: "Stability Breach",
+              detail: `Cost ${evaluation.stabilityCost} overwhelms stability ${stats.stability}; the phrase tears itself apart.`,
+            };
+      }
+
+      if (decipher >= 2) {
+        return language === "ko"
+          ? {
+              title: "결속 붕괴",
+              detail: "문장이 감당할 수 있는 무게를 넘겨 반동이 돌아온다.",
+            }
+          : {
+              title: "Binding Collapse",
+              detail: "The sentence carries more weight than you can anchor.",
+            };
+      }
+
+      return language === "ko"
+        ? {
+            title: "무언가 찢어진다",
+            detail: "말이 당신을 거스른다.",
+          }
+        : {
+            title: "Something Tears",
+            detail: "The phrase turns on you.",
+          };
+    }
+
+    if (decipher >= 3) {
+      const detail = (() => {
+        switch (evaluation.failureReason) {
+          case "unknown-token":
+            return language === "ko"
+              ? "허용되지 않은 단어가 끼어 있어 결속이 처음부터 성립하지 않는다."
+              : "An unsupported word breaks the pattern before it can bind.";
+          case "rune-needs-attack":
+            return language === "ko"
+              ? "XLEW는 단독 공격이거나 공격 앞에서만 성립한다. 방어 동사와는 결속하지 않는다."
+              : "XLEW works on its own or directly before an attack verb, not with defense.";
+          case "dangling-connector":
+          case "dangling-rune":
+          case "invalid-order":
+          case "too-many-actions":
+          case "empty":
+          default:
+            return language === "ko"
+              ? "연결어와 룬어의 순서가 어긋나 문장 뼈대가 틀어졌다."
+              : "The connector-rune order slips out of alignment and fractures the sentence.";
+        }
+      })();
+
+      return language === "ko"
+        ? { title: "구문 파열", detail }
+        : { title: "Syntax Fracture", detail };
+    }
+
+    if (decipher >= 2) {
+      return language === "ko"
+        ? {
+            title: "문장이 엇물리지 않는다",
+            detail: "어떤 단어가 제자리를 찾지 못했다.",
+          }
+        : {
+            title: "The Words Refuse",
+            detail: "Something in the phrase never found its place.",
+          };
+    }
+
+    return language === "ko"
+      ? {
+          title: "받지 않는다",
+          detail: "문장이 입안에서 깨진다.",
+        }
+      : {
+          title: "It Will Not Take",
+          detail: "The phrase breaks in your mouth.",
+        };
+  }
+
+  if (evaluation.outcome === "risky") {
+    if (combinationShort && decipher >= 3) {
+      return language === "ko"
+        ? {
+            title: "약한 결속",
+            detail: `조합 부하 ${evaluation.combinationLoad}가 조합력 ${stats.combination}을 넘어 일부 글자가 힘을 잃는다. 대신 구문은 간신히 남는다.`,
+          }
+        : {
+            title: "Weak Binding",
+            detail: `Combination load ${evaluation.combinationLoad} exceeds combine ${stats.combination}; parts of the phrase lose force before the weave barely holds.`,
+          };
+    }
+
+    if (decipher >= 3) {
+      return language === "ko"
+        ? {
+            title: "위태로운 결속",
+            detail: `코스트 ${evaluation.stabilityCost}가 한계를 한 칸 넘겼다. 반동 HP -${evaluation.selfHpCost}, MP -${evaluation.selfManaCost}.`,
+          }
+        : {
+            title: "Precarious Binding",
+            detail: `Cost ${evaluation.stabilityCost} pushes one step past your limit. Backlash HP -${evaluation.selfHpCost}, MP -${evaluation.selfManaCost}.`,
+          };
+    }
+
+    if (decipher >= 2) {
+      return language === "ko"
+        ? {
+            title: "간신히 엮인다",
+            detail: "성공은 하지만 몸이 그 값을 치른다.",
+          }
+        : {
+            title: "It Barely Holds",
+            detail: "The weave succeeds, but your body pays for it.",
+          };
+    }
+
+    return language === "ko"
+      ? {
+          title: "말이 문다",
+          detail: "성공했지만 아프다.",
+        }
+      : {
+          title: "The Phrase Bites",
+          detail: "It works, but it hurts.",
+        };
+  }
+
+  if (combinationShort) {
+    if (decipher >= 3) {
+      return language === "ko"
+        ? {
+            title: "흐트러진 결속",
+            detail: `조합 부하 ${evaluation.combinationLoad}가 조합력 ${stats.combination}보다 높아 절반 효율로 엮였다.`,
+          }
+        : {
+            title: "Frayed Binding",
+            detail: `Combination load ${evaluation.combinationLoad} sits above combine ${stats.combination}, so the weave lands at reduced strength.`,
+          };
+    }
+
+    if (decipher >= 2) {
+      return language === "ko"
+        ? {
+            title: "조금 약하다",
+            detail: "문장이 닿기는 했지만 단단히 맞물리지는 않았다.",
+          }
+        : {
+            title: "A Little Weak",
+            detail: "The phrase reaches the box, but never locks tightly.",
+          };
+    }
+
+    return language === "ko"
+      ? {
+          title: "휘청인다",
+          detail: "힘이 조금 샌다.",
+        }
+      : {
+          title: "It Falters",
+          detail: "Some force leaks away.",
+        };
+  }
+
+  if (decipher >= 3) {
+    return language === "ko"
+      ? {
+          title: "재정렬 완료",
+          detail: `조합 부하 ${evaluation.combinationLoad}, 안정 코스트 ${evaluation.stabilityCost}. 문장이 제자리를 찾는다.`,
+        }
+      : {
+          title: "Reordering Complete",
+          detail: `Combination load ${evaluation.combinationLoad}, stability cost ${evaluation.stabilityCost}. The phrase settles cleanly.`,
+        };
+  }
+
+  if (decipher >= 2) {
+    return language === "ko"
+      ? {
+          title: "문장이 맞물린다",
+          detail: "낱말들이 흔들리다 곧 한 줄로 정돈된다.",
+        }
+      : {
+          title: "The Sentence Locks",
+          detail: "The words shudder, then find a single line.",
+        };
+  }
+
+  return language === "ko"
+    ? {
+        title: "제자리를 찾는다",
+        detail: "말이 잠잠해진다.",
+      }
+    : {
+        title: "It Settles",
+        detail: "The words stop fighting you.",
+      };
+}
 
 /* ================================================================
    Pretext helpers — character-level physics displacement
@@ -576,6 +870,37 @@ function drawAsciiConsoleRule(
 ): void {
   ctx.fillStyle = color;
   ctx.fillText(`├${"─".repeat(frame.cols - 2)}┤`, frame.startX, y);
+}
+
+function drawAsciiPanelFrame(
+  ctx: CanvasRenderingContext2D,
+  startX: number,
+  topY: number,
+  cols: number,
+  rows: number,
+  color: string,
+): AsciiConsoleFrame {
+  const safeCols = Math.max(10, cols);
+  const safeRows = Math.max(4, rows);
+  const charW = ctx.measureText("M").width;
+  const rightX = startX + (safeCols - 1) * charW;
+
+  ctx.fillStyle = color;
+  ctx.fillText(`┌${"─".repeat(safeCols - 2)}┐`, startX, topY);
+  for (let row = 1; row < safeRows - 1; row += 1) {
+    const y = topY + row * LINE_H;
+    ctx.fillText("│", startX, y);
+    ctx.fillText("│", rightX, y);
+  }
+  ctx.fillText(`└${"─".repeat(safeCols - 2)}┘`, startX, topY + (safeRows - 1) * LINE_H);
+
+  return {
+    startX,
+    cols: safeCols,
+    rows: safeRows,
+    topY,
+    bottomY: topY + (safeRows - 1) * LINE_H,
+  };
 }
 
 function getConsolePerimeterPoint(
@@ -1245,6 +1570,7 @@ export default function BattleCombat({
   const combatText = BATTLE_COMBAT_TEXT[language];
   const [showPrompt, setShowPrompt] = useState(false);
   const [promptInput, setPromptInput] = useState("");
+  const [promptEffect, setPromptEffect] = useState<PromptEffectState | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
   const [pendingAction, setPendingAction] = useState<PlayerActionDraft | null>(null);
@@ -1272,6 +1598,7 @@ export default function BattleCombat({
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const promptEffectCanvasRef = useRef<HTMLCanvasElement>(null);
   const playerAsciiCanvasRef = useRef<HTMLCanvasElement>(null);
   const monsterAsciiCanvasRef = useRef<HTMLCanvasElement>(null);
   const playerAsciiPreRef = useRef<HTMLPreElement>(null);
@@ -1291,6 +1618,7 @@ export default function BattleCombat({
   const noiseResetRef = useRef<number | null>(null);
   const playerHitWaveFrameRef = useRef<number | null>(null);
   const monsterHitWaveFrameRef = useRef<number | null>(null);
+  const promptResolveTimeoutRef = useRef<number | null>(null);
   const potionPointerOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const potionRestModeRef = useRef<"home" | "dropped">("home");
   const activePotionPointerIdRef = useRef<number | null>(null);
@@ -1512,6 +1840,9 @@ export default function BattleCombat({
     const monsterHitWaveFrame = monsterHitWaveFrameRef;
 
     return () => {
+      if (promptResolveTimeoutRef.current) {
+        window.clearTimeout(promptResolveTimeoutRef.current);
+      }
       if (noiseResetRef.current) {
         window.clearTimeout(noiseResetRef.current);
       }
@@ -1561,6 +1892,7 @@ export default function BattleCombat({
   const playerAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(playerAscii), [playerAscii]);
   const monsterAsciiText = monsterAscii.join("\n");
   const monsterAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(monsterAscii), [monsterAscii]);
+  const promptEffectActive = Boolean(promptEffect);
   const playerAsciiMarkup = useMemo(() => {
     const nodes: ReactNode[] = [];
     let tintedKey = 0;
@@ -2969,6 +3301,265 @@ export default function BattleCombat({
     return () => cancelAnimationFrame(rafRef.current);
   }, []); // stable — reads from textRef
 
+  useEffect(() => {
+    const canvas = promptEffectCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    canvas.width = W;
+    canvas.height = H;
+
+    if (!promptEffect) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    let frame = 0;
+
+    const draw = () => {
+      const evaluation = promptEffect.evaluation;
+      const elapsed = performance.now() - promptEffect.startedAt;
+      const explosiveFailure = evaluation.outcome === "failure";
+      const deflectBeforeBox = !explosiveFailure && !evaluation.combinationAdequate && evaluation.combinationLoad > 0;
+      const arrivalDuration = explosiveFailure ? 1380 : deflectBeforeBox ? 1280 : 1180;
+      const holdDuration = explosiveFailure ? 260 : deflectBeforeBox ? 120 : 0;
+      const flightProgress = clamp01(elapsed / arrivalDuration);
+      const holdProgress = clamp01(Math.max(0, elapsed - arrivalDuration) / Math.max(1, holdDuration));
+      const resolveProgress = clamp01(
+        Math.max(0, elapsed - arrivalDuration - holdDuration) /
+          Math.max(1, promptEffect.duration - arrivalDuration - holdDuration),
+      );
+      const sourceChars = Array.from(`> ${promptEffect.text}`);
+      const flightChars = Array.from(promptEffect.text);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle =
+        explosiveFailure
+          ? "rgba(18, 5, 5, 0.94)"
+          : promptEffect.evaluation.outcome === "risky"
+            ? "rgba(18, 22, 10, 0.93)"
+            : "rgba(8, 18, 12, 0.94)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.font = CRT_FONT;
+      ctx.textBaseline = "top";
+      const consoleCharWidth = ctx.measureText("M").width;
+      const consoleFrame = drawAsciiConsoleFrame(
+        ctx,
+        explosiveFailure
+          ? "rgba(214, 116, 108, 0.34)"
+          : promptEffect.evaluation.outcome === "risky"
+            ? "rgba(188, 255, 146, 0.28)"
+            : "rgba(132, 255, 168, 0.28)",
+      );
+      const ruleY = consoleFrame.topY + LINE_H * 2;
+      drawAsciiConsoleRule(
+        ctx,
+        ruleY,
+        consoleFrame,
+        explosiveFailure
+          ? "rgba(255, 132, 120, 0.2)"
+          : promptEffect.evaluation.outcome === "risky"
+            ? "rgba(182, 255, 136, 0.2)"
+            : "rgba(122, 255, 156, 0.2)",
+      );
+
+      const sourceWidths = sourceChars.map((char) => ctx.measureText(char).width);
+      const textWidths = flightChars.map((char) => ctx.measureText(char).width);
+      const textTotalWidth = textWidths.reduce((sum, width) => sum + width, 0);
+      const sourceStartX = consoleFrame.startX + consoleCharWidth * 2;
+      const sourceY = consoleFrame.bottomY - LINE_H * 2.35;
+      const sourceCharX: number[] = [];
+      let sourceCursorX = sourceStartX;
+      sourceWidths.forEach((width) => {
+        sourceCharX.push(sourceCursorX);
+        sourceCursorX += width;
+      });
+
+      const boxCols = Math.max(24, consoleFrame.cols - 9);
+      const boxRows = 7;
+      const boxFrame = drawAsciiPanelFrame(
+        ctx,
+        consoleFrame.startX + consoleCharWidth * 3,
+        ruleY + LINE_H + 8,
+        boxCols,
+        boxRows,
+        explosiveFailure
+          ? "rgba(255, 118, 108, 0.34)"
+          : promptEffect.evaluation.outcome === "risky"
+            ? "rgba(182, 255, 136, 0.28)"
+            : "rgba(122, 255, 156, 0.3)",
+      );
+      const boxX = boxFrame.startX;
+      const boxY = boxFrame.topY;
+      const boxRightX = boxFrame.startX + (boxFrame.cols - 1) * consoleCharWidth;
+      const boxInnerStartX = boxFrame.startX + consoleCharWidth * 1.5;
+      const boxInnerWidth = Math.max(180, boxRightX - boxInnerStartX - consoleCharWidth * 2);
+      const boxHeight = boxFrame.bottomY - boxFrame.topY;
+      const targetStartX = Math.max(boxInnerStartX, boxInnerStartX + (boxInnerWidth - textTotalWidth) / 2);
+      const targetCharX: number[] = [];
+      let targetCursorX = targetStartX;
+      textWidths.forEach((width) => {
+        targetCharX.push(targetCursorX);
+        targetCursorX += width;
+      });
+      const destinationY = boxY + LINE_H * 2.6;
+      const deflectPlaneY = boxFrame.bottomY - LINE_H * 1.35;
+
+      ctx.fillStyle = "rgba(244, 214, 170, 0.18)";
+      ctx.fillText(
+        explosiveFailure ? "| integrity://fractured" : deflectBeforeBox ? "| integrity://frayed" : "| integrity://stable",
+        boxFrame.startX + consoleCharWidth * 2,
+        boxFrame.topY + LINE_H * 0.95,
+      );
+
+      ctx.fillStyle = "rgba(255, 190, 112, 0.22)";
+      ctx.fillText(">", sourceStartX, sourceY);
+      ctx.fillStyle = "rgba(244, 214, 170, 0.18)";
+      ctx.fillText(
+        "_".repeat(Math.max(10, Math.min(boxFrame.cols - 6, Math.ceil((textTotalWidth + consoleCharWidth * 1.5) / consoleCharWidth)))),
+        sourceStartX + consoleCharWidth * 1.2,
+        sourceY + LINE_H * 0.76,
+      );
+
+      if (deflectBeforeBox) {
+        const barrierProgress = clamp01((flightProgress - 0.64) / 0.3);
+        if (barrierProgress > 0) {
+          const glow = 0.2 + Math.sin(elapsed * 0.018) * 0.06 + barrierProgress * 0.16;
+          ctx.fillStyle = `rgba(255, 214, 166, ${Math.max(0.12, glow).toFixed(2)})`;
+          ctx.fillText(
+            "=".repeat(Math.max(10, boxFrame.cols - 6)),
+            boxFrame.startX + consoleCharWidth * 2,
+            deflectPlaneY,
+          );
+        }
+      }
+
+      flightChars.forEach((char, index) => {
+        const kind = promptEffect.charKinds[index] ?? "unknown";
+        if (kind === "space") {
+          return;
+        }
+
+        const seedIndex = index + 1;
+        const sourceX = sourceCharX[index + 2] ?? sourceStartX;
+        const targetX = targetCharX[index] ?? targetStartX;
+        const baseColor =
+          kind === "connector"
+            ? "rgba(112, 196, 255, 0.95)"
+            : kind === "contrast"
+              ? "rgba(255, 174, 92, 0.96)"
+              : kind === "rune"
+                ? "rgba(255, 108, 88, 0.98)"
+                : "rgba(238, 214, 172, 0.96)";
+        const successColor =
+          promptEffect.evaluation.outcome === "risky"
+            ? "rgba(176, 255, 146, 0.96)"
+            : "rgba(122, 255, 156, 0.98)";
+        const swirlRadius = 42 + ((seededWave(seedIndex, 1.8) + 1) / 2) * 22;
+        const spiralTurns = 1.6 + ((seededWave(seedIndex, 3.4) + 1) / 2) * 1.8;
+        const baseTravel = easeInOutCubic(flightProgress);
+        const xTravel = lerp(sourceX, targetX, baseTravel);
+        const yTravel = lerp(sourceY, destinationY, baseTravel);
+        const spiralAngle = elapsed * 0.01 + seedIndex * 0.7 + (1 - baseTravel) * spiralTurns * Math.PI * 2;
+        const spiralStrength = (1 - baseTravel) * swirlRadius;
+        let x = xTravel + Math.cos(spiralAngle) * spiralStrength;
+        let y = yTravel + Math.sin(spiralAngle) * spiralStrength * 0.65;
+        let rotation = (1 - baseTravel) * seededWave(seedIndex, 6.2) * 1.2;
+        let alpha = 0.96;
+        let drawColor = mixRgbaColors(baseColor, successColor, Math.min(1, baseTravel * 0.82));
+
+        if (deflectBeforeBox) {
+          const deflectAt = 0.76;
+          if (baseTravel >= deflectAt) {
+            const deflectT = clamp01((baseTravel - deflectAt) / (1 - deflectAt));
+            const deflectDirection = seededWave(seedIndex, 7.1) >= 0 ? 1 : -1;
+            const reboundLift = Math.sin(deflectT * Math.PI) * (10 + ((seededWave(seedIndex, 5.1) + 1) / 2) * 10);
+            const reboundSpread = (22 + ((seededWave(seedIndex, 7.4) + 1) / 2) * 36) * easeOutCubic(deflectT);
+            x = targetX + deflectDirection * reboundSpread;
+            y = deflectPlaneY - reboundLift + 116 * deflectT * deflectT;
+            rotation += deflectT * seededWave(seedIndex, 8.9) * 3.4;
+            alpha = Math.max(0.08, 1 - deflectT * 0.62);
+            drawColor = mixRgbaColors(baseColor, "rgba(255, 230, 204, 0.98)", Math.min(0.76, deflectT * 0.94));
+          }
+        }
+
+        if (explosiveFailure) {
+          if (elapsed <= arrivalDuration + holdDuration) {
+            x = lerp(sourceX, targetX, baseTravel) + Math.cos(spiralAngle) * spiralStrength;
+            y = lerp(sourceY, destinationY, baseTravel) + Math.sin(spiralAngle) * spiralStrength * 0.65;
+            if (flightProgress >= 1) {
+              const jitter = (1 - holdProgress) * 2.4;
+              x = targetX + seededWave(seedIndex, 10.1) * jitter;
+              y = destinationY + seededWave(seedIndex, 11.3) * jitter;
+            }
+            drawColor = mixRgbaColors(baseColor, "rgba(255, 230, 212, 0.98)", Math.min(0.62, flightProgress * 0.58 + holdProgress * 0.22));
+          } else {
+            const spreadProgress = clamp01(resolveProgress / 0.42);
+            const fallProgress = clamp01((resolveProgress - 0.18) / 0.82);
+            const angle = ((seededWave(seedIndex, 2.7) + 1) / 2) * Math.PI * 2;
+            const burstDistance =
+              (96 + ((seededWave(seedIndex, 4.6) + 1) / 2) * 164) * easeOutCubic(spreadProgress);
+            const drop = 14 * spreadProgress + 172 * fallProgress * fallProgress;
+            x = targetX + Math.cos(angle) * burstDistance;
+            y = destinationY + Math.sin(angle) * burstDistance * 0.86 + drop;
+            rotation = (spreadProgress + fallProgress * 0.6) * seededWave(seedIndex, 9.7) * 9.2;
+            alpha = Math.max(0, 1 - resolveProgress * 0.72);
+            drawColor = mixRgbaColors(baseColor, "rgba(255, 248, 236, 0.98)", 0.56);
+          }
+        }
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rotation);
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = drawColor;
+        ctx.shadowBlur =
+          promptEffect.evaluation.outcome === "failure" ? 14 : 18;
+        ctx.fillStyle = drawColor;
+        ctx.fillText(char, 0, 0);
+        if (promptEffect.evaluation.outcome !== "failure") {
+          ctx.globalAlpha = alpha * 0.2;
+          ctx.fillText(char, 0.9, 0.9);
+        }
+        ctx.restore();
+      });
+
+      if (explosiveFailure) {
+        const burstAlpha = Math.max(0.08, 0.4 - resolveProgress * 0.24 + holdProgress * 0.1);
+        const burstChars = ["#", "*", "+", "x", "\\", "/"];
+        ctx.font = makeFont(680, 13);
+        ctx.fillStyle = `rgba(255, 214, 196, ${burstAlpha.toFixed(2)})`;
+        for (let ray = 0; ray < 18; ray += 1) {
+          const angle = (Math.PI * 2 * ray) / 18 + resolveProgress * 0.24;
+          const radius = 18 + easeOutCubic(resolveProgress) * (34 + (ray % 4) * 16);
+          const x = canvas.width / 2 + Math.cos(angle) * radius;
+          const y = destinationY + 12 + Math.sin(angle) * radius * 0.72;
+          ctx.fillText(burstChars[ray % burstChars.length], x, y);
+        }
+        ctx.font = CRT_FONT;
+      }
+
+      if (deflectBeforeBox) {
+        const drainAlpha = 0.16 + Math.sin(elapsed * 0.014) * 0.05;
+        ctx.fillStyle = `rgba(255, 196, 136, ${Math.max(0.08, drainAlpha).toFixed(2)})`;
+        ctx.fillRect(boxX + 16, boxY + boxHeight - 26, Math.max(120, textTotalWidth * 0.72), 1);
+      }
+
+      ctx.restore();
+
+      if (elapsed < promptEffect.duration) {
+        frame = window.requestAnimationFrame(draw);
+      }
+    };
+
+    frame = window.requestAnimationFrame(draw);
+    return () => window.cancelAnimationFrame(frame);
+  }, [promptEffect]);
+
   const executeChoice = useCallback(
     (index: number) => {
       if (index === 0) {
@@ -2977,6 +3568,7 @@ export default function BattleCombat({
         stageAction({ type: "defend" });
       } else {
         setPendingAction(null);
+        setPromptEffect(null);
         setPromptInput("");
         setShowPrompt(true);
       }
@@ -2990,8 +3582,14 @@ export default function BattleCombat({
 
     const handler = (e: KeyboardEvent) => {
       if (showPrompt) {
+        if (promptEffectActive) {
+          e.preventDefault();
+          return;
+        }
+
         if (e.key === "Escape") {
           e.preventDefault();
+          setPromptEffect(null);
           setShowPrompt(false);
           setPromptInput("");
         }
@@ -3069,6 +3667,7 @@ export default function BattleCombat({
     selectedIndex,
     selectedTargetIndex,
     showPrompt,
+    promptEffectActive,
     turn,
   ]);
 
@@ -3076,10 +3675,42 @@ export default function BattleCombat({
   const handlePromptSubmit = useCallback(
     (event: FormEvent) => {
       event.preventDefault();
-      if (turn !== "player") return;
+      if (turn !== "player" || promptEffectActive) return;
 
       const raw = promptInput.trim();
       if (!raw) return;
+
+      if (isWordPromptCandidate(raw)) {
+        const evaluation = evaluatePromptAction(raw, playerStats);
+        const effect: PromptEffectState = {
+          text: buildPromptEffectText(evaluation),
+          charKinds: buildPromptCharKinds(evaluation),
+          evaluation,
+          judgement: getPromptJudgementCopy(evaluation, playerStats, language),
+          startedAt: performance.now(),
+          duration:
+            evaluation.outcome === "failure"
+              ? 3200
+              : evaluation.outcome === "risky"
+                ? 2500
+                : 2200,
+        };
+
+        setPromptInput("");
+        setPromptEffect(effect);
+
+        if (promptResolveTimeoutRef.current) {
+          window.clearTimeout(promptResolveTimeoutRef.current);
+        }
+
+        promptResolveTimeoutRef.current = window.setTimeout(() => {
+          promptResolveTimeoutRef.current = null;
+          setPromptEffect(null);
+          setShowPrompt(false);
+          onAction({ type: "prompt", evaluation });
+        }, effect.duration);
+        return;
+      }
 
       const lower = raw.toLowerCase();
       const defendPrefix = ["defend:", "방어:"].find((prefix) => lower.startsWith(prefix));
@@ -3107,7 +3738,7 @@ export default function BattleCombat({
         }
       }
     },
-    [promptInput, stageAction, turn],
+    [language, onAction, playerStats, promptEffectActive, promptInput, stageAction, turn],
   );
 
   const CHOICES = useMemo(
@@ -3246,9 +3877,6 @@ export default function BattleCombat({
                       <span className="mt-2 block text-[0.68rem] leading-[1.45] text-white/72">
                         {combatText.equipmentEffectLabel} {item.effectText[language]}
                       </span>
-                      <span className="mt-1 block text-[0.62rem] leading-[1.4] text-white/36">
-                        {combatText.equipmentInactiveLabel}
-                      </span>
                     </span>
                   </span>
                 </button>
@@ -3378,6 +4006,36 @@ export default function BattleCombat({
             }`}
           >
             <canvas ref={canvasRef} className="relative block h-auto w-full" />
+            {promptEffectActive && promptEffect && (
+              <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden bg-black/92">
+                <canvas
+                  ref={promptEffectCanvasRef}
+                  width={W}
+                  height={H}
+                  className="absolute inset-0 h-full w-full"
+                />
+                <div className="absolute left-[10.2%] right-[10.2%] top-[8.6%] flex items-center justify-between font-crt text-[0.56rem] uppercase tracking-[0.16em] text-white/32">
+                  <span>{combatText.judgementLabel}</span>
+                  <span>{combatText.promptBusyLabel}</span>
+                </div>
+                <div className="absolute left-[10.2%] right-[10.2%] bottom-[7.2%] font-crt">
+                  <p
+                    className={`text-[0.74rem] uppercase tracking-[0.16em] ${
+                      promptEffect.evaluation.outcome === "failure"
+                        ? "text-[rgba(255,132,122,0.92)]"
+                        : promptEffect.evaluation.outcome === "risky"
+                          ? "text-[rgba(182,255,136,0.94)]"
+                          : "text-[rgba(122,255,156,0.96)]"
+                    }`}
+                  >
+                    {promptEffect.judgement.title}
+                  </p>
+                  <p className="mt-1 text-[0.66rem] leading-[1.45] text-white/52">
+                    {promptEffect.judgement.detail}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -3391,6 +4049,39 @@ export default function BattleCombat({
               shieldLabel={combatText.shieldLabel}
             />
             <ManaFlask current={playerMana} max={playerMaxMana} label={combatText.manaLabel} />
+          </div>
+        </div>
+
+        <div className="group absolute right-[7.2%] top-[71.3%] z-30 flex flex-col items-end font-crt">
+          <button
+            type="button"
+            aria-label={combatText.lexiconLabel}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(148,255,173,0.22)] bg-black/52 text-[0.92rem] text-[rgba(176,255,188,0.86)] shadow-[0_0_18px_rgba(68,255,150,0.08),inset_0_0_12px_rgba(0,0,0,0.42)] transition-[transform,border-color,color,box-shadow] duration-150 hover:scale-[1.04] hover:border-[rgba(148,255,173,0.42)] hover:text-[rgba(210,255,218,0.98)] focus-visible:scale-[1.04] focus-visible:border-[rgba(148,255,173,0.42)] focus-visible:text-[rgba(210,255,218,0.98)] animate-equipment-rune"
+          >
+            ?
+          </button>
+          <div className="pointer-events-none absolute right-0 top-[calc(100%+0.7rem)] w-[236px] translate-y-2 rounded-[18px] border border-[rgba(138,255,176,0.16)] bg-black/82 px-4 py-3 opacity-0 shadow-[0_0_28px_rgba(0,0,0,0.38),inset_0_0_22px_rgba(0,0,0,0.46)] transition-[opacity,transform] duration-180 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 backdrop-blur-[4px]">
+            <p className="text-[0.62rem] uppercase tracking-[0.2em] text-white/36">
+              {combatText.lexiconLabel}
+            </p>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-[0.72rem]">
+              <div className="rounded-[12px] border border-white/8 bg-white/[0.03] px-2 py-2 text-center">
+                <p className="text-white/38">{combatText.decipherLabel}</p>
+                <p className="mt-1 text-[0.88rem] text-[rgba(222,222,222,0.92)]">{playerStats.decipher}</p>
+              </div>
+              <div className="rounded-[12px] border border-white/8 bg-white/[0.03] px-2 py-2 text-center">
+                <p className="text-white/38">{combatText.combinationLabel}</p>
+                <p className="mt-1 text-[0.88rem] text-[rgba(144,210,255,0.92)]">{playerStats.combination}</p>
+              </div>
+              <div className="rounded-[12px] border border-white/8 bg-white/[0.03] px-2 py-2 text-center">
+                <p className="text-white/38">{combatText.stabilityLabel}</p>
+                <p className="mt-1 text-[0.88rem] text-[rgba(255,188,132,0.94)]">{playerStats.stability}</p>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center gap-4 text-[0.64rem] tracking-[0.08em] text-white/44">
+              <span>{combatText.strengthLabel} {playerStats.strength}</span>
+              <span>{combatText.agilityLabel} {playerStats.agility}</span>
+            </div>
           </div>
         </div>
 
@@ -3464,7 +4155,7 @@ export default function BattleCombat({
         </div>
       )}
 
-      {turn === "player" && showPrompt && (
+      {turn === "player" && showPrompt && !promptEffectActive && (
         <div className="w-full max-w-[560px] font-crt">
           <form onSubmit={handlePromptSubmit} className="flex items-center gap-2">
             <span className="font-bold text-ember">{">"}</span>
@@ -3484,6 +4175,7 @@ export default function BattleCombat({
               [ESC]
             </button>
           </form>
+
           <p className="mt-1 text-[0.68rem] text-white/30">
             {combatText.promptHelp} {combatText.manaLabel}: {playerMana}
           </p>
