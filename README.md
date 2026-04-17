@@ -53,9 +53,9 @@ App
 | `src/battleCombatCore.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/battleCombatVisuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
 | `src/battleTypes.ts` | Combat rules, player stats, monster definition, hit/crit helpers, and intent metadata. |
-| `src/HeartHP.tsx` | Animated ASCII heart resource widget. |
-| `src/ManaFlask.tsx` | Animated ASCII mana flask resource widget. |
-| `src/HealthPotion.tsx` | Small animated ASCII health potion used in combat. |
+| `src/widgets/resource-panel/ui/HeartHP.tsx` | Animated ASCII heart resource widget. |
+| `src/widgets/resource-panel/ui/ManaFlask.tsx` | Animated ASCII mana flask resource widget. |
+| `src/features/potion-use/ui/HealthPotion.tsx` | Small animated ASCII health potion used in combat. |
 | `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | Canvas-based resource change effect that reuses the monster charge motion pattern. |
 | `src/shared/lib/ascii/useAsciiAsset.ts` | Loads pre-authored ASCII `.md` assets and trims annotation padding. |
 | `src/app/styles/index.css` | Theme tokens and global animation keyframes. |

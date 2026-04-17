@@ -22,8 +22,8 @@
 | `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` | 대형 분해 | 입력, 연출, 자원 UI를 단계적으로 분리 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 이동 | 위젯 내부 코어 유틸 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 이동 | 위젯 내부 렌더링 유틸 |
-| `src/PostBattleEvent.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 분해 | 텍스트와 장면 조합 분리 |
-| `src/SkullEncounter.tsx` | `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | 이동 | 전투 조우 연출 위젯 |
+| `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 1차 이동 완료 | 페이지 이동은 완료, 텍스트 분리는 이후 진행 |
+| `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | 완료 | 전투 조우 연출 위젯 이동 완료 |
 | `src/SwordEncounter.tsx` | `src/widgets/encounter-scene/ui/SwordEncounter.tsx` 또는 제거 | 검토 | 현재 사용 여부 재확인 필요 |
 
 ## 3. 도메인 파일 매핑
@@ -39,9 +39,9 @@
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
 | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | 완료 | 공용 시각 오버레이 이동 완료 |
-| `src/HealthPotion.tsx` | `src/features/potion-use/ui/HealthPotion.tsx` | 이동 | 사용자 행동과 직접 연결된 UI |
-| `src/HeartHP.tsx` | `src/widgets/resource-panel/ui/HeartHP.tsx` | 이동 | 자원 패널 표현 요소 |
-| `src/ManaFlask.tsx` | `src/widgets/resource-panel/ui/ManaFlask.tsx` | 이동 | 자원 패널 표현 요소 |
+| `src/features/potion-use/ui/HealthPotion.tsx` | `src/features/potion-use/ui/HealthPotion.tsx` | 완료 | 사용자 행동과 직접 연결된 UI 이동 완료 |
+| `src/widgets/resource-panel/ui/HeartHP.tsx` | `src/widgets/resource-panel/ui/HeartHP.tsx` | 완료 | 자원 패널 표현 요소 이동 완료 |
+| `src/widgets/resource-panel/ui/ManaFlask.tsx` | `src/widgets/resource-panel/ui/ManaFlask.tsx` | 완료 | 자원 패널 표현 요소 이동 완료 |
 | `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | 완료 | 자원 변화 공용 연출 이동 완료 |
 | `src/LanguageSelector.tsx` | `src/features/language-switch/ui/LanguageSelector.tsx` | 이동 또는 재사용 | 현재 사용 여부 재확인 필요 |
 
@@ -62,7 +62,7 @@
 | `src/BattleScene.tsx` 내부 조우/전투 텍스트 | `src/content/text/battle/scene.ts` | 분리 | 전투 장면 텍스트 |
 | `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 분리 | 전투 로그 텍스트 |
 | `src/BattleCombat.tsx` 내부 UI 라벨 및 프롬프트 | `src/content/text/battle/ui.ts` | 분리 | 입력, 버튼, 안내 문구 |
-| `src/PostBattleEvent.tsx` 내부 텍스트 | `src/content/text/event/postBattle.ts` | 분리 | 전투 후 이벤트 문구 |
+| `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` 내부 텍스트 | `src/content/text/event/postBattle.ts` | 분리 | 전투 후 이벤트 문구 |
 | `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 분리 검토 | 규칙 데이터와 설명 데이터 분리 여부 확정 필요 |
 
 ## 7. 제거 또는 보류 후보

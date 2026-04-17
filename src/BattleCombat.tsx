@@ -16,10 +16,9 @@ import {
   layoutWithLines,
   prepareWithSegments,
 } from "@chenglou/pretext";
-import HealthPotion from "./HealthPotion";
-import HeartHP from "./HeartHP";
-import ManaFlask from "./ManaFlask";
 import CrtOverlay from "@/shared/ui/crt-overlay";
+import HealthPotion from "@/features/potion-use";
+import { HeartHP, ManaFlask } from "@/widgets/resource-panel";
 import {
   type Language,
   getLocalizedSpellName,

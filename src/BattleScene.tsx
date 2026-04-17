@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BattleCombat from "./BattleCombat";
-import SkullEncounter from "./SkullEncounter";
 import { useAsciiAsset } from "@/shared/lib/ascii";
+import { SkullEncounter } from "@/widgets/encounter-scene";
 import {
   type Language,
   getLocalizedMonsterIntentLabel,

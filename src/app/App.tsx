@@ -1,6 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import BattleScene from "@/BattleScene";
-import PostBattleEvent from "@/PostBattleEvent";
+import PostBattleEvent from "@/pages/post-battle-event";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import type { BattleResult } from "@/BattleScene";
 import {

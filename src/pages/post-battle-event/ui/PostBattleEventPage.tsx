@@ -1,10 +1,10 @@
 import { type FormEvent, useState } from "react";
-import { pickText, type Language } from "./language";
+import { pickText, type Language } from "@/language";
 import {
   type EquipmentDefinition,
   type EquippedItems,
   getEquipmentSlotLabel,
-} from "./battleTypes";
+} from "@/battleTypes";
 
 interface PostBattleEventProps {
   language: Language;
@@ -125,7 +125,7 @@ function matchesKeyword(input: string, keywords: readonly string[]): boolean {
   return keywords.some((keyword) => input === keyword || input.includes(keyword));
 }
 
-export default function PostBattleEvent({
+export default function PostBattleEventPage({
   language,
   offeredItem,
   equippedItems,
