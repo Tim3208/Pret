@@ -20,14 +20,14 @@ App
  ├─ text / transition shell
  └─ battle
     └─ BattlePage
-       ├─ encounter  -> SkullEncounter
-       ├─ intro
+       ├─ pre-combat -> BattleEncounterSequence -> SkullEncounter / intro
        └─ combat     -> useBattleFlow -> BattleStage
 ```
 
 ## Combat Architecture
 
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
+- `widgets/encounter-scene/ui/BattleEncounterSequence.tsx` owns the pre-combat encounter and intro sequence composition.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
 - `features/potion-use/model/usePotionUseInteraction.ts` owns potion home/rest/drag state, hover detection, and drop resolution.
@@ -57,6 +57,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 |------|---------|
 | `src/app/App.tsx` | Top-level phase switching between non-battle and battle states. |
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
+| `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | Composes the pre-combat encounter animation and typewriter intro prompt. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
 | `src/features/potion-use/model/usePotionUseInteraction.ts` | Owns potion drag state, home/rest positioning, hover detection, and drop resolution. |
@@ -103,6 +104,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 - Add new command selection or prompt parsing rules in `src/features/battle-command-input/ui/BattleCommandInput.tsx`.
 - Add new potion drag/drop or hover rules in `src/features/potion-use/model/usePotionUseInteraction.ts`.
 - Add new resource HUD composition or layout changes in `src/widgets/resource-panel/ui/ResourcePanel.tsx`.
+- Add new pre-combat encounter or intro presentation changes in `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
 - Add new particle systems or canvas-only visuals in `widgets/battle-stage/lib/visuals.ts`.
 - Keep `src/pages/battle/ui/BattlePage.tsx` focused on scene composition and keep `widgets/battle-stage/ui/BattleStage.tsx` focused on wiring those pieces together rather than holding new pure helper code.

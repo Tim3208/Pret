@@ -1,10 +1,8 @@
-import { useEffect, useState } from "react";
-import { BATTLE_ENCOUNTER_TEXT } from "@/content/text/battle/scene";
 import type { EquippedItems } from "@/entities/equipment";
-import { type Language, pickText } from "@/entities/locale";
+import { type Language } from "@/entities/locale";
 import { useAsciiAsset } from "@/shared/lib/ascii";
 import BattleStage, { useBattleFlow } from "@/widgets/battle-stage";
-import { SkullEncounter } from "@/widgets/encounter-scene";
+import { BattleEncounterSequence } from "@/widgets/encounter-scene";
 
 export interface BattleResult {
   won: boolean;
@@ -67,23 +65,13 @@ export default function BattlePage({
   return (
     <div className="flex min-h-screen w-full flex-col items-center justify-center gap-6">
       <div className="flex w-full flex-1 items-center justify-center">
-        {phase === "encounter" && (
-          <SkullEncounter onComplete={handleEncounterDone} />
-        )}
-
-        {phase === "intro" && (
-          <div
-            className="max-w-[500px] cursor-pointer px-6 py-8 animate-fade-in-quick"
-            onClick={handleIntroDone}
-          >
-            <TypewriterText
-              text={pickText(language, BATTLE_ENCOUNTER_TEXT)}
-              speed={30}
-            />
-            <p className="mt-6 text-center text-[0.9rem] tracking-[0.15em] text-white/40 opacity-0 [animation:fade_1s_4s_forwards]">
-              {sceneText.clickToFight}
-            </p>
-          </div>
+        {(phase === "encounter" || phase === "intro") && (
+          <BattleEncounterSequence
+            language={language}
+            phase={phase}
+            onEncounterComplete={handleEncounterDone}
+            onIntroComplete={handleIntroDone}
+          />
         )}
 
         {phase === "combat" && !playerLoading && !monsterLoading && (
@@ -144,41 +132,5 @@ export default function BattlePage({
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * 소개 문장을 한 글자씩 출력하는 타이프라이터 텍스트 컴포넌트다.
- */
-function TypewriterText({
-  text,
-  speed = 30,
-}: {
-  text: string;
-  speed?: number;
-}) {
-  const [charCount, setCharCount] = useState(0);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setCharCount((value) => {
-        const nextValue = Math.min(value + 1, text.length);
-        if (nextValue >= text.length) {
-          window.clearInterval(intervalId);
-        }
-        return nextValue;
-      });
-    }, speed);
-
-    return () => window.clearInterval(intervalId);
-  }, [text, speed]);
-
-  return (
-    <p className="text-[1.05rem] leading-[1.9] text-ash sm:text-[1.15rem] [text-shadow:0_0_4px_rgba(255,255,255,0.1)]">
-      {text.slice(0, charCount)}
-      <span className="ml-[2px] inline-block animate-cursor-blink text-ember">
-        |
-      </span>
-    </p>
   );
 }
