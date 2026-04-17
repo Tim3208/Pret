@@ -31,8 +31,12 @@ import type { Language } from "@/entities/locale";
 import type { MonsterIntent } from "@/entities/monster";
 import type { PlayerStats } from "@/entities/player";
 import BattleCommandInput from "@/features/battle-command-input";
+import {
+  POTION_USE_BUTTON_HEIGHT,
+  POTION_USE_BUTTON_WIDTH,
+  PotionUseButton,
+} from "@/features/potion-use";
 import CrtOverlay from "@/shared/ui/crt-overlay";
-import HealthPotion from "@/features/potion-use";
 import BattleLogPanel from "@/widgets/battle-log";
 import { ResourcePanel } from "@/widgets/resource-panel";
 import BattleEquipmentOverlay from "./BattleEquipmentOverlay";
@@ -272,8 +276,6 @@ const SCENE_H = 712;
 const LINE_H = 18;
 const PAD = 14;
 const TEXT_W = W - PAD * 2;
-const POTION_WIDTH = 56;
-const POTION_HEIGHT = 92;
 /** Radius within which a projectile displaces characters */
 const DISPLACE_RADIUS = 90;
 /** Maximum pixel push in Y */
@@ -1747,8 +1749,14 @@ export default function BattleStage({
     const rawY = clientY - frameRect.top - potionPointerOffsetRef.current.y;
 
     return {
-      x: Math.max(POTION_WIDTH * 0.5, Math.min(frameRect.width - POTION_WIDTH * 0.5, rawX)),
-      y: Math.max(POTION_HEIGHT * 0.5, Math.min(frameRect.height - POTION_HEIGHT * 0.5, rawY)),
+      x: Math.max(
+        POTION_USE_BUTTON_WIDTH * 0.5,
+        Math.min(frameRect.width - POTION_USE_BUTTON_WIDTH * 0.5, rawX),
+      ),
+      y: Math.max(
+        POTION_USE_BUTTON_HEIGHT * 0.5,
+        Math.min(frameRect.height - POTION_USE_BUTTON_HEIGHT * 0.5, rawY),
+      ),
     };
   }, []);
 
@@ -2894,52 +2902,21 @@ export default function BattleStage({
         </div>
 
         {potionAvailable && activePotionPosition && (
-          <button
-            type="button"
-            aria-label={combatText.potionAriaLabel}
-            className="absolute z-[44] border-0 bg-transparent p-0"
-            style={{
-              left: `${activePotionPosition.x}px`,
-              top: `${activePotionPosition.y}px`,
-              transform: `translate(-50%, -50%) scale(${potionDragging ? 1.06 : potionHoveringPlayer ? 1.08 : 1})`,
-              animation: potionDragging
-                ? "none"
-                : "potion-orbit 5.2s cubic-bezier(0.37, 0, 0.18, 1) infinite, potion-spin 7.8s linear infinite",
-              touchAction: "none",
-            }}
+          <PotionUseButton
+            ariaLabel={combatText.potionAriaLabel}
+            dragging={potionDragging}
+            hovered={potionHovered}
+            hoveringPlayer={potionHoveringPlayer}
+            label={combatText.potionLabel}
+            onHoverEnd={() => setPotionHovered(false)}
+            onHoverStart={() => setPotionHovered(true)}
+            onPointerCancel={handlePotionPointerCancel}
             onPointerDown={handlePotionPointerDown}
             onPointerMove={handlePotionPointerMove}
             onPointerUp={handlePotionPointerUp}
-            onPointerCancel={handlePotionPointerCancel}
-            onMouseEnter={() => setPotionHovered(true)}
-            onMouseLeave={() => setPotionHovered(false)}
-          >
-            <div
-              className={`relative flex h-[92px] w-[56px] items-start justify-center transition-[filter,transform] duration-150 ${
-                potionDragging ? "cursor-grabbing" : "cursor-grab"
-              }`}
-              style={{
-                filter: potionHoveringPlayer
-                  ? "drop-shadow(0 0 22px rgba(255, 76, 76, 0.36)) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.36))"
-                  : "drop-shadow(0 0 14px rgba(255, 92, 92, 0.22)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.32))",
-              }}
-            >
-              <span className="pointer-events-none absolute left-1/2 top-[-0.9rem] -translate-x-1/2 whitespace-nowrap font-crt text-[0.52rem] tracking-[0.18em] text-[rgba(255,156,156,0.82)] [text-shadow:0_0_6px_rgba(184,28,44,0.26)]">
-                {combatText.potionLabel}
-              </span>
-              <div className="pointer-events-none absolute left-1/2 top-[66px] h-[15px] w-[34px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,102,102,0.34)_0%,rgba(255,102,102,0.06)_58%,rgba(255,102,102,0)_100%)] blur-[4px]" />
-              <div className="pointer-events-none absolute left-1/2 top-[7px] -translate-x-1/2">
-                <HealthPotion />
-              </div>
-              <span
-                className={`pointer-events-none absolute left-1/2 top-[calc(100%+0.15rem)] -translate-x-1/2 whitespace-nowrap font-crt text-[0.5rem] tracking-[0.06em] text-[rgba(255,186,186,0.78)] transition-opacity duration-150 ${
-                  potionHovered && !potionDragging ? "opacity-100" : "opacity-0"
-                }`}
-              >
-                {combatText.potionTooltip}
-              </span>
-            </div>
-          </button>
+            position={activePotionPosition}
+            tooltip={combatText.potionTooltip}
+          />
         )}
 
         <BattleMonsterPanel
