@@ -35,6 +35,8 @@ App
 - `widgets/battle-stage/model/resolveMonsterTurn.ts` owns monster turn resolution branches so turn damage and timing edits do not accumulate inside the hook body.
 - `widgets/battle-stage/model/useBattleStageCanvasLoop.ts` owns the RAF canvas loop, console redraws, projectile travel, and sprite overlay rendering.
 - `widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` owns the player ASCII markup, equipment tint composition, canvas metric syncing, and render refs.
+- `widgets/battle-stage/model/useMonsterAsciiPresentation.ts` owns the monster ASCII tone/metric syncing, render refs, and localized impact canvas state.
+- `widgets/battle-stage/model/useBattleStageEffects.ts` owns heal/shield/death effect bookkeeping plus sprite effect registration.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
 - `features/potion-use/model/usePotionUseInteraction.ts` owns potion home/rest/drag state, hover detection, hover displacement state, and drop resolution.
 - `features/potion-use/ui/PotionUseButton.tsx` owns the draggable potion button shell, tooltip, and orbit presentation.
@@ -71,6 +73,8 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/widgets/battle-stage/model/resolveMonsterTurn.ts` | Resolves monster turn branches into shield/damage updates, logs, and animation timing. |
 | `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts` | Runs the combat RAF loop for console text, projectile travel, sprite-local canvases, and overlay effects. |
 | `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` | Owns player ASCII markup generation, tint mapping, and canvas metric/render refs. |
+| `src/widgets/battle-stage/model/useMonsterAsciiPresentation.ts` | Owns monster ASCII tone calculation, metric syncing, render refs, and impact band canvas state. |
+| `src/widgets/battle-stage/model/useBattleStageEffects.ts` | Owns heal detection, shield persistence, monster death timing, and sprite effect refs. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
 | `src/features/potion-use/model/usePotionUseInteraction.ts` | Owns potion drag state, home/rest positioning, hover detection, hover displacement state, and drop resolution. |
 | `src/features/potion-use/ui/PotionUseButton.tsx` | Renders the draggable potion shell, orbit animation, and tooltip around the potion asset. |
@@ -120,6 +124,8 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 - Add new combat loading presentation changes in `src/widgets/battle-loading/ui/BattleLoadingPanel.tsx`.
 - Add new victory or defeat result presentation changes in `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx`.
 - Add new player ASCII sprite markup or canvas metric rules in `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx`.
+- Add new monster ASCII impact/metric rules in `src/widgets/battle-stage/model/useMonsterAsciiPresentation.ts`.
+- Add new shield/heal/death sprite-effect rules in `src/widgets/battle-stage/model/useBattleStageEffects.ts`.
 - Add new RAF canvas orchestration or projectile/render loop changes in `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
 - Add new particle systems or canvas-only visuals in `widgets/battle-stage/lib/visuals.ts`.
