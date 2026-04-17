@@ -16,10 +16,10 @@ import {
   layoutWithLines,
   prepareWithSegments,
 } from "@chenglou/pretext";
-import CrtOverlay from "./CrtOverlay";
 import HealthPotion from "./HealthPotion";
 import HeartHP from "./HeartHP";
 import ManaFlask from "./ManaFlask";
+import CrtOverlay from "@/shared/ui/crt-overlay";
 import {
   type Language,
   getLocalizedSpellName,

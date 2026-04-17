@@ -47,7 +47,7 @@ App
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | Top-level phase switching between non-battle and battle states. |
+| `src/app/App.tsx` | Top-level phase switching between non-battle and battle states. |
 | `src/BattleScene.tsx` | Owns battle state, turn resolution, logs, potion usage, and combat requests. |
 | `src/BattleCombat.tsx` | Wires the combat scene together: input, refs, potion interaction, and effect orchestration. |
 | `src/battleCombatCore.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
@@ -56,9 +56,9 @@ App
 | `src/HeartHP.tsx` | Animated ASCII heart resource widget. |
 | `src/ManaFlask.tsx` | Animated ASCII mana flask resource widget. |
 | `src/HealthPotion.tsx` | Small animated ASCII health potion used in combat. |
-| `src/ResourceChargeBurst.tsx` | Canvas-based resource change effect that reuses the monster charge motion pattern. |
-| `src/useAsciiAsset.ts` | Loads pre-authored ASCII `.md` assets and trims annotation padding. |
-| `src/index.css` | Theme tokens and global animation keyframes. |
+| `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | Canvas-based resource change effect that reuses the monster charge motion pattern. |
+| `src/shared/lib/ascii/useAsciiAsset.ts` | Loads pre-authored ASCII `.md` assets and trims annotation padding. |
+| `src/app/styles/index.css` | Theme tokens and global animation keyframes. |
 
 ## Asset Notes
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import ResourceChargeBurst from "./ResourceChargeBurst";
+import ResourceChargeBurst from "@/shared/ui/resource-charge-burst";
 
 interface ManaFlaskProps {
   current: number;

@@ -1,15 +1,15 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import BattleScene from "./BattleScene";
-import CrtOverlay from "./CrtOverlay";
-import PostBattleEvent from "./PostBattleEvent";
-import type { BattleResult } from "./BattleScene";
+import BattleScene from "@/BattleScene";
+import PostBattleEvent from "@/PostBattleEvent";
+import CrtOverlay from "@/shared/ui/crt-overlay";
+import type { BattleResult } from "@/BattleScene";
 import {
   type EquipmentDefinition,
   type EquippedItems,
   isEquipmentPoolExhausted,
   rollEquipmentOffer,
-} from "./battleTypes";
-import { type Language, pickText } from "./language";
+} from "@/battleTypes";
+import { type Language, pickText } from "@/language";
 
 /**
  * 캠프파이어 장면에서 출력할 도입 내레이션이다.

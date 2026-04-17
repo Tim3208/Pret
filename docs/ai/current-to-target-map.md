@@ -15,9 +15,9 @@
 
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
-| `src/main.tsx` | `src/app/main.tsx` | 이동 | 앱 진입점 |
-| `src/App.tsx` | `src/app/App.tsx` | 축소 후 이동 | 루트 앱 셸만 남기고 장면 조합은 `pages`로 분리 |
-| `src/index.css` | `src/app/styles/index.css` | 이동 | 전역 스타일 |
+| `src/app/main.tsx` | `src/app/main.tsx` | 완료 | 앱 진입점 이동 완료 |
+| `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
+| `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
 | `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 분해 | 장면 전환, 규칙, 텍스트 분리 필요 |
 | `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` | 대형 분해 | 입력, 연출, 자원 UI를 단계적으로 분리 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 이동 | 위젯 내부 코어 유틸 |
@@ -38,18 +38,18 @@
 
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
-| `src/CrtOverlay.tsx` | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | 이동 | 공용 시각 오버레이 |
+| `src/shared/ui/crt-overlay/CrtOverlay.tsx` | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | 완료 | 공용 시각 오버레이 이동 완료 |
 | `src/HealthPotion.tsx` | `src/features/potion-use/ui/HealthPotion.tsx` | 이동 | 사용자 행동과 직접 연결된 UI |
 | `src/HeartHP.tsx` | `src/widgets/resource-panel/ui/HeartHP.tsx` | 이동 | 자원 패널 표현 요소 |
 | `src/ManaFlask.tsx` | `src/widgets/resource-panel/ui/ManaFlask.tsx` | 이동 | 자원 패널 표현 요소 |
-| `src/ResourceChargeBurst.tsx` | `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | 이동 | 자원 변화 공용 연출 |
+| `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | `src/shared/ui/resource-charge-burst/ResourceChargeBurst.tsx` | 완료 | 자원 변화 공용 연출 이동 완료 |
 | `src/LanguageSelector.tsx` | `src/features/language-switch/ui/LanguageSelector.tsx` | 이동 또는 재사용 | 현재 사용 여부 재확인 필요 |
 
 ## 5. 훅 / 유틸 / 자산 매핑
 
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
-| `src/useAsciiAsset.ts` | `src/shared/lib/ascii/useAsciiAsset.ts` | 이동 | 공용 ASCII 자산 로더 |
+| `src/shared/lib/ascii/useAsciiAsset.ts` | `src/shared/lib/ascii/useAsciiAsset.ts` | 완료 | 공용 ASCII 자산 로더 이동 완료 |
 | `src/useImageToAscii.ts` | `src/shared/lib/ascii/useImageToAscii.ts` 또는 제거 | 검토 | 현재 사용 여부 재확인 필요 |
 | `src/assets/*` | `src/shared/assets/*` 또는 제거 | 검토 | 실제 사용 중인 자산만 유지 |
 | `public/assets/*` | `public/assets/*` 유지 | 유지 | 정적 배포 자산 경로는 현행 유지 가능 |
@@ -58,7 +58,7 @@
 
 | 현재 위치 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
-| `src/App.tsx` 내부 도입 텍스트 | `src/content/text/app/campfire.ts` | 분리 | 캠프파이어 장면 텍스트 |
+| `src/app/App.tsx` 내부 도입 텍스트 | `src/content/text/app/campfire.ts` | 분리 | 캠프파이어 장면 텍스트 |
 | `src/BattleScene.tsx` 내부 조우/전투 텍스트 | `src/content/text/battle/scene.ts` | 분리 | 전투 장면 텍스트 |
 | `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 분리 | 전투 로그 텍스트 |
 | `src/BattleCombat.tsx` 내부 UI 라벨 및 프롬프트 | `src/content/text/battle/ui.ts` | 분리 | 입력, 버튼, 안내 문구 |

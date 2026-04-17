@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import ResourceChargeBurst from "./ResourceChargeBurst";
+import ResourceChargeBurst from "@/shared/ui/resource-charge-burst";
 
 /**
  * 하트 HP 컴포넌트가 받는 현재/최대 체력 값이다.
