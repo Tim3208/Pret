@@ -18,7 +18,7 @@
 | `src/app/main.tsx` | `src/app/main.tsx` | 완료 | 앱 진입점 이동 완료 |
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
-| `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 1차 이동 완료 | 페이지 이동 및 content 정리 완료, 상태/턴 model 분리 잔여 |
+| `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, content 분리, 상태/턴 model 분리 완료 |
 | `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` | 1차 이동 완료 | 위젯 및 lib 이동 완료, 입력 feature 분리 잔여 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
@@ -77,11 +77,11 @@
 
 권장 순서는 다음과 같다.
 
-1. `app` 골격과 스타일 경로 정리
-2. locale 및 text 분리
-3. `pages/battle/ui/BattlePage.tsx` 분해
-4. `widgets/battle-stage/ui/BattleStage.tsx` 분해
-5. 미사용 파일 정리
+1. `widgets/battle-stage/ui/BattleStage.tsx` 분해
+2. `features/battle-command-input/*` 분리
+3. 미사용 파일 정리
+4. `src/SwordEncounter.tsx` 사용 여부 정리
+5. `src/useImageToAscii.ts` 유지 여부 정리
 
 ## 9. 갱신 규칙
 
