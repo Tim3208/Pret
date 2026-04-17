@@ -270,6 +270,8 @@ src/
 - 하위 계층이 상위 계층을 참조하는 것은 금지한다.
 - slice 간 deep import를 피하고 `index.ts`를 통한 public API를 우선한다.
 - 다른 slice 내부 구현 파일을 직접 참조하지 않는다.
+- 다만 `content`는 `typed data layer`이므로 `index.ts` 강제 대상이 아니다.
+- `content`는 `@/content/text/battle/log`처럼 파일 단위 import를 기본으로 둔다.
 
 ## 9. Public API 원칙
 
@@ -282,6 +284,12 @@ src/
 - `widgets/battle-stage/index.ts`
 
 외부에서 사용할 때는 내부 파일 경로가 아니라 `index.ts`를 통해 import하는 것을 기본 규칙으로 둔다.
+
+예외:
+
+- `content`는 거대한 집계용 `index.ts`를 만들지 않는다.
+- `content`는 장면/도메인 단위 데이터 파일을 직접 import한다.
+- 즉 `@/content/text/battle/log` 형태는 허용하고, 이를 다시 `@/content/index.ts`로 우회하지 않는다.
 
 이 원칙이 필요한 이유는 다음과 같다.
 

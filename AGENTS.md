@@ -20,7 +20,7 @@
 - 큰 파일을 한 번에 통째로 옮기지 않고, 책임 단위로 나눠 이동한다.
 - 플레이어 노출 텍스트는 가능한 한 `src/content` 계층으로 이동한다.
 - locale 로직과 번역 데이터는 분리한다.
-- `index.ts` 기반 public API를 우선하고, 다른 slice 내부 구현 파일에 대한 deep import를 늘리지 않는다.
+- `index.ts` 기반 public API를 우선하되, `content`는 `typed data layer`로 보고 파일 단위 import를 허용한다.
 - 도메인 규칙, 텍스트, UI, 연출 코드를 한 파일에 다시 섞지 않는다.
 - 미사용 파일은 새 구조로 무작정 옮기지 말고, 실제 사용 여부를 확인한 뒤 유지 또는 제거를 결정한다.
 - 각 단계가 끝날 때 `npm run lint`, `npm run build` 기준으로 검증 가능한 상태를 유지한다.

@@ -210,6 +210,7 @@ locale 관련 구조는 하나의 모델로 통합한다.
 - 하위 계층이 상위 계층을 참조하는 것
 - slice 외부에서 내부 파일을 직접 deep import하는 것
 - 새 구조로 이동하면서 기존 상대 경로 의존을 무분별하게 유지하는 것
+- 다만 `content`는 `typed data layer`이므로 파일 단위 import를 허용한다.
 
 ## 8. public API 규칙
 
@@ -222,6 +223,12 @@ locale 관련 구조는 하나의 모델로 통합한다.
 - `src/widgets/battle-stage/index.ts`
 
 외부 사용자는 가능한 한 이 진입점을 통해 import한다.
+
+예외:
+
+- `content`는 `index.ts` public API를 강제하지 않는다.
+- `content`는 `@/content/text/battle/log`처럼 파일 단위 import를 기본 규칙으로 둔다.
+- `content`에 전역 집계 파일을 다시 만들어 텍스트를 한곳에 몰아넣지 않는다.
 
 ## 9. 리팩토링 순서
 

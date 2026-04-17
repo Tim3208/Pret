@@ -82,10 +82,9 @@
 
 권장 순서는 다음과 같다.
 
-1. `content` import를 public API 예외로 둘지, 별도 `index.ts` 규칙을 둘지 문서와 린트 기준을 같은 말로 정리
-2. 남은 자산 경로와 README 설명 동기화 유지
-3. `pages/battle/ui/BattlePage.tsx`의 combat loading 문구를 별도 화면 위젯으로 묶을지 검토
-4. 몬스터 ASCII impact/metric 보조 로직도 플레이어와 유사한 형태로 추가 분리할지 검토
+1. 남은 자산 경로와 README 설명 동기화 유지
+2. `pages/battle/ui/BattlePage.tsx`의 combat loading 문구를 별도 화면 위젯으로 묶을지 검토
+3. 몬스터 ASCII impact/metric 보조 로직도 플레이어와 유사한 형태로 추가 분리할지 검토
 
 ## 9. 갱신 규칙
 

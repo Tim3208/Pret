@@ -5,11 +5,13 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
+// content is a typed data layer imported by file path, so the public API rule
+// intentionally targets only slice-style layers here.
 const publicApiImportPatterns = [
   {
     group: ['@/pages/*/*', '@/widgets/*/*', '@/features/*/*', '@/entities/*/*'],
     message:
-      'slice 외부에서는 내부 구현 경로를 직접 import하지 말고 각 slice의 index.ts public API를 우선 사용한다.',
+      'slice 외부에서는 내부 구현 경로를 직접 import하지 말고 각 slice의 index.ts public API를 우선 사용한다. content는 typed data layer이므로 파일 단위 import 예외로 둔다.',
   },
 ]
 
