@@ -26,7 +26,6 @@ import {
   type EquipmentDefinition,
   type EquippedItems,
   getEquippedItems,
-  getEquipmentSlotLabel,
 } from "@/entities/equipment";
 import type { Language } from "@/entities/locale";
 import type { MonsterIntent } from "@/entities/monster";
@@ -35,6 +34,7 @@ import BattleCommandInput from "@/features/battle-command-input";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import HealthPotion from "@/features/potion-use";
 import { ResourcePanel } from "@/widgets/resource-panel";
+import BattleEquipmentOverlay from "./BattleEquipmentOverlay";
 import {
   getProjectileTone,
   getProjectileVisual,
@@ -1195,7 +1195,6 @@ export default function BattleStage({
   const [potionDragging, setPotionDragging] = useState(false);
   const [potionHovered, setPotionHovered] = useState(false);
   const [potionHoveringPlayer, setPotionHoveringPlayer] = useState(false);
-  const [hoveredEquipmentId, setHoveredEquipmentId] = useState<string | null>(null);
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -2896,60 +2895,12 @@ export default function BattleStage({
               height={980}
               className="pointer-events-none absolute inset-0 z-[2] h-full w-full"
             />
-            {equippedItemList.map((item) => {
-              const isHovered = hoveredEquipmentId === item.id;
-              const tooltipPositionClassName =
-                item.anchor.tooltipSide === "left"
-                  ? "right-[calc(100%+0.55rem)] top-1/2 -translate-y-1/2"
-                  : item.anchor.tooltipSide === "right"
-                    ? "left-[calc(100%+0.55rem)] top-1/2 -translate-y-1/2"
-                    : "bottom-[calc(100%+0.55rem)] left-1/2 -translate-x-1/2";
-              const slotLabel = getEquipmentSlotLabel(item.slot, language);
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-label={`${slotLabel}: ${item.name[language]}`}
-                  className="absolute z-[4] h-[34px] w-[48px] cursor-help border-0 bg-transparent p-0"
-                  style={{
-                    left: `calc(${item.anchor.leftPercent}% + ${item.anchor.offsetX}px)`,
-                    top: `calc(${item.anchor.topPercent}% + ${item.anchor.offsetY}px)`,
-                    transform: `translate(-50%, -50%) rotate(${item.anchor.rotationDeg}deg) scale(${item.anchor.scale})`,
-                  }}
-                  onMouseEnter={() => setHoveredEquipmentId(item.id)}
-                  onMouseLeave={() =>
-                    setHoveredEquipmentId((current) => (current === item.id ? null : current))
-                  }
-                  onFocus={() => setHoveredEquipmentId(item.id)}
-                  onBlur={() =>
-                    setHoveredEquipmentId((current) => (current === item.id ? null : current))
-                  }
-                >
-                  <span className="relative block">
-                    <span className="sr-only">{item.fragment}</span>
-                    <span
-                      className={`pointer-events-none absolute min-w-[180px] max-w-[220px] rounded-[14px] border border-white/12 bg-black/84 px-3 py-2 text-left font-crt transition-opacity duration-150 ${tooltipPositionClassName} ${
-                        isHovered ? "opacity-100" : "opacity-0"
-                      }`}
-                    >
-                      <span className="block text-[0.62rem] uppercase tracking-[0.18em] text-white/42">
-                        {slotLabel}
-                      </span>
-                      <span className="mt-1 block text-[0.74rem] tracking-[0.08em] text-ember">
-                        {item.name[language]}
-                      </span>
-                      <span className="mt-2 block text-[0.68rem] leading-[1.45] text-white/72">
-                        {combatText.equipmentEffectLabel} {item.effectText[language]}
-                      </span>
-                      <span className="mt-1 block text-[0.62rem] leading-[1.4] text-white/36">
-                        {combatText.equipmentInactiveLabel}
-                      </span>
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+            <BattleEquipmentOverlay
+              effectLabel={combatText.equipmentEffectLabel}
+              inactiveLabel={combatText.equipmentInactiveLabel}
+              items={equippedItemList}
+              language={language}
+            />
           </div>
         </div>
 

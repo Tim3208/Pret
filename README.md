@@ -31,6 +31,7 @@ App
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
+- `widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` owns the player equipment hotspot and tooltip overlay.
 - `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag/drop, and effect orchestration.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
@@ -55,6 +56,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
 | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | Composes the HP and MP widgets into the battle resource HUD. |
+| `src/widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` | Renders equipment hotspots and tooltips on top of the player ASCII sprite. |
 | `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion interaction, and effect orchestration. |
 | `src/widgets/battle-stage/lib/core.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/widgets/battle-stage/lib/visuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
