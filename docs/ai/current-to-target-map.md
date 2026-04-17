@@ -30,7 +30,7 @@
 
 | 현재 경로 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
-| `src/battleTypes.ts` | `src/entities/player/model/*` + `src/entities/spell/model/*` + `src/entities/monster/model/*` + `src/entities/equipment/model/*` + `src/content/catalog/equipment/*` | 대형 분해 | 규칙, 타입, 장비 텍스트가 함께 섞여 있음 |
+| `src/battleTypes.ts` | `src/entities/combat/model/*` + `src/entities/player/model/*` + `src/entities/spell/model/*` + `src/entities/monster/model/*` + `src/entities/equipment/model/*` + `src/content/catalog/equipment/*` | 완료 | 전투/플레이어/주문/몬스터/장비로 분해 후 루트 파일 제거 완료 |
 | `src/entities/locale/model/locale.ts` | `src/entities/locale/model/locale.ts` + `src/content/glossary/monsters/*` + `src/content/glossary/spells/*` | 완료 | locale 로직 통합 및 표시 데이터 분리 완료 |
 | `src/i18n.ts` | `src/entities/locale/model/*` 또는 제거 | 완료 | locale 모델 통합 후 제거 완료 |
 
@@ -63,7 +63,7 @@
 | `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 완료 | 전투 로그 및 동적 결과 문구 분리 완료 |
 | `src/content/text/battle/ui.ts` | `src/content/text/battle/ui.ts` | 1차 완료 | 입력, 버튼, 안내 문구 분리 완료 |
 | `src/content/text/event/postBattle.ts` | `src/content/text/event/postBattle.ts` | 완료 | 전투 후 이벤트 문구 분리 완료 |
-| `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 분리 검토 | 규칙 데이터와 설명 데이터 분리 여부 확정 필요 |
+| `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 완료 | 장비 이름/설명/효과 텍스트 분리 완료 |
 
 ## 7. 제거 또는 보류 후보
 
@@ -79,10 +79,9 @@
 
 1. `app` 골격과 스타일 경로 정리
 2. locale 및 text 분리
-3. `battleTypes.ts` 분해
-4. `BattleScene.tsx` 분해
-5. `BattleCombat.tsx` 분해
-6. 미사용 파일 정리
+3. `BattleScene.tsx` 분해
+4. `BattleCombat.tsx` 분해
+5. 미사용 파일 정리
 
 ## 9. 갱신 규칙
 

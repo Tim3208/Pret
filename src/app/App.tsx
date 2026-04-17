@@ -6,6 +6,12 @@ import {
   CAMPFIRE_UI_TEXT,
 } from "@/content/text/app/campfire";
 import {
+  type EquipmentDefinition,
+  type EquippedItems,
+  isEquipmentPoolExhausted,
+  rollEquipmentOffer,
+} from "@/entities/equipment";
+import {
   getInitialLanguage,
   type Language,
   LOCALE_STORAGE_KEY,
@@ -14,12 +20,6 @@ import {
 import PostBattleEvent from "@/pages/post-battle-event";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import type { BattleResult } from "@/BattleScene";
-import {
-  type EquipmentDefinition,
-  type EquippedItems,
-  isEquipmentPoolExhausted,
-  rollEquipmentOffer,
-} from "@/battleTypes";
 
 /**
  * 밝기에 따라 아스키 문자 밀도를 매핑할 때 사용하는 문자 램프다.

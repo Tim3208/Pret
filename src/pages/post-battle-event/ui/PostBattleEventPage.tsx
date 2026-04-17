@@ -1,16 +1,16 @@
 import { type FormEvent, useState } from "react";
 import {
+  type EquipmentDefinition,
+  type EquippedItems,
+  getEquipmentSlotLabel,
+} from "@/entities/equipment";
+import {
   POST_BATTLE_EVENT_TEXT,
   POST_BATTLE_INVESTIGATE_KEYWORDS,
   POST_BATTLE_LEAVE_KEYWORDS,
   POST_BATTLE_TAKE_KEYWORDS,
 } from "@/content/text/event/postBattle";
 import { pickText, type Language } from "@/entities/locale";
-import {
-  type EquipmentDefinition,
-  type EquippedItems,
-  getEquipmentSlotLabel,
-} from "@/battleTypes";
 
 interface PostBattleEventProps {
   language: Language;

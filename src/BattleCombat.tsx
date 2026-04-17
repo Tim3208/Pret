@@ -18,32 +18,34 @@ import {
 } from "@chenglou/pretext";
 import { BATTLE_COMBAT_TEXT } from "@/content/text/battle/ui";
 import {
+  type BattleLogEntry,
+  type BattleTargetOption,
+  type BattleTargetSide,
+  type CombatAnimationRequest,
+  type PlayerAction,
+  type PlayerActionDraft,
+  getActionCritChance,
+  getActionHitChance,
+  getActionTargeting,
+  PLAYER_TARGET_ID,
+} from "@/entities/combat";
+import {
+  type EquipmentDefinition,
+  type EquippedItems,
+  getEquippedItems,
+  getEquipmentSlotLabel,
+} from "@/entities/equipment";
+import {
   type Language,
   getLocalizedSpellName,
   normalizeSpellQuery,
 } from "@/entities/locale";
+import type { MonsterIntent } from "@/entities/monster";
+import type { PlayerStats } from "@/entities/player";
+import { findSpell } from "@/entities/spell";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import HealthPotion from "@/features/potion-use";
 import { HeartHP, ManaFlask } from "@/widgets/resource-panel";
-import {
-  type BattleTargetOption,
-  type BattleTargetSide,
-  type BattleLogEntry,
-  type CombatAnimationRequest,
-  type EquipmentDefinition,
-  type EquippedItems,
-  type MonsterIntent,
-  type PlayerAction,
-  type PlayerActionDraft,
-  type PlayerStats,
-  PLAYER_TARGET_ID,
-  findSpell,
-  getActionCritChance,
-  getActionHitChance,
-  getActionTargeting,
-  getEquippedItems,
-  getEquipmentSlotLabel,
-} from "./battleTypes";
 import {
   getProjectileTone,
   getProjectileVisual,

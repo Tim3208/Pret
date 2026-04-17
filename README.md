@@ -52,7 +52,7 @@ App
 | `src/BattleCombat.tsx` | Wires the combat scene together: input, refs, potion interaction, and effect orchestration. |
 | `src/battleCombatCore.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/battleCombatVisuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
-| `src/battleTypes.ts` | Combat rules, player stats, monster definition, hit/crit helpers, and intent metadata. |
+| `src/entities/combat/*`, `src/entities/player/*`, `src/entities/monster/*`, `src/entities/spell/*`, `src/entities/equipment/*` | Combat domain rules split by responsibility into entity slices. |
 | `src/widgets/resource-panel/ui/HeartHP.tsx` | Animated ASCII heart resource widget. |
 | `src/widgets/resource-panel/ui/ManaFlask.tsx` | Animated ASCII mana flask resource widget. |
 | `src/features/potion-use/ui/HealthPotion.tsx` | Small animated ASCII health potion used in combat. |
@@ -82,7 +82,7 @@ App
 
 ## Extending Combat
 
-- Add new turn logic or damage rules in `BattleScene.tsx` / `battleTypes.ts`.
+- Add new turn logic or damage rules in `BattleScene.tsx` and the relevant `entities/*` slice.
 - Add new reusable coordinate or sampling helpers in `battleCombatCore.ts`.
 - Add new particle systems or canvas-only visuals in `battleCombatVisuals.ts`.
 - Keep `BattleCombat.tsx` focused on wiring those pieces together rather than holding new pure helper code.

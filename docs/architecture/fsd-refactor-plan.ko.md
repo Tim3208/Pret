@@ -79,6 +79,7 @@ src/
     equipment-choice/
 
   entities/
+    combat/
     player/
     monster/
     spell/
@@ -156,12 +157,13 @@ src/
 게임의 핵심 개체와 그에 대한 규칙, 타입, 계산 함수를 둔다.
 
 - 플레이어 스탯
+- 전투 액션/타깃/판정
 - 몬스터 정의
 - 주문 정의
 - 장비 정의
 - 언어/로케일 모델
 
-예를 들어 현재 `battleTypes.ts`에 섞여 있는 플레이어 계산식, 장비 데이터, 주문 정의 등은 이 계층으로 분리하는 것이 맞다.
+예를 들어 기존 `battleTypes.ts`에 섞여 있던 플레이어 계산식, 장비 데이터, 주문 정의 등은 이 계층으로 분리하는 것이 맞다.
 
 ### `shared`
 
@@ -294,7 +296,7 @@ src/
 - `App.tsx`
 - `BattleScene.tsx`
 - `BattleCombat.tsx`
-- `battleTypes.ts`
+- 기존 `battleTypes.ts`에서 분리된 전투 도메인 묶음
 
 분해 기준은 다음과 같다.
 
@@ -332,7 +334,7 @@ src/
 
 ### 3단계. 도메인 분리
 
-- `battleTypes.ts`를 역할별로 분해
+- 기존 `battleTypes.ts`를 역할별로 분해
 - player, monster, spell, equipment 규칙 이동
 - 장비 텍스트와 규칙 데이터 분리 여부 확정
 

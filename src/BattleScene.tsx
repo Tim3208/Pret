@@ -6,6 +6,18 @@ import {
   BATTLE_SCENE_TEXT,
 } from "@/content/text/battle/scene";
 import {
+  type BattleLogEntry,
+  type BattleTargetOption,
+  type CombatAnimationRequest,
+  type PlayerAction,
+  getActionCritChance,
+  getActionHitChance,
+  getCriticalDamage,
+  MONSTER_TARGET_ID,
+  PLAYER_TARGET_ID,
+} from "@/entities/combat";
+import type { EquippedItems } from "@/entities/equipment";
+import {
   type Language,
   getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
@@ -13,33 +25,25 @@ import {
   interpolateText,
   pickText,
 } from "@/entities/locale";
-import BattleCombat from "./BattleCombat";
-import { useAsciiAsset } from "@/shared/lib/ascii";
-import { SkullEncounter } from "@/widgets/encounter-scene";
 import {
-  type BattleTargetOption,
-  type BattleLogEntry,
-  type CombatAnimationRequest,
-  type EquippedItems,
-  type MonsterIntent,
-  type PlayerAction,
-  type PlayerStats,
-  DEFAULT_STATS,
   HOLLOW_WRAITH,
-  MONSTER_TARGET_ID,
-  PLAYER_TARGET_ID,
-  getActionCritChance,
-  getActionHitChance,
+  type MonsterIntent,
+  pickMonsterIntent,
+} from "@/entities/monster";
+import {
+  DEFAULT_STATS,
   getBaseAttackDamage,
   getBaseShield,
-  getCriticalDamage,
-  getElementMultiplier,
   getHealAmount,
   getLiteracyTier,
   getMaxHp,
   getMaxMana,
-  pickMonsterIntent,
-} from "./battleTypes";
+  type PlayerStats,
+} from "@/entities/player";
+import { getElementMultiplier } from "@/entities/spell";
+import BattleCombat from "./BattleCombat";
+import { useAsciiAsset } from "@/shared/lib/ascii";
+import { SkullEncounter } from "@/widgets/encounter-scene";
 
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
 

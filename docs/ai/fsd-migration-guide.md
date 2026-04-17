@@ -43,6 +43,7 @@ src/
     equipment-choice/
 
   entities/
+    combat/
     player/
     monster/
     spell/
@@ -238,8 +239,8 @@ locale 관련 구조는 하나의 모델로 통합한다.
 
 ### 3단계. 도메인 분리
 
-- `battleTypes.ts` 분해
-- player, monster, spell, equipment 분리
+- 기존 `battleTypes.ts` 분해
+- combat, player, monster, spell, equipment 분리
 
 ### 4단계. 화면 분해
 
