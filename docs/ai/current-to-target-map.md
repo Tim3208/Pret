@@ -19,7 +19,7 @@
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
 | `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/encounter-scene/*` + `src/widgets/battle-outcome/*` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, pre-combat sequence 분리, outcome 화면 위젯 분리, content 분리, 상태/턴 model 분리 완료 |
-| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/features/potion-use/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 포션 버튼 표현 분리, 포션 드래그/드롭 상태 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. `BattleStage` 내부의 core/visuals 중복 helper 제거 완료. 포션 hover 시각 브리지 제거 완료 |
+| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/model/*` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/features/potion-use/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 포션 버튼 표현 분리, 포션 드래그/드롭 상태 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. `BattleStage` 내부의 core/visuals 중복 helper 제거 완료. 포션 hover 시각 브리지 제거 완료. 플레이어 ASCII metric/markup 보조 로직을 `widgets/battle-stage/model/usePlayerAsciiPresentation.tsx`로 분리 완료 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
 | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 완료 | 페이지 이동 및 텍스트 분리 완료 |
@@ -41,6 +41,7 @@
 | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | `src/shared/ui/crt-overlay/CrtOverlay.tsx` | 완료 | 공용 시각 오버레이 이동 완료 |
 | `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx` | `src/widgets/battle-outcome/ui/BattleOutcomePanel.tsx` | 완료 | 전투 종료 승패 화면의 표현 전용 위젯 추가 완료 |
 | `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | 완료 | 조우 연출과 인트로 텍스트를 묶는 pre-combat sequence 위젯 추가 완료 |
+| `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` | `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` | 완료 | 플레이어 ASCII tint markup, canvas metric, render ref 보조 로직 분리 완료 |
 | `src/features/potion-use/ui/HealthPotion.tsx` | `src/features/potion-use/ui/HealthPotion.tsx` + `src/features/potion-use/ui/PotionUseButton.tsx` + `src/features/potion-use/model/usePotionUseInteraction.ts` | 완료 | 포션 ASCII 본체, 드래그 버튼 표현, 드래그/드롭 상태 관리, hover displacement 상태 분리 완료 |
 | `src/widgets/resource-panel/ui/HeartHP.tsx` | `src/widgets/resource-panel/ui/HeartHP.tsx` | 완료 | 자원 패널 표현 요소 이동 완료 |
 | `src/widgets/resource-panel/ui/ManaFlask.tsx` | `src/widgets/resource-panel/ui/ManaFlask.tsx` | 완료 | 자원 패널 표현 요소 이동 완료 |
@@ -82,8 +83,8 @@
 권장 순서는 다음과 같다.
 
 1. 남은 자산 경로와 README 설명 동기화 유지
-2. `widgets/battle-stage/ui/BattleStage.tsx`의 플레이어 ASCII 캔버스 metric/렌더 보조 로직 추가 분리 검토
-3. `pages/battle/ui/BattlePage.tsx`의 combat loading 문구도 별도 화면 위젯으로 묶을지 검토
+2. `pages/battle/ui/BattlePage.tsx`의 combat loading 문구도 별도 화면 위젯으로 묶을지 검토
+3. 몬스터 ASCII impact/metric 보조 로직도 플레이어와 유사한 형태로 추가 분리할지 검토
 
 ## 9. 갱신 규칙
 

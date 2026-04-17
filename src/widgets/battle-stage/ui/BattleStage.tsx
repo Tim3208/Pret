@@ -1,6 +1,5 @@
 import {
   type MutableRefObject,
-  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -15,7 +14,6 @@ import {
   type PlayerAction,
 } from "@/entities/combat";
 import {
-  type EquipmentDefinition,
   type EquippedItems,
   getEquippedItems,
 } from "@/entities/equipment";
@@ -24,7 +22,6 @@ import type { MonsterIntent } from "@/entities/monster";
 import type { PlayerStats } from "@/entities/player";
 import BattleCommandInput from "@/features/battle-command-input";
 import {
-  type PotionHoverDisplacement,
   PotionUseButton,
   usePotionUseInteraction,
 } from "@/features/potion-use";
@@ -38,7 +35,6 @@ import {
   DISPLACE_RADIUS,
   H,
   LINE_H,
-  PLAYER_ASCII_CANVAS_TONE,
   SCENE_H,
   SCENE_W,
   SLASH_THICKNESS,
@@ -49,6 +45,7 @@ import {
   easeInOutCubic,
   easeOutCubic,
   getProjectileSceneAnchors,
+  type MonsterAsciiCanvasMetrics,
   getSceneAnchors,
   lerp,
   mapScenePointToConsolePoint,
@@ -87,6 +84,7 @@ import {
   spawnSlashParticles,
   spawnSpellParticles,
 } from "../lib/visuals";
+import { usePlayerAsciiPresentation } from "../model/usePlayerAsciiPresentation";
 
 interface Projectile {
   chars: string[];
@@ -224,43 +222,7 @@ interface MonsterAsciiImpactState {
   radiusRatio: number;
 }
 
-interface MonsterAsciiCanvasMetrics {
-  dpr: number;
-  width: number;
-  height: number;
-  charWidth: number;
-  lineHeight: number;
-  baseline: number;
-  font: string;
-}
-
 type CrtNoiseLevel = "off" | "soft" | "strong";
-
-function buildEquipmentGlyphColorMap(
-  playerAscii: string[],
-  equippedItems: EquipmentDefinition[],
-): Map<string, string> {
-  const glyphColorMap = new Map<string, string>();
-
-  for (const item of equippedItems) {
-    for (const range of item.tintRanges) {
-      const line = playerAscii[range.row];
-      if (!line) {
-        continue;
-      }
-
-      const startColumn = Math.max(0, range.startColumn);
-      const endColumn = Math.min(range.endColumn, line.length - 1);
-      for (let column = startColumn; column <= endColumn; column += 1) {
-        if (line[column] !== " ") {
-          glyphColorMap.set(`${range.row}:${column}`, item.fragmentTone);
-        }
-      }
-    }
-  }
-
-  return glyphColorMap;
-}
 /* ================================================================
    Effect particle spawners
    ================================================================ */
@@ -315,7 +277,6 @@ export default function BattleStage({
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
-  const playerAsciiCanvasRef = useRef<HTMLCanvasElement>(null);
   const monsterAsciiCanvasRef = useRef<HTMLCanvasElement>(null);
   const playerAsciiPreRef = useRef<HTMLPreElement>(null);
   const monsterAsciiPreRef = useRef<HTMLPreElement>(null);
@@ -334,9 +295,7 @@ export default function BattleStage({
   const noiseResetRef = useRef<number | null>(null);
   const playerHitWaveFrameRef = useRef<number | null>(null);
   const monsterHitWaveFrameRef = useRef<number | null>(null);
-  const playerAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
   const monsterAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
-  const playerPotionDisplacementRef = useRef<PotionHoverDisplacement | null>(null);
   const monsterImpactRef = useRef<MonsterAsciiImpactState | null>(null);
   const monsterImpactCallbackTimeoutRef = useRef<number | null>(null);
   const monsterImpactVisualTimeoutRef = useRef<number | null>(null);
@@ -550,70 +509,29 @@ export default function BattleStage({
     playerMaxHp,
     potionAvailable,
   });
-  const playerAsciiCanvasActive = potionHoverDisplacement !== null;
   const equippedItemList = useMemo(() => getEquippedItems(equippedItems), [equippedItems]);
-  const playerGlyphColorMap = useMemo(
-    () => buildEquipmentGlyphColorMap(playerAscii, equippedItemList),
-    [equippedItemList, playerAscii],
-  );
-  const playerAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(playerAscii), [playerAscii]);
-  const monsterAsciiText = monsterAscii.join("\n");
-  const monsterAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(monsterAscii), [monsterAscii]);
-  const playerAsciiMarkup = useMemo(() => {
-    const nodes: ReactNode[] = [];
-    let tintedKey = 0;
-
-    playerAscii.forEach((line, row) => {
-      let buffer = "";
-      let activeColor: string | null = null;
-
-      const flush = () => {
-        if (!buffer) {
-          return;
-        }
-
-        if (activeColor) {
-          nodes.push(
-            <span key={`player-tint-${tintedKey += 1}`} style={{ color: activeColor }}>
-              {buffer}
-            </span>,
-          );
-        } else {
-          nodes.push(buffer);
-        }
-
-        buffer = "";
-      };
-
-      for (let column = 0; column < line.length; column += 1) {
-        const nextColor = playerGlyphColorMap.get(`${row}:${column}`) ?? null;
-        if (nextColor !== activeColor) {
-          flush();
-          activeColor = nextColor;
-        }
-
-        buffer += line[column];
-      }
-
-      flush();
-      activeColor = null;
-
-      if (row < playerAscii.length - 1) {
-        nodes.push("\n");
-      }
-    });
-
-    return nodes;
-  }, [playerAscii, playerGlyphColorMap]);
-  const playerAsciiStyle = buildHitWaveTextStyle(
-    "rgba(244, 244, 244, 0.98)",
-    "rgba(176, 8, 20, 0.99)",
-    "0 0 1px rgba(255,255,255,0.25), 0 0 10px rgba(255,255,255,0.06)",
-    "0 0 16px rgba(128, 0, 12, 0.62)",
+  const {
+    playerAsciiCanvasActive,
+    playerAsciiCanvasRef,
+    playerAsciiClassName,
+    playerAsciiMarkup,
+    playerAsciiMetricsRef,
+    playerAsciiRenderRef,
+    playerAsciiStyle,
+    playerPotionDisplacementRef,
+  } = usePlayerAsciiPresentation({
+    playerAscii,
+    playerAsciiPreRef,
+    playerAsciiText,
+    equippedItems: equippedItemList,
+    hitAbsorbPlayer,
     playerHitWaveProgress,
     playerHitWaveScale,
+    potionHoverDisplacement,
     shakePlayer,
-  );
+  });
+  const monsterAsciiText = monsterAscii.join("\n");
+  const monsterAsciiGlyphs = useMemo(() => buildMonsterAsciiGlyphs(monsterAscii), [monsterAscii]);
   const monsterAsciiStyle = buildHitWaveTextStyle(
     monsterTone,
     "rgba(176, 8, 20, 0.99)",
@@ -623,73 +541,14 @@ export default function BattleStage({
     monsterHitWaveScale,
     shakeMonster,
   );
-  const playerAsciiClassName = `m-0 whitespace-pre text-[8.8px] leading-[9px] select-none sm:text-[10px] sm:leading-[10.2px] lg:text-[11.8px] lg:leading-[12px] ${
-    hitAbsorbPlayer ? "animate-hit-absorb" : ""
-  }`;
   const monsterAsciiClassName = `m-0 whitespace-pre text-[6.1px] leading-[6.4px] select-none sm:text-[6.9px] sm:leading-[7.2px] lg:text-[8px] lg:leading-[8.3px] ${
     hitAbsorbMonster ? "animate-hit-absorb" : ""
   }`;
-  const playerAsciiRenderRef = useRef({
-    glyphs: playerAsciiGlyphs,
-    glyphColors: playerGlyphColorMap,
-  });
   const monsterAsciiRenderRef = useRef({ glyphs: monsterAsciiGlyphs, tone: monsterTone });
-
-  useEffect(() => {
-    playerPotionDisplacementRef.current = potionHoverDisplacement;
-  }, [potionHoverDisplacement]);
-
-  useEffect(() => {
-    playerAsciiRenderRef.current = {
-      glyphs: playerAsciiGlyphs,
-      glyphColors: playerGlyphColorMap,
-    };
-  }, [playerAsciiGlyphs, playerGlyphColorMap]);
 
   useEffect(() => {
     monsterAsciiRenderRef.current = { glyphs: monsterAsciiGlyphs, tone: monsterTone };
   }, [monsterAsciiGlyphs, monsterTone]);
-
-  const syncPlayerAsciiCanvasMetrics = useCallback(() => {
-    const canvas = playerAsciiCanvasRef.current;
-    const pre = playerAsciiPreRef.current;
-    if (!canvas || !pre) return;
-
-    const rect = pre.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const targetWidth = Math.max(1, Math.round(rect.width * dpr));
-    const targetHeight = Math.max(1, Math.round(rect.height * dpr));
-
-    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
-    }
-
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
-
-    const styles = window.getComputedStyle(pre);
-    const fontSize = parseFloat(styles.fontSize) || 12;
-    const lineHeight = parseFloat(styles.lineHeight) || fontSize * 1.05;
-    const font = `${styles.fontWeight} ${fontSize}px ${styles.fontFamily}`;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.font = font;
-
-    playerAsciiMetricsRef.current = {
-      dpr,
-      width: rect.width,
-      height: rect.height,
-      charWidth: ctx.measureText("M").width,
-      lineHeight,
-      baseline: fontSize * 0.84 + Math.max(0, (lineHeight - fontSize) * 0.5),
-      font,
-    };
-  }, []);
 
   const syncMonsterAsciiCanvasMetrics = useCallback(() => {
     const canvas = monsterAsciiCanvasRef.current;
@@ -731,29 +590,6 @@ export default function BattleStage({
       font,
     };
   }, []);
-
-  useEffect(() => {
-    syncPlayerAsciiCanvasMetrics();
-
-    const frame = window.requestAnimationFrame(syncPlayerAsciiCanvasMetrics);
-    const pre = playerAsciiPreRef.current;
-    let observer: ResizeObserver | null = null;
-
-    if (pre && typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(() => {
-        syncPlayerAsciiCanvasMetrics();
-      });
-      observer.observe(pre);
-    }
-
-    window.addEventListener("resize", syncPlayerAsciiCanvasMetrics);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", syncPlayerAsciiCanvasMetrics);
-    };
-  }, [playerAsciiText, syncPlayerAsciiCanvasMetrics]);
 
   useEffect(() => {
     syncMonsterAsciiCanvasMetrics();
@@ -1683,7 +1519,7 @@ export default function BattleStage({
             playerAsciiMetricsRef.current,
             playerAsciiRenderRef.current.glyphs,
             playerPotionDisplacementRef.current,
-            PLAYER_ASCII_CANVAS_TONE,
+            "rgba(244, 244, 244, 0.98)",
             playerAsciiRenderRef.current.glyphColors,
             now,
           );
@@ -1751,7 +1587,13 @@ export default function BattleStage({
 
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, []); // stable — reads from textRef
+  }, [
+    monsterAsciiMetricsRef,
+    playerAsciiCanvasRef,
+    playerAsciiMetricsRef,
+    playerAsciiRenderRef,
+    playerPotionDisplacementRef,
+  ]); // stable — reads from refs updated outside the RAF loop
 
   return (
     <div className="flex w-full flex-col items-center gap-4 px-3 pb-8 animate-fade-in-quick sm:px-4">
