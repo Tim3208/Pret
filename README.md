@@ -29,7 +29,8 @@ App
 
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
-- `BattleStage` owns the live combat scene, DOM/canvas refs, input handling, potion drag/drop, and effect orchestration.
+- `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
+- `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag/drop, and effect orchestration.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
 
@@ -51,7 +52,8 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/app/App.tsx` | Top-level phase switching between non-battle and battle states. |
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
-| `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: input, refs, potion interaction, and effect orchestration. |
+| `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
+| `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion interaction, and effect orchestration. |
 | `src/widgets/battle-stage/lib/core.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/widgets/battle-stage/lib/visuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
 | `src/entities/combat/*`, `src/entities/player/*`, `src/entities/monster/*`, `src/entities/spell/*`, `src/entities/equipment/*` | Combat domain rules split by responsibility into entity slices. |
@@ -85,6 +87,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 ## Extending Combat
 
 - Add new turn logic or damage rules in `widgets/battle-stage/model/useBattleFlow.ts` and the relevant `entities/*` slice.
+- Add new command selection or prompt parsing rules in `src/features/battle-command-input/ui/BattleCommandInput.tsx`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
 - Add new particle systems or canvas-only visuals in `widgets/battle-stage/lib/visuals.ts`.
 - Keep `src/pages/battle/ui/BattlePage.tsx` focused on scene composition and keep `widgets/battle-stage/ui/BattleStage.tsx` focused on wiring those pieces together rather than holding new pure helper code.
