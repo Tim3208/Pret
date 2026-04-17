@@ -18,7 +18,10 @@ interface PotionPoint {
   y: number;
 }
 
-interface PotionHoverDisplacement {
+/**
+ * 포션이 플레이어 ASCII 스프라이트 위에 올라왔을 때 적용할 실시간 왜곡 정보다.
+ */
+export interface PotionHoverDisplacement {
   direction: -1 | 1;
   strength: number;
   centerRatio: number;
@@ -43,11 +46,6 @@ interface UsePotionUseInteractionParams {
   onPotionUse: () => number;
   /** 포션이 실제로 소비되었을 때 후속 연출을 트리거한다. */
   onConsumeSuccess: (framePoint: PotionPoint) => void;
-  /** 플레이어 hover 시 ASCII 흔들림과 캔버스 활성 상태를 동기화한다. */
-  onHoverVisualChange: (payload: {
-    hovering: boolean;
-    displacement: PotionHoverDisplacement | null;
-  }) => void;
 }
 
 function clamp01(value: number): number {
@@ -76,29 +74,18 @@ export function usePotionUseInteraction({
   playerMaxHp,
   onPotionUse,
   onConsumeSuccess,
-  onHoverVisualChange,
 }: UsePotionUseInteractionParams) {
   const [potionHomePosition, setPotionHomePosition] = useState<PotionPoint | null>(null);
   const [potionRestPosition, setPotionRestPosition] = useState<PotionPoint | null>(null);
   const [potionDragPosition, setPotionDragPosition] = useState<PotionPoint | null>(null);
   const [potionDragging, setPotionDragging] = useState(false);
   const [potionHovered, setPotionHovered] = useState(false);
-  const [potionHoveringPlayer, setPotionHoveringPlayer] = useState(false);
+  const [potionHoverDisplacement, setPotionHoverDisplacement] =
+    useState<PotionHoverDisplacement | null>(null);
 
   const potionPointerOffsetRef = useRef<PotionPoint>({ x: 0, y: 0 });
   const potionRestModeRef = useRef<"home" | "dropped">("home");
   const activePotionPointerIdRef = useRef<number | null>(null);
-
-  const pushHoverVisualState = useCallback(
-    (hovering: boolean, displacement: PotionHoverDisplacement | null) => {
-      setPotionHoveringPlayer((current) => (current === hovering ? current : hovering));
-      onHoverVisualChange({
-        hovering,
-        displacement,
-      });
-    },
-    [onHoverVisualChange],
-  );
 
   const syncPotionHomePosition = useCallback(() => {
     const frame = battleFrameRef.current;
@@ -178,7 +165,7 @@ export function usePotionUseInteraction({
       const frameRect = battleFrameRef.current?.getBoundingClientRect();
       const playerRect = playerAsciiPreRef.current?.getBoundingClientRect();
       if (!frameRect || !playerRect || playerRect.width < 1 || playerRect.height < 1) {
-        pushHoverVisualState(false, null);
+        setPotionHoverDisplacement(null);
         return false;
       }
 
@@ -189,7 +176,7 @@ export function usePotionUseInteraction({
       const hovering = pointInsideDomRect(viewportPoint, playerRect, 18);
 
       if (!hovering) {
-        pushHoverVisualState(false, null);
+        setPotionHoverDisplacement(null);
         return false;
       }
 
@@ -199,7 +186,7 @@ export function usePotionUseInteraction({
       const centeredY = centerRatio - 0.44;
       const distance = Math.min(1, Math.hypot(centeredX * 1.45, centeredY * 1.28));
 
-      pushHoverVisualState(true, {
+      setPotionHoverDisplacement({
         direction: centeredX <= 0 ? -1 : 1,
         strength: 1.12 + (1 - distance) * 1.06,
         centerRatio,
@@ -209,7 +196,7 @@ export function usePotionUseInteraction({
 
       return true;
     },
-    [battleFrameRef, playerAsciiPreRef, pushHoverVisualState],
+    [battleFrameRef, playerAsciiPreRef],
   );
 
   const getClampedPotionFramePoint = useCallback((clientX: number, clientY: number) => {
@@ -308,7 +295,7 @@ export function usePotionUseInteraction({
       }
     }
 
-    pushHoverVisualState(false, null);
+    setPotionHoverDisplacement(null);
     setPotionHovered(false);
     setPotionDragging(false);
     setPotionDragPosition(null);
@@ -319,7 +306,6 @@ export function usePotionUseInteraction({
     playerHp,
     playerMaxHp,
     potionHomePosition,
-    pushHoverVisualState,
     updatePotionHoverState,
   ]);
 
@@ -346,7 +332,8 @@ export function usePotionUseInteraction({
     handlePotionPointerMove,
     handlePotionPointerUp,
     potionDragging,
+    potionHoverDisplacement,
     potionHovered,
-    potionHoveringPlayer,
+    potionHoveringPlayer: potionHoverDisplacement !== null,
   };
 }

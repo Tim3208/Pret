@@ -24,6 +24,7 @@ import type { MonsterIntent } from "@/entities/monster";
 import type { PlayerStats } from "@/entities/player";
 import BattleCommandInput from "@/features/battle-command-input";
 import {
+  type PotionHoverDisplacement,
   PotionUseButton,
   usePotionUseInteraction,
 } from "@/features/potion-use";
@@ -223,14 +224,6 @@ interface MonsterAsciiImpactState {
   radiusRatio: number;
 }
 
-interface LiveAsciiDisplacementState {
-  direction: -1 | 1;
-  strength: number;
-  centerRatio: number;
-  columnRatio: number;
-  radiusRatio: number;
-}
-
 interface MonsterAsciiCanvasMetrics {
   dpr: number;
   width: number;
@@ -318,7 +311,6 @@ export default function BattleStage({
   const [monsterHitWaveProgress, setMonsterHitWaveProgress] = useState<number | null>(null);
   const [playerHitWaveScale, setPlayerHitWaveScale] = useState(1.35);
   const [monsterHitWaveScale, setMonsterHitWaveScale] = useState(1.35);
-  const [playerAsciiCanvasActive, setPlayerAsciiCanvasActive] = useState(false);
   const [monsterImpactCanvasActive, setMonsterImpactCanvasActive] = useState(false);
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -344,7 +336,7 @@ export default function BattleStage({
   const monsterHitWaveFrameRef = useRef<number | null>(null);
   const playerAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
   const monsterAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
-  const playerPotionDisplacementRef = useRef<LiveAsciiDisplacementState | null>(null);
+  const playerPotionDisplacementRef = useRef<PotionHoverDisplacement | null>(null);
   const monsterImpactRef = useRef<MonsterAsciiImpactState | null>(null);
   const monsterImpactCallbackTimeoutRef = useRef<number | null>(null);
   const monsterImpactVisualTimeoutRef = useRef<number | null>(null);
@@ -366,16 +358,6 @@ export default function BattleStage({
   });
   const sceneAnchors = useMemo(() => getSceneAnchors(W, H), []);
   const projectileSceneAnchors = useMemo(() => getProjectileSceneAnchors(SCENE_W, SCENE_H), []);
-  const handlePotionHoverVisualChange = useCallback(({
-    hovering,
-    displacement,
-  }: {
-    hovering: boolean;
-    displacement: LiveAsciiDisplacementState | null;
-  }) => {
-    playerPotionDisplacementRef.current = displacement;
-    setPlayerAsciiCanvasActive((current) => (current === hovering ? current : hovering));
-  }, []);
   const handlePotionConsumeEffect = useCallback((framePoint: Point) => {
     const frameRect = battleFrameRef.current?.getBoundingClientRect();
     if (frameRect && frameRect.width > 0 && frameRect.height > 0) {
@@ -555,12 +537,12 @@ export default function BattleStage({
     handlePotionPointerMove,
     handlePotionPointerUp,
     potionDragging,
+    potionHoverDisplacement,
     potionHovered,
     potionHoveringPlayer,
   } = usePotionUseInteraction({
     battleFrameRef,
     onConsumeSuccess: handlePotionConsumeEffect,
-    onHoverVisualChange: handlePotionHoverVisualChange,
     onPotionUse,
     playerAsciiPreRef,
     playerAsciiText,
@@ -568,6 +550,7 @@ export default function BattleStage({
     playerMaxHp,
     potionAvailable,
   });
+  const playerAsciiCanvasActive = potionHoverDisplacement !== null;
   const equippedItemList = useMemo(() => getEquippedItems(equippedItems), [equippedItems]);
   const playerGlyphColorMap = useMemo(
     () => buildEquipmentGlyphColorMap(playerAscii, equippedItemList),
@@ -651,6 +634,10 @@ export default function BattleStage({
     glyphColors: playerGlyphColorMap,
   });
   const monsterAsciiRenderRef = useRef({ glyphs: monsterAsciiGlyphs, tone: monsterTone });
+
+  useEffect(() => {
+    playerPotionDisplacementRef.current = potionHoverDisplacement;
+  }, [potionHoverDisplacement]);
 
   useEffect(() => {
     playerAsciiRenderRef.current = {

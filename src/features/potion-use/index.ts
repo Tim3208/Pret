@@ -1,6 +1,9 @@
 export { default } from "./ui/HealthPotion";
 export { default as HealthPotion } from "./ui/HealthPotion";
-export { usePotionUseInteraction } from "./model/usePotionUseInteraction";
+export {
+  type PotionHoverDisplacement,
+  usePotionUseInteraction,
+} from "./model/usePotionUseInteraction";
 export {
   default as PotionUseButton,
   POTION_USE_BUTTON_HEIGHT,

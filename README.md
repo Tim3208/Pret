@@ -30,7 +30,7 @@ App
 - `widgets/encounter-scene/ui/BattleEncounterSequence.tsx` owns the pre-combat encounter and intro sequence composition.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
-- `features/potion-use/model/usePotionUseInteraction.ts` owns potion home/rest/drag state, hover detection, and drop resolution.
+- `features/potion-use/model/usePotionUseInteraction.ts` owns potion home/rest/drag state, hover detection, hover displacement state, and drop resolution.
 - `features/potion-use/ui/PotionUseButton.tsx` owns the draggable potion button shell, tooltip, and orbit presentation.
 - `widgets/battle-log/ui/BattleLogPanel.tsx` owns the central CRT console shell and canvas mounting point.
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
@@ -60,7 +60,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx` | Composes the pre-combat encounter animation and typewriter intro prompt. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
-| `src/features/potion-use/model/usePotionUseInteraction.ts` | Owns potion drag state, home/rest positioning, hover detection, and drop resolution. |
+| `src/features/potion-use/model/usePotionUseInteraction.ts` | Owns potion drag state, home/rest positioning, hover detection, hover displacement state, and drop resolution. |
 | `src/features/potion-use/ui/PotionUseButton.tsx` | Renders the draggable potion shell, orbit animation, and tooltip around the potion asset. |
 | `src/widgets/battle-log/ui/BattleLogPanel.tsx` | Owns the CRT console shell and the mounted battle log canvas container. |
 | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | Composes the HP and MP widgets into the battle resource HUD. |
@@ -102,7 +102,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 
 - Add new turn logic or damage rules in `widgets/battle-stage/model/useBattleFlow.ts` and the relevant `entities/*` slice.
 - Add new command selection or prompt parsing rules in `src/features/battle-command-input/ui/BattleCommandInput.tsx`.
-- Add new potion drag/drop or hover rules in `src/features/potion-use/model/usePotionUseInteraction.ts`.
+- Add new potion drag/drop, hover, or player-sprite displacement rules in `src/features/potion-use/model/usePotionUseInteraction.ts`.
 - Add new resource HUD composition or layout changes in `src/widgets/resource-panel/ui/ResourcePanel.tsx`.
 - Add new pre-combat encounter or intro presentation changes in `src/widgets/encounter-scene/ui/BattleEncounterSequence.tsx`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
