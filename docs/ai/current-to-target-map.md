@@ -59,9 +59,9 @@
 | 현재 위치 | 목표 경로 | 조치 | 비고 |
 |---|---|---|---|
 | `src/content/text/app/campfire.ts` | `src/content/text/app/campfire.ts` | 완료 | 캠프파이어 장면 텍스트 분리 완료 |
-| `src/BattleScene.tsx` 내부 조우/전투 텍스트 | `src/content/text/battle/scene.ts` | 분리 | 전투 장면 텍스트 |
+| `src/content/text/battle/scene.ts` | `src/content/text/battle/scene.ts` | 1차 완료 | 전투 장면 고정 텍스트 분리 완료 |
 | `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 분리 | 전투 로그 텍스트 |
-| `src/BattleCombat.tsx` 내부 UI 라벨 및 프롬프트 | `src/content/text/battle/ui.ts` | 분리 | 입력, 버튼, 안내 문구 |
+| `src/content/text/battle/ui.ts` | `src/content/text/battle/ui.ts` | 1차 완료 | 입력, 버튼, 안내 문구 분리 완료 |
 | `src/content/text/event/postBattle.ts` | `src/content/text/event/postBattle.ts` | 완료 | 전투 후 이벤트 문구 분리 완료 |
 | `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 분리 검토 | 규칙 데이터와 설명 데이터 분리 여부 확정 필요 |
 

@@ -16,6 +16,7 @@ import {
   layoutWithLines,
   prepareWithSegments,
 } from "@chenglou/pretext";
+import { BATTLE_COMBAT_TEXT } from "@/content/text/battle/ui";
 import {
   type Language,
   getLocalizedSpellName,
@@ -264,65 +265,6 @@ interface MonsterAsciiCanvasMetrics {
 
 type CrtNoiseLevel = "off" | "soft" | "strong";
 type GlyphColorMap = Map<string, string>;
-
-const BATTLE_COMBAT_TEXT = {
-  en: {
-    attackLabel: "Attack",
-    attackHint: "Physical attack",
-    defendLabel: "Defend",
-    defendHint: "Raise a shield",
-    healLabel: "Heal",
-    promptLabel: ">_",
-    promptHint: "Spell or freeform",
-    targetSuffix: "target",
-    chooseEnemyHint: "Choose an enemy. This spell still strikes every enemy in range.",
-    chooseSingleHint: "Self-targets always hit. Other targets use your current hit and crit chances.",
-    chooseSelfHint: "This action can only affect yourself.",
-    hitLabel: "hit",
-    critLabel: "crit",
-    cancelLabel: "cancel",
-    promptPlaceholder: "cast a spell, heal, or act...",
-    promptHelp:
-      'Spell names, "defend:Stone", "heal", or anything you can think of. Offensive actions will ask for a target.',
-    potionAriaLabel: "Drag the health potion onto the player",
-    potionLabel: "POTION",
-    potionTooltip: "heal +8 hp, free action",
-    monsterTurnMessage: (monsterName: string) => `${monsterName} acts beyond the torchlight...`,
-    shieldLabel: "Shield",
-    manaLabel: "MP",
-    hpLabel: "HP",
-    equipmentEffectLabel: "effect:",
-    equipmentInactiveLabel: "inactive in combat for now",
-  },
-  ko: {
-    attackLabel: "공격",
-    attackHint: "물리 공격",
-    defendLabel: "방어",
-    defendHint: "방어막 전개",
-    healLabel: "회복",
-    promptLabel: ">_",
-    promptHint: "주문 또는 자유 입력",
-    targetSuffix: "대상",
-    chooseEnemyHint: "대상을 고르세요. 이 주문은 범위 안의 모든 적에게 적중합니다.",
-    chooseSingleHint: "자기 자신을 고르면 반드시 맞습니다. 다른 대상은 현재 명중률과 치명타 확률을 따릅니다.",
-    chooseSelfHint: "이 행동은 자신에게만 사용할 수 있습니다.",
-    hitLabel: "명중",
-    critLabel: "치명",
-    cancelLabel: "취소",
-    promptPlaceholder: "주문을 외우거나, 회복하거나, 행동을 입력하세요...",
-    promptHelp:
-      '주문명, "방어:돌", "회복" 또는 자유 입력이 가능합니다. 공격 행동은 대상을 다시 고르게 됩니다.',
-    potionAriaLabel: "체력 물약을 플레이어에게 드래그하기",
-    potionLabel: "물약",
-    potionTooltip: "HP +8, 무료 행동",
-    monsterTurnMessage: (monsterName: string) => `${monsterName}이(가) 횃불 너머에서 움직인다...`,
-    shieldLabel: "방어막",
-    manaLabel: "MP",
-    hpLabel: "HP",
-    equipmentEffectLabel: "효과:",
-    equipmentInactiveLabel: "지금은 전투 반영 없음",
-  },
-} as const;
 
 /* ================================================================
    Pretext helpers — character-level physics displacement
@@ -3494,7 +3436,7 @@ export default function BattleCombat({
           className="m-0 animate-wait-blink text-center text-[0.9rem] uppercase tracking-[0.16em]"
           style={{ color: "rgba(255, 100, 80, 0.55)" }}
         >
-          {combatText.monsterTurnMessage(monsterName)}
+          {combatText.monsterTurnMessageTemplate.replace("{monsterName}", monsterName)}
         </p>
       )}
     </div>
