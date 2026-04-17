@@ -18,10 +18,10 @@
 | `src/app/main.tsx` | `src/app/main.tsx` | 완료 | 앱 진입점 이동 완료 |
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
-| `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 분해 | 장면 전환, 규칙, 텍스트 분리 필요 |
-| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` | 대형 분해 | 입력, 연출, 자원 UI를 단계적으로 분리 |
-| `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 이동 | 위젯 내부 코어 유틸 |
-| `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 이동 | 위젯 내부 렌더링 유틸 |
+| `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 1차 이동 완료 | 페이지 이동 및 content 정리 완료, 상태/턴 model 분리 잔여 |
+| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` | 1차 이동 완료 | 위젯 및 lib 이동 완료, 입력 feature 분리 잔여 |
+| `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
+| `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
 | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 완료 | 페이지 이동 및 텍스트 분리 완료 |
 | `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | `src/widgets/encounter-scene/ui/SkullEncounter.tsx` | 완료 | 전투 조우 연출 위젯 이동 완료 |
 | `src/SwordEncounter.tsx` | `src/widgets/encounter-scene/ui/SwordEncounter.tsx` 또는 제거 | 검토 | 현재 사용 여부 재확인 필요 |
@@ -60,7 +60,7 @@
 |---|---|---|---|
 | `src/content/text/app/campfire.ts` | `src/content/text/app/campfire.ts` | 완료 | 캠프파이어 장면 텍스트 분리 완료 |
 | `src/content/text/battle/scene.ts` | `src/content/text/battle/scene.ts` | 1차 완료 | 전투 장면 고정 텍스트 분리 완료 |
-| `src/BattleScene.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 완료 | 전투 로그 및 동적 결과 문구 분리 완료 |
+| `src/pages/battle/ui/BattlePage.tsx` 내부 로그 문구 | `src/content/text/battle/log.ts` | 완료 | 전투 로그 및 동적 결과 문구 분리 완료 |
 | `src/content/text/battle/ui.ts` | `src/content/text/battle/ui.ts` | 1차 완료 | 입력, 버튼, 안내 문구 분리 완료 |
 | `src/content/text/event/postBattle.ts` | `src/content/text/event/postBattle.ts` | 완료 | 전투 후 이벤트 문구 분리 완료 |
 | `src/battleTypes.ts` 내부 장비 이름/설명/효과 텍스트 | `src/content/catalog/equipment/equipmentText.ts` | 완료 | 장비 이름/설명/효과 텍스트 분리 완료 |
@@ -79,8 +79,8 @@
 
 1. `app` 골격과 스타일 경로 정리
 2. locale 및 text 분리
-3. `BattleScene.tsx` 분해
-4. `BattleCombat.tsx` 분해
+3. `pages/battle/ui/BattlePage.tsx` 분해
+4. `widgets/battle-stage/ui/BattleStage.tsx` 분해
 5. 미사용 파일 정리
 
 ## 9. 갱신 규칙

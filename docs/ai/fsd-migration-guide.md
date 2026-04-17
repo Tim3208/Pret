@@ -244,7 +244,7 @@ locale 관련 구조는 하나의 모델로 통합한다.
 
 ### 4단계. 화면 분해
 
-- `App.tsx`, `BattleScene.tsx`, `BattleCombat.tsx` 분해
+- `App.tsx`, `pages/battle/ui/BattlePage.tsx`, `widgets/battle-stage/ui/BattleStage.tsx` 분해
 - pages / widgets / features 구조로 재배치
 
 ### 5단계. 레거시 정리

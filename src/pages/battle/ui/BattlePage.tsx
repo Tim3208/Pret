@@ -41,8 +41,8 @@ import {
   type PlayerStats,
 } from "@/entities/player";
 import { getElementMultiplier } from "@/entities/spell";
-import BattleCombat from "./BattleCombat";
 import { useAsciiAsset } from "@/shared/lib/ascii";
+import BattleStage from "@/widgets/battle-stage";
 import { SkullEncounter } from "@/widgets/encounter-scene";
 
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
@@ -61,7 +61,7 @@ interface Props {
 /**
  * 전투 진입, 턴 진행, 승패 전환을 관리하는 전투 장면 컨테이너다.
  */
-export default function BattleScene({
+export default function BattlePage({
   equippedItems,
   hasPostBattleEvent,
   language,
@@ -789,7 +789,7 @@ export default function BattleScene({
         )}
 
         {phase === "combat" && !playerLoading && !monsterLoading && (
-          <BattleCombat
+          <BattleStage
             monsterName={localizedMonsterName}
             monsterAscii={monsterAscii}
             playerAscii={playerAscii}

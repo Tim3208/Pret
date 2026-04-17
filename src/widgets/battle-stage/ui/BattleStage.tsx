@@ -61,7 +61,7 @@ import {
   spawnShieldChargeParticles,
   spawnSlashParticles,
   spawnSpellParticles,
-} from "./battleCombatVisuals";
+} from "../lib/visuals";
 
 interface Projectile {
   chars: string[];
@@ -181,7 +181,7 @@ interface ForceField {
   duration: number;
 }
 
-interface BattleCombatProps {
+interface BattleStageProps {
   monsterName: string;
   monsterAscii: string[];
   playerAscii: string[];
@@ -1159,7 +1159,7 @@ function classToCanvasColor(cls?: string): string {
 /**
  * 전투 콘솔, ASCII 캐릭터, 투사체 연출을 함께 렌더링하는 메인 전투 UI다.
  */
-export default function BattleCombat({
+export default function BattleStage({
   monsterName,
   monsterAscii,
   playerAscii,
@@ -1184,7 +1184,7 @@ export default function BattleCombat({
   potionAvailable,
   onPotionUse,
   projectileCallbackRef,
-}: BattleCombatProps) {
+}: BattleStageProps) {
   const combatText = BATTLE_COMBAT_TEXT[language];
   const [showPrompt, setShowPrompt] = useState(false);
   const [promptInput, setPromptInput] = useState("");

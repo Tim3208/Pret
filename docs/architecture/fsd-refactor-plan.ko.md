@@ -137,7 +137,7 @@ src/
 - 자원 패널
 - 조우 연출 블록
 
-`BattleCombat.tsx`처럼 지나치게 큰 파일은 이 계층에서 다시 내부 모듈로 나누는 방향을 기본으로 한다.
+기존 `BattleCombat.tsx`처럼 지나치게 큰 파일은 `widgets/battle-stage` 내부에서 다시 모듈로 나누는 방향을 기본으로 한다.
 
 ### `features`
 
@@ -294,8 +294,8 @@ src/
 이번 리팩토링에서는 특히 다음 파일을 우선 분해 대상으로 본다.
 
 - `App.tsx`
-- `BattleScene.tsx`
-- `BattleCombat.tsx`
+- `pages/battle/ui/BattlePage.tsx`
+- `widgets/battle-stage/ui/BattleStage.tsx`
 - 기존 `battleTypes.ts`에서 분리된 전투 도메인 묶음
 
 분해 기준은 다음과 같다.
@@ -306,7 +306,7 @@ src/
 - 순수 렌더링 유틸은 `shared` 또는 widget 내부 `lib`로 이동한다.
 - 특정 사용자 행동은 `features`로 이동한다.
 
-특히 `BattleCombat.tsx`는 한 번에 완전히 쪼개기보다 아래 순서로 단계 분해한다.
+특히 `widgets/battle-stage/ui/BattleStage.tsx`는 한 번에 완전히 쪼개기보다 아래 순서로 단계 분해한다.
 
 1. 입력 관련
 2. 자원 UI 관련
@@ -340,7 +340,7 @@ src/
 
 ### 4단계. 전투 화면 분해
 
-- `BattleScene.tsx`와 `BattleCombat.tsx` 분해
+- `pages/battle/ui/BattlePage.tsx`와 `widgets/battle-stage/ui/BattleStage.tsx` 분해
 - 전투 stage, 로그, 자원 패널, 입력 기능 분리
 - 순수 시각 효과와 장면 조합 책임 분리
 

@@ -1,5 +1,4 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import BattleScene from "@/BattleScene";
 import {
   BONFIRE_CONFIRM_KEYWORDS,
   CAMPFIRE_STORY_TEXT,
@@ -17,9 +16,10 @@ import {
   LOCALE_STORAGE_KEY,
   pickText,
 } from "@/entities/locale";
+import BattlePage from "@/pages/battle";
 import PostBattleEvent from "@/pages/post-battle-event";
 import CrtOverlay from "@/shared/ui/crt-overlay";
-import type { BattleResult } from "@/BattleScene";
+import type { BattleResult } from "@/pages/battle";
 
 /**
  * 밝기에 따라 아스키 문자 밀도를 매핑할 때 사용하는 문자 램프다.
@@ -707,7 +707,7 @@ export default function App() {
           <CrtOverlay />
         </div>
       ) : (
-        <BattleScene
+        <BattlePage
           hasPostBattleEvent={!isEquipmentPoolExhausted(equippedItems)}
           language={language}
           equippedItems={equippedItems}

@@ -37,7 +37,7 @@ import {
   easeOutCubic,
   lerp,
   makeShieldPlane,
-} from "./battleCombatCore";
+} from "./core";
 
 export function makeFont(weight: number = 500, size: number = BASE_FONT_SIZE): string {
   return `${weight} ${size}px ${CRT_FONT_FAMILY}`;
