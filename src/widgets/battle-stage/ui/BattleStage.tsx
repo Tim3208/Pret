@@ -1,6 +1,5 @@
 import {
   type MutableRefObject,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -25,9 +24,8 @@ import type { MonsterIntent } from "@/entities/monster";
 import type { PlayerStats } from "@/entities/player";
 import BattleCommandInput from "@/features/battle-command-input";
 import {
-  POTION_USE_BUTTON_HEIGHT,
-  POTION_USE_BUTTON_WIDTH,
   PotionUseButton,
+  usePotionUseInteraction,
 } from "@/features/potion-use";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import BattleLogPanel from "@/widgets/battle-log";
@@ -53,7 +51,6 @@ import {
   getSceneAnchors,
   lerp,
   mapScenePointToConsolePoint,
-  pointInsideDomRect,
   sampleMonsterImpactPoint,
   sampleQuadraticPoint,
   sampleQuadraticTangent,
@@ -323,12 +320,6 @@ export default function BattleStage({
   const [monsterHitWaveScale, setMonsterHitWaveScale] = useState(1.35);
   const [playerAsciiCanvasActive, setPlayerAsciiCanvasActive] = useState(false);
   const [monsterImpactCanvasActive, setMonsterImpactCanvasActive] = useState(false);
-  const [potionHomePosition, setPotionHomePosition] = useState<Point | null>(null);
-  const [potionRestPosition, setPotionRestPosition] = useState<Point | null>(null);
-  const [potionDragPosition, setPotionDragPosition] = useState<Point | null>(null);
-  const [potionDragging, setPotionDragging] = useState(false);
-  const [potionHovered, setPotionHovered] = useState(false);
-  const [potionHoveringPlayer, setPotionHoveringPlayer] = useState(false);
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -351,9 +342,6 @@ export default function BattleStage({
   const noiseResetRef = useRef<number | null>(null);
   const playerHitWaveFrameRef = useRef<number | null>(null);
   const monsterHitWaveFrameRef = useRef<number | null>(null);
-  const potionPointerOffsetRef = useRef<Point>({ x: 0, y: 0 });
-  const potionRestModeRef = useRef<"home" | "dropped">("home");
-  const activePotionPointerIdRef = useRef<number | null>(null);
   const playerAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
   const monsterAsciiMetricsRef = useRef<MonsterAsciiCanvasMetrics | null>(null);
   const playerPotionDisplacementRef = useRef<LiveAsciiDisplacementState | null>(null);
@@ -378,6 +366,28 @@ export default function BattleStage({
   });
   const sceneAnchors = useMemo(() => getSceneAnchors(W, H), []);
   const projectileSceneAnchors = useMemo(() => getProjectileSceneAnchors(SCENE_W, SCENE_H), []);
+  const handlePotionHoverVisualChange = useCallback(({
+    hovering,
+    displacement,
+  }: {
+    hovering: boolean;
+    displacement: LiveAsciiDisplacementState | null;
+  }) => {
+    playerPotionDisplacementRef.current = displacement;
+    setPlayerAsciiCanvasActive((current) => (current === hovering ? current : hovering));
+  }, []);
+  const handlePotionConsumeEffect = useCallback((framePoint: Point) => {
+    const frameRect = battleFrameRef.current?.getBoundingClientRect();
+    if (frameRect && frameRect.width > 0 && frameRect.height > 0) {
+      spawnPotionShatterBurst(sceneScatterRef.current, {
+        x: (framePoint.x / frameRect.width) * SCENE_W,
+        y: (framePoint.y / frameRect.height) * SCENE_H,
+      });
+      return;
+    }
+
+    spawnPotionShatterBurst(sceneScatterRef.current, projectileSceneAnchors.playerCore);
+  }, [projectileSceneAnchors.playerCore]);
 
   useEffect(() => {
     textRef.current = {
@@ -536,6 +546,28 @@ export default function BattleStage({
         ? "rgba(168, 168, 168, 0.84)"
         : "rgba(146, 146, 146, 0.88)";
   const playerAsciiText = playerAscii.join("\n");
+  const {
+    activePotionPosition,
+    handlePotionHoverEnd,
+    handlePotionHoverStart,
+    handlePotionPointerCancel,
+    handlePotionPointerDown,
+    handlePotionPointerMove,
+    handlePotionPointerUp,
+    potionDragging,
+    potionHovered,
+    potionHoveringPlayer,
+  } = usePotionUseInteraction({
+    battleFrameRef,
+    onConsumeSuccess: handlePotionConsumeEffect,
+    onHoverVisualChange: handlePotionHoverVisualChange,
+    onPotionUse,
+    playerAsciiPreRef,
+    playerAsciiText,
+    playerHp,
+    playerMaxHp,
+    potionAvailable,
+  });
   const equippedItemList = useMemo(() => getEquippedItems(equippedItems), [equippedItems]);
   const playerGlyphColorMap = useMemo(
     () => buildEquipmentGlyphColorMap(playerAscii, equippedItemList),
@@ -758,230 +790,6 @@ export default function BattleStage({
       window.removeEventListener("resize", syncMonsterAsciiCanvasMetrics);
     };
   }, [monsterAsciiText, syncMonsterAsciiCanvasMetrics]);
-
-  const syncPotionHomePosition = useCallback(() => {
-    const frame = battleFrameRef.current;
-    const playerPre = playerAsciiPreRef.current;
-    if (!frame || !playerPre) return;
-
-    const frameRect = frame.getBoundingClientRect();
-    const playerRect = playerPre.getBoundingClientRect();
-    if (frameRect.width < 1 || frameRect.height < 1 || playerRect.width < 1 || playerRect.height < 1) {
-      return;
-    }
-
-    const nextHome = {
-      x: playerRect.left - frameRect.left + playerRect.width * 0.55 - 50,
-      y: playerRect.top - frameRect.top + playerRect.height * 0 - 150,
-    };
-
-    setPotionHomePosition((current) => {
-      if (
-        current &&
-        Math.abs(current.x - nextHome.x) < 0.5 &&
-        Math.abs(current.y - nextHome.y) < 0.5
-      ) {
-        return current;
-      }
-      return nextHome;
-    });
-
-    setPotionRestPosition((current) => {
-      if (potionRestModeRef.current === "dropped" && current) {
-        return current;
-      }
-      if (
-        current &&
-        Math.abs(current.x - nextHome.x) < 0.5 &&
-        Math.abs(current.y - nextHome.y) < 0.5
-      ) {
-        return current;
-      }
-      return nextHome;
-    });
-  }, []);
-
-  useEffect(() => {
-    syncPotionHomePosition();
-
-    const frame = window.requestAnimationFrame(syncPotionHomePosition);
-    const playerPre = playerAsciiPreRef.current;
-    const battleFrame = battleFrameRef.current;
-    let observer: ResizeObserver | null = null;
-
-    if ((playerPre || battleFrame) && typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(() => {
-        syncPotionHomePosition();
-      });
-      if (playerPre) {
-        observer.observe(playerPre);
-      }
-      if (battleFrame) {
-        observer.observe(battleFrame);
-      }
-    }
-
-    window.addEventListener("resize", syncPotionHomePosition);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", syncPotionHomePosition);
-    };
-  }, [playerAsciiText, potionAvailable, syncPotionHomePosition]);
-
-  const updatePotionHoverState = useCallback((framePoint: Point) => {
-    const frameRect = battleFrameRef.current?.getBoundingClientRect();
-    const playerRect = playerAsciiPreRef.current?.getBoundingClientRect();
-    if (!frameRect || !playerRect || playerRect.width < 1 || playerRect.height < 1) {
-      playerPotionDisplacementRef.current = null;
-      setPotionHoveringPlayer(false);
-      setPlayerAsciiCanvasActive(false);
-      return false;
-    }
-
-    const viewportPoint = {
-      x: frameRect.left + framePoint.x,
-      y: frameRect.top + framePoint.y,
-    };
-    const hovering = pointInsideDomRect(viewportPoint, playerRect, 18);
-    setPotionHoveringPlayer((current) => (current === hovering ? current : hovering));
-    setPlayerAsciiCanvasActive((current) => (current === hovering ? current : hovering));
-
-    if (!hovering) {
-      playerPotionDisplacementRef.current = null;
-      return false;
-    }
-
-    const columnRatio = clamp01((viewportPoint.x - playerRect.left) / playerRect.width);
-    const centerRatio = clamp01((viewportPoint.y - playerRect.top) / playerRect.height);
-    const centeredX = columnRatio - 0.5;
-    const centeredY = centerRatio - 0.44;
-    const distance = Math.min(1, Math.hypot(centeredX * 1.45, centeredY * 1.28));
-
-    playerPotionDisplacementRef.current = {
-      direction: centeredX <= 0 ? -1 : 1,
-      strength: 1.12 + (1 - distance) * 1.06,
-      centerRatio,
-      columnRatio,
-      radiusRatio: 0.22 + (1 - distance) * 0.08,
-    };
-    return true;
-  }, []);
-
-  const getClampedPotionFramePoint = useCallback((clientX: number, clientY: number) => {
-    const frameRect = battleFrameRef.current?.getBoundingClientRect();
-    if (!frameRect) {
-      return null;
-    }
-
-    const rawX = clientX - frameRect.left - potionPointerOffsetRef.current.x;
-    const rawY = clientY - frameRect.top - potionPointerOffsetRef.current.y;
-
-    return {
-      x: Math.max(
-        POTION_USE_BUTTON_WIDTH * 0.5,
-        Math.min(frameRect.width - POTION_USE_BUTTON_WIDTH * 0.5, rawX),
-      ),
-      y: Math.max(
-        POTION_USE_BUTTON_HEIGHT * 0.5,
-        Math.min(frameRect.height - POTION_USE_BUTTON_HEIGHT * 0.5, rawY),
-      ),
-    };
-  }, []);
-
-  const handlePotionPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!potionAvailable) return;
-
-    const targetRect = event.currentTarget.getBoundingClientRect();
-    activePotionPointerIdRef.current = event.pointerId;
-    potionPointerOffsetRef.current = {
-      x: event.clientX - (targetRect.left + targetRect.width * 0.5),
-      y: event.clientY - (targetRect.top + targetRect.height * 0.5),
-    };
-
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setPotionDragging(true);
-
-    const nextPoint = getClampedPotionFramePoint(event.clientX, event.clientY);
-    if (!nextPoint) {
-      return;
-    }
-
-    setPotionDragPosition(nextPoint);
-    updatePotionHoverState(nextPoint);
-  }, [getClampedPotionFramePoint, potionAvailable, updatePotionHoverState]);
-
-  const handlePotionPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!potionDragging || activePotionPointerIdRef.current !== event.pointerId) return;
-
-    const nextPoint = getClampedPotionFramePoint(event.clientX, event.clientY);
-    if (!nextPoint) {
-      return;
-    }
-
-    event.preventDefault();
-    setPotionDragPosition(nextPoint);
-    updatePotionHoverState(nextPoint);
-  }, [getClampedPotionFramePoint, potionDragging, updatePotionHoverState]);
-
-  const finishPotionDrag = useCallback((
-    event: ReactPointerEvent<HTMLButtonElement>,
-    cancelled = false,
-  ) => {
-    if (activePotionPointerIdRef.current !== event.pointerId) return;
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    activePotionPointerIdRef.current = null;
-
-    const nextPoint = getClampedPotionFramePoint(event.clientX, event.clientY);
-    const hoveringPlayer = cancelled || !nextPoint ? false : updatePotionHoverState(nextPoint);
-    let potionConsumed = false;
-
-    if (!cancelled && hoveringPlayer && nextPoint) {
-      const healedAmount = onPotionUse();
-      if (healedAmount > 0) {
-        potionConsumed = true;
-        const frameRect = battleFrameRef.current?.getBoundingClientRect();
-        if (frameRect && frameRect.width > 0 && frameRect.height > 0) {
-          spawnPotionShatterBurst(sceneScatterRef.current, {
-            x: (nextPoint.x / frameRect.width) * SCENE_W,
-            y: (nextPoint.y / frameRect.height) * SCENE_H,
-          });
-        } else {
-          spawnPotionShatterBurst(sceneScatterRef.current, projectileSceneAnchors.playerCore);
-        }
-      } else if (playerHp >= playerMaxHp && potionHomePosition) {
-        potionRestModeRef.current = "home";
-        setPotionRestPosition(potionHomePosition);
-      }
-    }
-
-    if (!potionConsumed && nextPoint) {
-      if (!(hoveringPlayer && playerHp >= playerMaxHp && potionHomePosition)) {
-        potionRestModeRef.current = "dropped";
-        setPotionRestPosition(nextPoint);
-      }
-    }
-
-    playerPotionDisplacementRef.current = null;
-    setPlayerAsciiCanvasActive(false);
-    setPotionHovered(false);
-    setPotionHoveringPlayer(false);
-    setPotionDragging(false);
-    setPotionDragPosition(null);
-  }, [getClampedPotionFramePoint, onPotionUse, playerHp, playerMaxHp, potionHomePosition, projectileSceneAnchors.playerCore, updatePotionHoverState]);
-
-  const handlePotionPointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    finishPotionDrag(event, false);
-  }, [finishPotionDrag]);
-
-  const handlePotionPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    finishPotionDrag(event, true);
-  }, [finishPotionDrag]);
 
   // ── Effect helpers ──
   const triggerEffect = useCallback(
@@ -1958,10 +1766,6 @@ export default function BattleStage({
     return () => cancelAnimationFrame(rafRef.current);
   }, []); // stable — reads from textRef
 
-  const activePotionPosition = potionDragging
-    ? potionDragPosition ?? potionRestPosition ?? potionHomePosition
-    : potionRestPosition ?? potionHomePosition;
-
   return (
     <div className="flex w-full flex-col items-center gap-4 px-3 pb-8 animate-fade-in-quick sm:px-4">
       <div
@@ -2038,8 +1842,8 @@ export default function BattleStage({
             hovered={potionHovered}
             hoveringPlayer={potionHoveringPlayer}
             label={combatText.potionLabel}
-            onHoverEnd={() => setPotionHovered(false)}
-            onHoverStart={() => setPotionHovered(true)}
+            onHoverEnd={handlePotionHoverEnd}
+            onHoverStart={handlePotionHoverStart}
             onPointerCancel={handlePotionPointerCancel}
             onPointerDown={handlePotionPointerDown}
             onPointerMove={handlePotionPointerMove}
