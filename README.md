@@ -30,6 +30,7 @@ App
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
+- `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
 - `BattleStage` owns the live combat scene, DOM/canvas refs, potion drag/drop, and effect orchestration.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
@@ -53,6 +54,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
+| `src/widgets/resource-panel/ui/ResourcePanel.tsx` | Composes the HP and MP widgets into the battle resource HUD. |
 | `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion interaction, and effect orchestration. |
 | `src/widgets/battle-stage/lib/core.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/widgets/battle-stage/lib/visuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
@@ -88,6 +90,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 
 - Add new turn logic or damage rules in `widgets/battle-stage/model/useBattleFlow.ts` and the relevant `entities/*` slice.
 - Add new command selection or prompt parsing rules in `src/features/battle-command-input/ui/BattleCommandInput.tsx`.
+- Add new resource HUD composition or layout changes in `src/widgets/resource-panel/ui/ResourcePanel.tsx`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
 - Add new particle systems or canvas-only visuals in `widgets/battle-stage/lib/visuals.ts`.
 - Keep `src/pages/battle/ui/BattlePage.tsx` focused on scene composition and keep `widgets/battle-stage/ui/BattleStage.tsx` focused on wiring those pieces together rather than holding new pure helper code.

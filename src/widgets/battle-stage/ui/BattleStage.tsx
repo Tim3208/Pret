@@ -34,7 +34,7 @@ import type { PlayerStats } from "@/entities/player";
 import BattleCommandInput from "@/features/battle-command-input";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import HealthPotion from "@/features/potion-use";
-import { HeartHP, ManaFlask } from "@/widgets/resource-panel";
+import { ResourcePanel } from "@/widgets/resource-panel";
 import {
   getProjectileTone,
   getProjectileVisual,
@@ -3078,16 +3078,16 @@ export default function BattleStage({
         </div>
 
         <div className="absolute left-1/2 top-[71%] z-30 flex -translate-x-1/2 flex-col items-center gap-2">
-          <div className="flex items-end gap-6">
-            <HeartHP
-              current={playerHp}
-              max={playerMaxHp}
-              shield={playerShield}
-              label={combatText.hpLabel}
-              shieldLabel={combatText.shieldLabel}
-            />
-            <ManaFlask current={playerMana} max={playerMaxMana} label={combatText.manaLabel} />
-          </div>
+          <ResourcePanel
+            hpCurrent={playerHp}
+            hpMax={playerMaxHp}
+            manaCurrent={playerMana}
+            manaMax={playerMaxMana}
+            shield={playerShield}
+            hpLabel={combatText.hpLabel}
+            manaLabel={combatText.manaLabel}
+            shieldLabel={combatText.shieldLabel}
+          />
         </div>
 
         <CrtOverlay glitchActive={glitchActive} noiseLevel={crtNoiseLevel} />
