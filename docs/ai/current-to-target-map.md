@@ -19,7 +19,7 @@
 | `src/app/App.tsx` | `src/app/App.tsx` | 1차 이동 완료 | 루트 앱 셸은 이동했고, 장면 조합은 이후 `pages`로 분리 |
 | `src/app/styles/index.css` | `src/app/styles/index.css` | 완료 | 전역 스타일 이동 완료 |
 | `src/BattleScene.tsx` | `src/pages/battle/ui/BattlePage.tsx` + `src/widgets/battle-stage/model/*` + `src/content/text/battle/*` | 완료 | 페이지 조합, content 분리, 상태/턴 model 분리 완료 |
-| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리 완료. 로그/CRT 블록 추가 분해 잔여 |
+| `src/BattleCombat.tsx` | `src/widgets/battle-stage/ui/BattleStage.tsx` + `src/widgets/battle-stage/lib/*` + `src/features/battle-command-input/*` + `src/widgets/battle-log/*` | 1차 이동 완료 | 위젯 및 lib 이동, 입력 feature 분리, 자원 패널 조합 분리, 장비 오버레이 분리, 몬스터 패널 분리, 로그/CRT 패널 컨테이너 분리 완료. 캔버스 렌더 루프 추가 분해 잔여 |
 | `src/battleCombatCore.ts` | `src/widgets/battle-stage/lib/core.ts` | 완료 | 위젯 내부 코어 유틸 이동 완료 |
 | `src/battleCombatVisuals.ts` | `src/widgets/battle-stage/lib/visuals.ts` | 완료 | 위젯 내부 렌더링 유틸 이동 완료 |
 | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` | `src/pages/post-battle-event/ui/PostBattleEventPage.tsx` + `src/content/text/event/postBattle.ts` | 완료 | 페이지 이동 및 텍스트 분리 완료 |
@@ -78,7 +78,7 @@
 
 권장 순서는 다음과 같다.
 
-1. `widgets/battle-stage/ui/BattleStage.tsx`에서 로그/CRT 관련 추가 분해
+1. `widgets/battle-stage/ui/BattleStage.tsx`에서 포션 상호작용 블록 또는 캔버스 렌더 보조 로직 추가 분해
 2. 미사용 파일 정리
 3. `src/SwordEncounter.tsx` 사용 여부 정리
 4. `src/useImageToAscii.ts` 유지 여부 정리

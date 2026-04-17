@@ -33,6 +33,7 @@ import type { PlayerStats } from "@/entities/player";
 import BattleCommandInput from "@/features/battle-command-input";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import HealthPotion from "@/features/potion-use";
+import BattleLogPanel from "@/widgets/battle-log";
 import { ResourcePanel } from "@/widgets/resource-panel";
 import BattleEquipmentOverlay from "./BattleEquipmentOverlay";
 import BattleMonsterPanel from "./BattleMonsterPanel";
@@ -2957,18 +2958,7 @@ export default function BattleStage({
           shakeMonster={shakeMonster}
         />
 
-        <div
-          className="absolute left-1/2 top-[48%] z-30 -translate-x-1/2 -translate-y-1/2"
-          style={{ width: "min(82vw, 520px)" }}
-        >
-          <div
-            className={`relative rounded-[24px] bg-black/18 ${
-              glitchActive ? "animate-crt-glitch" : ""
-            }`}
-          >
-            <canvas ref={canvasRef} className="relative block h-auto w-full" />
-          </div>
-        </div>
+        <BattleLogPanel canvasRef={canvasRef} glitchActive={glitchActive} />
 
         <div className="absolute left-1/2 top-[71%] z-30 flex -translate-x-1/2 flex-col items-center gap-2">
           <ResourcePanel

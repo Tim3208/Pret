@@ -30,6 +30,7 @@ App
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
 - `widgets/battle-stage/model/useBattleFlow.ts` owns battle rules, HP/MP/shield state, turn flow, logs, and combat animation requests.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
+- `widgets/battle-log/ui/BattleLogPanel.tsx` owns the central CRT console shell and canvas mounting point.
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
 - `widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` owns the player equipment hotspot and tooltip overlay.
 - `widgets/battle-stage/ui/BattleMonsterPanel.tsx` owns the monster sprite block, intent overlay canvas placement, and HP bar rendering.
@@ -56,6 +57,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/pages/battle/ui/BattlePage.tsx` | Composes encounter, intro, combat, victory, and defeat screens. |
 | `src/widgets/battle-stage/model/useBattleFlow.ts` | Owns battle state, turn resolution, logs, potion usage, and combat animation requests. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
+| `src/widgets/battle-log/ui/BattleLogPanel.tsx` | Owns the CRT console shell and the mounted battle log canvas container. |
 | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | Composes the HP and MP widgets into the battle resource HUD. |
 | `src/widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` | Renders equipment hotspots and tooltips on top of the player ASCII sprite. |
 | `src/widgets/battle-stage/ui/BattleMonsterPanel.tsx` | Renders the monster sprite block, intent overlay canvas, and HP bar. |
