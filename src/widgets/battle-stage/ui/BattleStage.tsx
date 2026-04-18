@@ -2,9 +2,9 @@ import {
   type MutableRefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import { BATTLE_COMBAT_TEXT } from "@/content/text/battle/ui";
 import {
@@ -35,25 +35,15 @@ import {
   SCENE_H,
   SCENE_W,
   W,
-  buildSlashSamples,
   getProjectileSceneAnchors,
   getSceneAnchors,
-  sampleMonsterImpactPoint,
-  sampleRandomOffscreenPoint,
 } from "../lib/core";
-import {
-  getHitWaveScale,
-  getMonsterImpactSettleDelay,
-  spawnImpactBurst,
-  spawnPotionShatterBurst,
-} from "../lib/visuals";
+import { spawnPotionShatterBurst } from "../lib/visuals";
 import type {
-  ConsolePulse,
   EffectParticle,
   Point,
-  Projectile,
-  SlashWave,
 } from "../model/battleStageScene.types";
+import { useBattleStageCombatFeedback } from "../model/useBattleStageCombatFeedback";
 import { useBattleStageEffects } from "../model/useBattleStageEffects";
 import { useBattleStageCanvasLoop } from "../model/useBattleStageCanvasLoop";
 import { useMonsterAsciiPresentation } from "../model/useMonsterAsciiPresentation";
@@ -85,7 +75,6 @@ interface BattleStageProps {
   onPotionUse: () => number;
   projectileCallbackRef: MutableRefObject<((request: CombatAnimationRequest) => void) | null>;
 }
-type CrtNoiseLevel = "off" | "soft" | "strong";
 
 /**
  * 전투 콘솔, ASCII 캐릭터, 투사체 연출을 함께 렌더링하는 메인 전투 UI다.
@@ -117,17 +106,6 @@ export default function BattleStage({
   projectileCallbackRef,
 }: BattleStageProps) {
   const combatText = BATTLE_COMBAT_TEXT[language];
-  const [shakePlayer, setShakePlayer] = useState(false);
-  const [shakeMonster, setShakeMonster] = useState(false);
-  const [crtNoiseLevel, setCrtNoiseLevel] = useState<CrtNoiseLevel>("off");
-  const [glitchActive, setGlitchActive] = useState(false);
-  const [lungePlayer, setLungePlayer] = useState(false);
-  const [hitAbsorbPlayer, setHitAbsorbPlayer] = useState(false);
-  const [hitAbsorbMonster, setHitAbsorbMonster] = useState(false);
-  const [playerHitWaveProgress, setPlayerHitWaveProgress] = useState<number | null>(null);
-  const [monsterHitWaveProgress, setMonsterHitWaveProgress] = useState<number | null>(null);
-  const [playerHitWaveScale, setPlayerHitWaveScale] = useState(1.35);
-  const [monsterHitWaveScale, setMonsterHitWaveScale] = useState(1.35);
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -135,17 +113,13 @@ export default function BattleStage({
   const playerOverlayRef = useRef<HTMLCanvasElement>(null);
   const monsterOverlayRef = useRef<HTMLCanvasElement>(null);
   const monsterIntentOverlayRef = useRef<HTMLCanvasElement>(null);
+  const monsterImpactBandTriggerRef = useRef<
+    ((impactPoint: Point, damage: number, critical: boolean) => void) | null
+  >(null);
   const rafRef = useRef<number>(0);
-  const projectilesRef = useRef<Projectile[]>([]);
-  const slashesRef = useRef<SlashWave[]>([]);
   const sceneScatterRef = useRef<EffectParticle[]>([]);
   const intentSparksRef = useRef<EffectParticle[]>([]);
-  const consolePulsesRef = useRef<ConsolePulse[]>([]);
   const lastIntentSparkFrameRef = useRef(0);
-  const noiseResetRef = useRef<number | null>(null);
-  const playerHitWaveFrameRef = useRef<number | null>(null);
-  const monsterHitWaveFrameRef = useRef<number | null>(null);
-  const monsterImpactCallbackTimeoutRef = useRef<number | null>(null);
 
   /* Keep text data in a ref so the RAF loop never needs to restart */
   const textRef = useRef({
@@ -186,85 +160,6 @@ export default function BattleStage({
     };
   }, [ambientText, battleLog, combatText.shieldLabel, monsterHp, monsterShield, nextIntent, nextIntentLabel, turn]);
 
-  const setCrtReaction = useCallback((noiseLevel: CrtNoiseLevel, duration: number) => {
-    if (noiseResetRef.current) {
-      window.clearTimeout(noiseResetRef.current);
-      noiseResetRef.current = null;
-    }
-
-    setCrtNoiseLevel(noiseLevel);
-    setGlitchActive(noiseLevel === "strong");
-
-    if (noiseLevel === "off") {
-      return;
-    }
-
-    noiseResetRef.current = window.setTimeout(() => {
-      setCrtNoiseLevel("off");
-      setGlitchActive(false);
-      noiseResetRef.current = null;
-    }, duration);
-  }, []);
-
-  const startHitWave = useCallback((
-    target: "player" | "monster",
-    duration: number,
-    damage: number,
-    maxHp: number,
-  ) => {
-    const startedAt = performance.now();
-    const settleDuration = 300;
-    const frameRef = target === "player" ? playerHitWaveFrameRef : monsterHitWaveFrameRef;
-    const setProgress = target === "player" ? setPlayerHitWaveProgress : setMonsterHitWaveProgress;
-    const setScale = target === "player" ? setPlayerHitWaveScale : setMonsterHitWaveScale;
-    const waveScale = getHitWaveScale(damage, maxHp);
-
-    if (frameRef.current) {
-      window.cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-
-    setScale(waveScale);
-
-    const tick = () => {
-      const elapsed = performance.now() - startedAt;
-      const progress = elapsed / duration;
-      setProgress(progress);
-
-      if (elapsed < duration + settleDuration) {
-        frameRef.current = window.requestAnimationFrame(tick);
-        return;
-      }
-
-      frameRef.current = null;
-      setProgress(null);
-      setScale(1.35);
-    };
-
-    setProgress(0);
-    frameRef.current = window.requestAnimationFrame(tick);
-  }, []);
-
-  useEffect(() => {
-    const playerHitWaveFrame = playerHitWaveFrameRef;
-    const monsterHitWaveFrame = monsterHitWaveFrameRef;
-
-    return () => {
-      if (noiseResetRef.current) {
-        window.clearTimeout(noiseResetRef.current);
-      }
-      if (playerHitWaveFrame.current) {
-        window.cancelAnimationFrame(playerHitWaveFrame.current);
-      }
-      if (monsterHitWaveFrame.current) {
-        window.cancelAnimationFrame(monsterHitWaveFrame.current);
-      }
-      if (monsterImpactCallbackTimeoutRef.current) {
-        window.clearTimeout(monsterImpactCallbackTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const playerAsciiText = playerAscii.join("\n");
   const {
     effectsRef,
@@ -281,6 +176,31 @@ export default function BattleStage({
     projectileSceneAnchors,
     sceneAnchors,
     sceneScatterRef,
+  });
+  const {
+    consolePulsesRef,
+    crtNoiseLevel,
+    glitchActive,
+    hitAbsorbMonster,
+    hitAbsorbPlayer,
+    lungePlayer,
+    monsterHitWaveProgress,
+    monsterHitWaveScale,
+    playerHitWaveProgress,
+    playerHitWaveScale,
+    projectilesRef,
+    shakeMonster,
+    shakePlayer,
+    slashesRef,
+  } = useBattleStageCombatFeedback({
+    monsterImpactBandTriggerRef,
+    monsterMaxHp,
+    playerMaxHp,
+    projectileCallbackRef,
+    projectileSceneAnchors,
+    sceneAnchors,
+    sceneScatterRef,
+    triggerEffect,
   });
   const {
     activePotionPosition,
@@ -347,238 +267,9 @@ export default function BattleStage({
     sceneFxCanvasRef,
     shakeMonster,
   });
-
-  const flashShieldImpact = useCallback(
-    (target: "player" | "monster", outcome: "perfect" | "partial" = "perfect") => {
-      const center =
-        target === "player"
-          ? { x: SCENE_W * 0.35, y: SCENE_H * 0.49 }
-          : projectileSceneAnchors.monsterShield;
-
-      triggerEffect("defend", target, 700);
-      spawnImpactBurst(
-        sceneScatterRef.current,
-        center,
-        outcome === "perfect" ? "shieldBreak" : "shieldHit",
-      );
-      if (target === "player") {
-        consolePulsesRef.current.push({
-          color: "blue",
-          startTime: performance.now(),
-          duration: outcome === "perfect" ? 820 : 680,
-          strength: outcome === "perfect" ? "strong" : "soft",
-        });
-        setCrtReaction(outcome === "perfect" ? "off" : "soft", outcome === "perfect" ? 0 : 420);
-      }
-    },
-    [
-      projectileSceneAnchors.monsterShield,
-      setCrtReaction,
-      triggerEffect,
-    ],
-  );
-
-  const flashMonsterImpact = useCallback(
-    (word: string, impactPoint: Point, element?: string, damage = 0, critical = false) => {
-      const impactTone = critical ? "critical" : word === "STRIKE" ? "strike" : element;
-      const settleDelay = getMonsterImpactSettleDelay(critical);
-      setShakeMonster(true);
-      window.setTimeout(() => setShakeMonster(false), 600);
-      startHitWave("monster", 620, damage, monsterMaxHp);
-      triggerMonsterImpactBand(impactPoint, damage, critical);
-      if (word === "STRIKE") {
-        triggerEffect("slash", "monster", 1320);
-      } else {
-        triggerEffect("spell", "monster", 1640, element);
-      }
-      triggerEffect("hit", "monster", 920, impactTone);
-      spawnImpactBurst(sceneScatterRef.current, impactPoint, "monsterHit", impactTone);
-      setHitAbsorbMonster(true);
-      window.setTimeout(() => setHitAbsorbMonster(false), 620);
-      return settleDelay;
-    },
-    [monsterMaxHp, startHitWave, triggerEffect, triggerMonsterImpactBand],
-  );
-
-  const flashPlayerImpact = useCallback((outcome: "partial" | "full" = "full", damage = 0) => {
-    setShakePlayer(true);
-    window.setTimeout(() => setShakePlayer(false), 600);
-    startHitWave("player", outcome === "full" ? 540 : 480, damage, playerMaxHp);
-    triggerEffect("hit", "player", 600);
-    setHitAbsorbPlayer(true);
-    window.setTimeout(() => setHitAbsorbPlayer(false), 500);
-    consolePulsesRef.current.push({
-      color: "red",
-      startTime: performance.now(),
-      duration: outcome === "full" ? 860 : 620,
-      strength: outcome === "full" ? "strong" : "soft",
-    });
-    setCrtReaction(outcome === "full" ? "strong" : "soft", outcome === "full" ? 620 : 360);
-  }, [playerMaxHp, setCrtReaction, startHitWave, triggerEffect]);
-
-  // ── Projectile callback ──
-  useEffect(() => {
-    projectileCallbackRef.current = (request: CombatAnimationRequest) => {
-      if (!request.word) return;
-
-      if (request.fromPlayer) {
-        if (request.word === "STRIKE") {
-          setLungePlayer(true);
-          window.setTimeout(() => setLungePlayer(false), 700);
-        }
-
-        const isSelfReturn = request.targetSide === "player" && !request.missed;
-        const missHeading = {
-          x: projectileSceneAnchors.monsterCore.x - projectileSceneAnchors.playerMuzzle.x,
-          y: projectileSceneAnchors.monsterCore.y - projectileSceneAnchors.playerMuzzle.y,
-        };
-        const isMonsterBodyHit =
-          !request.missed &&
-          request.targetSide === "enemy" &&
-          !request.blocked &&
-          !isSelfReturn;
-        const target = request.missed
-          ? sampleRandomOffscreenPoint(projectileSceneAnchors.playerMuzzle, missHeading)
-          : isSelfReturn
-            ? request.blocked
-              ? projectileSceneAnchors.playerShield
-              : projectileSceneAnchors.playerCore
-            : request.blocked
-              ? projectileSceneAnchors.monsterShield
-              : isMonsterBodyHit
-                ? sampleMonsterImpactPoint(projectileSceneAnchors)
-                : projectileSceneAnchors.monsterCore;
-        const returnTurn = isSelfReturn
-          ? {
-              x: projectileSceneAnchors.playerMuzzle.x + SCENE_W * 0.24,
-              y: projectileSceneAnchors.playerMuzzle.y - SCENE_H * 0.23,
-            }
-          : undefined;
-        const returnControl = isSelfReturn && returnTurn
-          ? {
-              x: returnTurn.x + SCENE_W * 0.04,
-              y: returnTurn.y + SCENE_H * 0.05,
-            }
-          : undefined;
-        const directionX = target.x - projectileSceneAnchors.playerMuzzle.x;
-        const directionY = target.y - projectileSceneAnchors.playerMuzzle.y;
-        const directionLength = Math.max(1, Math.hypot(directionX, directionY));
-        const impactInset = request.missed
-          ? 0
-          : isSelfReturn
-            ? 8 + request.word.length * 5
-            : isMonsterBodyHit
-              ? 0
-              : 16 + request.word.length * 11;
-        const impactX = target.x + (directionX / directionLength) * impactInset;
-        const impactY = target.y + (directionY / directionLength) * impactInset;
-
-        projectilesRef.current.push({
-          chars: request.word.split(""),
-          x: projectileSceneAnchors.playerMuzzle.x,
-          y: projectileSceneAnchors.playerMuzzle.y,
-          startX: projectileSceneAnchors.playerMuzzle.x,
-          startY: projectileSceneAnchors.playerMuzzle.y,
-          controlX: returnControl?.x,
-          controlY: returnControl?.y,
-          turnX: returnTurn?.x,
-          turnY: returnTurn?.y,
-          targetX: impactX,
-          targetY: impactY,
-          startTime: performance.now(),
-          duration: isSelfReturn ? 1180 : 920,
-          alive: true,
-          fromPlayer: true,
-          element: request.element,
-          shielded: request.shielded,
-          blocked: request.blocked,
-          critical: request.critical,
-          missed: request.missed,
-          onImpact: () => {
-            if (request.missed) {
-              request.onImpact?.();
-              return;
-            }
-
-            if (request.shielded) {
-              flashShieldImpact(
-                request.targetSide === "player" ? "player" : "monster",
-                request.blocked ? "perfect" : "partial",
-              );
-            }
-            if (!request.blocked) {
-              if (request.targetSide === "player") {
-                spawnImpactBurst(
-                  sceneScatterRef.current,
-                  { x: impactX, y: impactY },
-                  "monsterHit",
-                  request.critical ? "critical" : request.element ?? "strike",
-                );
-                flashPlayerImpact(
-                  request.shielded ? "partial" : "full",
-                  request.impactDamage ?? 0,
-                );
-              } else {
-                const settleDelay = flashMonsterImpact(
-                  request.word,
-                  { x: impactX, y: impactY },
-                  request.element,
-                  request.impactDamage ?? 0,
-                  request.critical,
-                );
-                if (monsterImpactCallbackTimeoutRef.current) {
-                  window.clearTimeout(monsterImpactCallbackTimeoutRef.current);
-                  monsterImpactCallbackTimeoutRef.current = null;
-                }
-                monsterImpactCallbackTimeoutRef.current = window.setTimeout(() => {
-                  monsterImpactCallbackTimeoutRef.current = null;
-                  request.onImpact?.();
-                }, settleDelay);
-                return;
-              }
-            }
-            request.onImpact?.();
-          },
-          offsets: request.word.split("").map(() => ({ dx: 0, dy: 0, rot: 0 })),
-        });
-        return;
-      }
-
-      slashesRef.current.push({
-        label: request.word,
-        points: buildSlashSamples(
-          sceneAnchors.slashStart,
-          sceneAnchors.slashControl,
-          sceneAnchors.slashEnd,
-        ),
-        blocked: request.blocked,
-        shielded: request.shielded,
-        alive: true,
-        startTime: performance.now(),
-        duration: 760,
-        recoveryDuration: 1050,
-        onImpact: () => {
-          if (request.shielded) {
-            flashShieldImpact("player", request.blocked ? "perfect" : "partial");
-          }
-          if (!request.blocked) {
-            flashPlayerImpact(request.shielded ? "partial" : "full", request.impactDamage ?? 0);
-          }
-          request.onImpact?.();
-        },
-      });
-    };
-    return () => {
-      projectileCallbackRef.current = null;
-    };
-  }, [
-    flashMonsterImpact,
-    flashPlayerImpact,
-    flashShieldImpact,
-    projectileCallbackRef,
-    projectileSceneAnchors,
-    sceneAnchors,
-  ]);
+  useLayoutEffect(() => {
+    monsterImpactBandTriggerRef.current = triggerMonsterImpactBand;
+  }, [triggerMonsterImpactBand]);
 
   useBattleStageCanvasLoop({
     canvasRef,

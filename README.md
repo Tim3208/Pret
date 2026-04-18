@@ -37,6 +37,7 @@ App
 - `widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` owns the player ASCII markup, equipment tint composition, canvas metric syncing, and render refs.
 - `widgets/battle-stage/model/useMonsterAsciiPresentation.ts` owns the monster ASCII tone/metric syncing, render refs, and localized impact canvas state.
 - `widgets/battle-stage/model/useBattleStageEffects.ts` owns heal/shield/death effect bookkeeping plus sprite effect registration.
+- `widgets/battle-stage/model/useBattleStageCombatFeedback.ts` owns projectile/slash callback registration, CRT reactions, hit-wave progression, and transient impact feedback state.
 - `features/battle-command-input/ui/BattleCommandInput.tsx` owns command selection, target picking, prompt parsing, and keyboard navigation.
 - `features/potion-use/model/usePotionUseInteraction.ts` owns potion home/rest/drag state, hover detection, hover displacement state, and drop resolution.
 - `features/potion-use/ui/PotionUseButton.tsx` owns the draggable potion button shell, tooltip, and orbit presentation.
@@ -44,7 +45,7 @@ App
 - `widgets/resource-panel/ui/ResourcePanel.tsx` owns the HP/MP panel composition around the existing ASCII widgets.
 - `widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` owns the player equipment hotspot and tooltip overlay.
 - `widgets/battle-stage/ui/BattleMonsterPanel.tsx` owns the monster sprite block, intent overlay canvas placement, and HP bar rendering.
-- `BattleStage` owns live combat scene composition, DOM refs, potion consume effect callbacks, and projectile registration while consuming shared helpers from `widgets/battle-stage/lib/*`.
+- `BattleStage` owns live combat scene composition, DOM refs, and potion consume effect callbacks while consuming model hooks and shared helpers from `widgets/battle-stage/lib/*`.
 - `widgets/battle-stage/lib/core.ts` holds shared types, fixed layout anchors, Bezier sampling, and coordinate helpers.
 - `widgets/battle-stage/lib/visuals.ts` holds pure canvas rendering, glyph deformation, overlay effects, and particle spawners.
 
@@ -75,6 +76,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx` | Owns player ASCII markup generation, tint mapping, and canvas metric/render refs. |
 | `src/widgets/battle-stage/model/useMonsterAsciiPresentation.ts` | Owns monster ASCII tone calculation, metric syncing, render refs, and impact band canvas state. |
 | `src/widgets/battle-stage/model/useBattleStageEffects.ts` | Owns heal detection, shield persistence, monster death timing, and sprite effect refs. |
+| `src/widgets/battle-stage/model/useBattleStageCombatFeedback.ts` | Owns projectile/slash callback registration, transient attack feedback state, CRT reactions, and hit-wave progression. |
 | `src/features/battle-command-input/ui/BattleCommandInput.tsx` | Owns command selection, target confirmation, prompt parsing, and keyboard navigation. |
 | `src/features/potion-use/model/usePotionUseInteraction.ts` | Owns potion drag state, home/rest positioning, hover detection, hover displacement state, and drop resolution. |
 | `src/features/potion-use/ui/PotionUseButton.tsx` | Renders the draggable potion shell, orbit animation, and tooltip around the potion asset. |
@@ -82,7 +84,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 | `src/widgets/resource-panel/ui/ResourcePanel.tsx` | Composes the HP and MP widgets into the battle resource HUD. |
 | `src/widgets/battle-stage/ui/BattleEquipmentOverlay.tsx` | Renders equipment hotspots and tooltips on top of the player ASCII sprite. |
 | `src/widgets/battle-stage/ui/BattleMonsterPanel.tsx` | Renders the monster sprite block, intent overlay canvas, and HP bar. |
-| `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion drag state, and effect orchestration. |
+| `src/widgets/battle-stage/ui/BattleStage.tsx` | Wires the combat scene together: refs, potion drag state, and widget/model composition. |
 | `src/widgets/battle-stage/lib/core.ts` | Shared combat types, anchor maps, Bezier helpers, and scene-to-console coordinate math. |
 | `src/widgets/battle-stage/lib/visuals.ts` | Pure text/canvas rendering helpers, monster glyph impact drawing, and particle/effect factories. |
 | `src/entities/combat/*`, `src/entities/player/*`, `src/entities/monster/*`, `src/entities/spell/*`, `src/entities/equipment/*` | Combat domain rules split by responsibility into entity slices. |
@@ -126,6 +128,7 @@ If a combat change is pure math, coordinate mapping, or visual rendering, it sho
 - Add new player ASCII sprite markup or canvas metric rules in `src/widgets/battle-stage/model/usePlayerAsciiPresentation.tsx`.
 - Add new monster ASCII impact/metric rules in `src/widgets/battle-stage/model/useMonsterAsciiPresentation.ts`.
 - Add new shield/heal/death sprite-effect rules in `src/widgets/battle-stage/model/useBattleStageEffects.ts`.
+- Add new projectile/slash impact feedback branches in `src/widgets/battle-stage/model/useBattleStageCombatFeedback.ts`.
 - Add new RAF canvas orchestration or projectile/render loop changes in `src/widgets/battle-stage/model/useBattleStageCanvasLoop.ts`.
 - Add new reusable coordinate or sampling helpers in `widgets/battle-stage/lib/core.ts`.
 - Add new particle systems or canvas-only visuals in `widgets/battle-stage/lib/visuals.ts`.
