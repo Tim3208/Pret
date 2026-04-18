@@ -1,48 +1,116 @@
-# Pret 리팩토링 작업 가이드
+# feat/#7 작업 가이드
 
-## 현재 작업 맥락
+## 브랜치 메타 정보
 
-- 현재 브랜치: `feat/#6`
-- 현재 작업 목적: 프로젝트를 `FSD + content 계층` 구조로 전면 리팩토링한다.
-- 이번 브랜치에서는 기능 추가보다 구조 정리, 의존 방향 정리, 텍스트 자산 정리를 우선한다.
+- 현재 브랜치: `feat/#7`
+- 관련 이슈: `#7`
+- 이슈 제목: `[FSD] feat/#5의 voca lexicon and word prompt polish를 feat/#6 구조로 이식`
+- 현재 구조 기준 브랜치: `feat/#6`
+- 원본 기능 브랜치: `origin/feat/#5`
+- 변경 의도 추출 기준: `c8138f4`
+  - 참고: `c8138f4`는 현재 `origin/feat/#4`, `feat/#4`, `main`이 함께 가리키는 공통 기준 커밋이다.
+  - `feat/#4`의 마지막 커밋 메시지: `chore: github page 배포작업`
+  - 조사 원칙: `c8138f4` 이후 `origin/feat/#5`에서 추가된 변경분을 이번 이식 대상 기능으로 본다.
+- 대상 기능명: `voca lexicon and word prompt polish`
+
+## 이 브랜치의 목표
+
+이번 브랜치의 목표는 `feat/#5`에서 개발된 `voca lexicon and word prompt polish` 기능을
+현재 `feat/#6` 구조에 맞게 다시 배치하고 구현하는 것이다.
+
+중요:
+
+- 이번 작업은 단순 cherry-pick 이 아니다.
+- 삭제된 예전 파일 구조를 복원하지 않는다.
+- 현재 구조의 책임 경계를 유지한 채 기능을 이식한다.
 
 ## 먼저 읽을 문서
 
 작업을 시작하기 전에 아래 문서를 순서대로 확인한다.
 
-1. [docs/architecture/fsd-refactor-plan.ko.md](docs/architecture/fsd-refactor-plan.ko.md)
-2. [docs/ai/fsd-migration-guide.md](docs/ai/fsd-migration-guide.md)
-3. [docs/ai/current-to-target-map.md](docs/ai/current-to-target-map.md)
+1. `AGENTS.md`
+2. [docs/ai/voca-lexicon-word-prompt-polish-plan.md](docs/ai/voca-lexicon-word-prompt-polish-plan.md)
+3. [docs/ai/feature-porting-guide.md](docs/ai/feature-porting-guide.md)
 
-## 절대 규칙
+원칙:
 
-- 루트 `src` 아래에 새 기능 파일을 평면적으로 추가하지 않는다.
-- 큰 파일을 한 번에 통째로 옮기지 않고, 책임 단위로 나눠 이동한다.
-- 플레이어 노출 텍스트는 가능한 한 `src/content` 계층으로 이동한다.
-- locale 로직과 번역 데이터는 분리한다.
-- `index.ts` 기반 public API를 우선하되, `content`는 `typed data layer`로 보고 파일 단위 import를 허용한다.
-- 도메인 규칙, 텍스트, UI, 연출 코드를 한 파일에 다시 섞지 않는다.
-- 미사용 파일은 새 구조로 무작정 옮기지 말고, 실제 사용 여부를 확인한 뒤 유지 또는 제거를 결정한다.
-- 각 단계가 끝날 때 `npm run lint`, `npm run build` 기준으로 검증 가능한 상태를 유지한다.
+- 예전 리팩토링 문서는 기본 참고 대상이 아니다.
+- 구조 규칙이 정말로 모호할 때만 과거 문서를 보조적으로 확인한다.
 
-## 현재 우선 분해 대상
+## 저장소 읽는 순서
 
-- `src/App.tsx`
-- `src/BattleScene.tsx`
-- `src/BattleCombat.tsx`
-- `src/battleTypes.ts`
-- `src/language.ts`
-- `src/i18n.ts`
+AI는 아래 순서로 저장소를 읽는다.
 
-## 작업 원칙
+1. `src/app`
+2. `src/pages`
+3. `src/widgets`
+4. `src/features`
+5. `src/entities`
+6. `src/shared`
+7. `src/content`
 
-- 폴더 이동보다 책임 분리를 먼저 본다.
-- 한 PR 또는 한 커밋에 너무 많은 역할 변경을 섞지 않는다.
-- 텍스트 수정만 필요한 경우 로직 파일을 건드리지 않는 구조를 목표로 한다.
-- 새 구조가 완성되기 전까지는 “임시 파일”을 늘리기보다, 목표 구조를 향한 명확한 중간 상태를 만든다.
+전투 관련 기능이면 아래 순서로 더 좁혀 읽는다.
 
-## 문서 갱신 규칙
+1. `src/pages/battle/ui/BattlePage.tsx`
+2. `src/widgets/battle-stage/ui/BattleStage.tsx`
+3. `src/widgets/battle-stage/model/*`
+4. `src/widgets/battle-stage/lib/*`
+5. `src/features/battle-command-input/*`
+6. `src/entities/*`
+7. `src/content/text/battle/*`
+8. `src/content/glossary/*`
 
-- 구조 규칙이 바뀌면 `docs/architecture/fsd-refactor-plan.ko.md`를 먼저 갱신한다.
-- 실제 이동 계획이나 경로 결정이 바뀌면 `docs/ai/current-to-target-map.md`를 갱신한다.
-- 작업 규칙, 금지 패턴, 단계 순서가 바뀌면 `docs/ai/fsd-migration-guide.md`를 갱신한다.
+## 배치 기준
+
+- 화면 조합: `pages`
+- 큰 장면 UI 블록: `widgets`
+- 사용자 행동/입력/선택/사용: `features`
+- 타입/규칙/계산/판정: `entities`
+- 완전 공용 유틸 또는 공용 UI: `shared`
+- 플레이어 노출 텍스트/설명/로그/카탈로그 데이터: `content`
+
+## 금지 사항
+
+- 예전 브랜치 파일을 통째로 복사해서 덮어쓰기
+- 삭제된 루트 `src` 평면 파일을 다시 만드는 것
+- 다른 slice 내부 파일을 deep import 하는 것
+- 플레이어 노출 텍스트를 컴포넌트 안에 직접 누적하는 것
+- 기능 이식과 무관한 리디자인/밸런스 변경을 섞는 것
+
+## 구현 순서
+
+1. `feat/#5` 변경사항 조사
+2. 변경 의도를 책임 단위로 분해
+3. 현재 구조의 목표 위치 확정
+4. `entities` / `content` / `shared` 반영
+5. `features` / `widgets` 반영
+6. `pages` / `app` 연결
+7. 문서 갱신
+8. 검증
+
+## diff 조사 기준
+
+이번 브랜치에서 기능 차이를 찾을 때는 아래 원칙을 고정한다.
+
+- `feat/#4`의 마지막 상태는 `c8138f4`로 본다.
+- 따라서 `origin/feat/#5`에서 이식할 기능은 `c8138f4` 이후에 추가된 변경분이다.
+- 즉, 아래 범위가 "이번에 읽어야 할 실제 기능 diff"다.
+
+```powershell
+git log --oneline c8138f4..origin/feat/#5
+git diff --name-only c8138f4..origin/feat/#5
+git diff c8138f4..origin/feat/#5 -- <path>
+```
+
+읽는 방법:
+
+- `c8138f4` 이전 내용은 기존 베이스로 취급한다.
+- `c8138f4..origin/feat/#5` 사이에만 `voca lexicon and word prompt polish` 기능 의도가 들어 있다고 가정하고 조사한다.
+
+## 완료 기준
+
+- `feat/#5`의 핵심 동작이 현재 구조에서 재현된다.
+- 삭제된 예전 경로를 다시 만들지 않는다.
+- 플레이어 노출 텍스트가 로직 파일에 다시 뭉치지 않는다.
+- `npm run lint`
+- `npm run build`
