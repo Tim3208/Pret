@@ -76,3 +76,25 @@ git diff c8138f4..origin/feat/#5 -- <path>
 - 새 텍스트/어휘 데이터의 위치가 명확하다.
 - `npm run lint`
 - `npm run build`
+
+## 8. 현재 이식 위치
+
+- word prompt 판정과 타입: `src/entities/combat`
+- decipher / combination / stability 스탯과 최대치 계산: `src/entities/player`
+- 장비 스탯 보정 반영: `src/entities/equipment`
+- 몬스터 intent telegraph 단계화: `src/entities/monster`
+- 전투 문구와 prompt judgement copy: `src/content/text/battle/*`
+- VOCA 카탈로그 데이터: `src/content/glossary/voca/lexicon.ts`
+- VOCA 오버레이 UI: `src/widgets/voca-lexicon/*`
+- prompt 입력 처리: `src/features/battle-command-input/*`
+- prompt 이펙트/lexicon stat HUD와 전투 연결: `src/widgets/battle-stage/*`
+- 앱 루트 연결: `src/app/App.tsx`
+
+## 9. 검증 결과
+
+- `npm run lint` 통과
+- `npm.cmd run build` 통과
+
+참고:
+
+- PowerShell execution policy 때문에 `npm run build`는 `npm.ps1`에서 차단되었고, 같은 빌드를 `npm.cmd run build`로 검증했다.

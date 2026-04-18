@@ -1,4 +1,5 @@
 export {
+  getMonsterIntentTelegraph,
   HOLLOW_WRAITH,
   pickMonsterIntent,
 } from "./model/monster";

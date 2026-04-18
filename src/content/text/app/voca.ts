@@ -1,0 +1,26 @@
+export const VOCA_LEXICON_TEXT = {
+  en: {
+    title: "VOCA",
+    closeLabel: "close",
+    pageLabel: "page",
+    detailLabel: "detail",
+    placeholderDetail: "hover a word to inspect its phrase shape.",
+    unstableLabel: "signal unstable",
+    stableLabel: "index stable",
+    decipherLabel: "decipher",
+    memoryLabel: "memory://volatile-run",
+    emptyLabel: "no recorded words on this page.",
+  },
+  ko: {
+    title: "VOCA",
+    closeLabel: "닫기",
+    pageLabel: "page",
+    detailLabel: "detail",
+    placeholderDetail: "단어에 마우스를 올리면 문장 구조와 효과를 본다.",
+    unstableLabel: "신호 불안정",
+    stableLabel: "색인 안정",
+    decipherLabel: "해독력",
+    memoryLabel: "memory://volatile-run",
+    emptyLabel: "이 페이지에는 기록된 단어가 없다.",
+  },
+} as const;

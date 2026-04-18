@@ -46,8 +46,8 @@ export const EQUIPMENT_TEXT: Record<string, EquipmentTextEntry> = {
       ko: "재 속에 묻힌 반구형 투구가 아직 다른 이의 이마 온기를 품은 듯 미지근하게 빛난다.",
     },
     effectText: {
-      en: "+2 Literacy",
-      ko: "문해력 +2",
+      en: "+1 Decipher, +1 Stability",
+      ko: "해독력 +1, 안정성 +1",
     },
   },
   "whisper-locket": {

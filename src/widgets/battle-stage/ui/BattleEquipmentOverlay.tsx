@@ -7,7 +7,6 @@ import type { Language } from "@/entities/locale";
 
 interface BattleEquipmentOverlayProps {
   effectLabel: string;
-  inactiveLabel: string;
   items: EquipmentDefinition[];
   language: Language;
 }
@@ -17,7 +16,6 @@ interface BattleEquipmentOverlayProps {
  */
 export default function BattleEquipmentOverlay({
   effectLabel,
-  inactiveLabel,
   items,
   language,
 }: BattleEquipmentOverlayProps) {
@@ -64,9 +62,6 @@ export default function BattleEquipmentOverlay({
                 </span>
                 <span className="mt-2 block text-[0.68rem] leading-[1.45] text-white/72">
                   {effectLabel} {item.effectText[language]}
-                </span>
-                <span className="mt-1 block text-[0.62rem] leading-[1.4] text-white/36">
-                  {inactiveLabel}
                 </span>
               </span>
             </span>

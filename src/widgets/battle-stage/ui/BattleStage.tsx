@@ -5,6 +5,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { BATTLE_COMBAT_TEXT } from "@/content/text/battle/ui";
 import {
@@ -20,7 +21,9 @@ import {
 import type { Language } from "@/entities/locale";
 import type { MonsterIntent } from "@/entities/monster";
 import type { PlayerStats } from "@/entities/player";
-import BattleCommandInput from "@/features/battle-command-input";
+import BattleCommandInput, {
+  type PromptEffectViewModel,
+} from "@/features/battle-command-input";
 import {
   PotionUseButton,
   usePotionUseInteraction,
@@ -30,6 +33,8 @@ import BattleLogPanel from "@/widgets/battle-log";
 import { ResourcePanel } from "@/widgets/resource-panel";
 import BattleEquipmentOverlay from "./BattleEquipmentOverlay";
 import BattleMonsterPanel from "./BattleMonsterPanel";
+import PromptEffectOverlay from "./PromptEffectOverlay";
+import PromptLexiconBadge from "./PromptLexiconBadge";
 import {
   H,
   SCENE_H,
@@ -106,6 +111,7 @@ export default function BattleStage({
   projectileCallbackRef,
 }: BattleStageProps) {
   const combatText = BATTLE_COMBAT_TEXT[language];
+  const [promptEffect, setPromptEffect] = useState<PromptEffectViewModel | null>(null);
   const battleFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneFxCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -359,7 +365,6 @@ export default function BattleStage({
             />
             <BattleEquipmentOverlay
               effectLabel={combatText.equipmentEffectLabel}
-              inactiveLabel={combatText.equipmentInactiveLabel}
               items={equippedItemList}
               language={language}
             />
@@ -400,7 +405,15 @@ export default function BattleStage({
           shakeMonster={shakeMonster}
         />
 
-        <BattleLogPanel canvasRef={canvasRef} glitchActive={glitchActive} />
+        <BattleLogPanel canvasRef={canvasRef} glitchActive={glitchActive}>
+          {promptEffect && (
+            <PromptEffectOverlay
+              effect={promptEffect}
+              judgementLabel={combatText.judgementLabel}
+              busyLabel={combatText.promptBusyLabel}
+            />
+          )}
+        </BattleLogPanel>
 
         <div className="absolute left-1/2 top-[71%] z-30 flex -translate-x-1/2 flex-col items-center gap-2">
           <ResourcePanel
@@ -415,6 +428,16 @@ export default function BattleStage({
           />
         </div>
 
+        <PromptLexiconBadge
+          agilityLabel={combatText.agilityLabel}
+          combinationLabel={combatText.combinationLabel}
+          decipherLabel={combatText.decipherLabel}
+          lexiconLabel={combatText.lexiconLabel}
+          playerStats={playerStats}
+          stabilityLabel={combatText.stabilityLabel}
+          strengthLabel={combatText.strengthLabel}
+        />
+
         <CrtOverlay glitchActive={glitchActive} noiseLevel={crtNoiseLevel} />
       </div>
 
@@ -423,6 +446,7 @@ export default function BattleStage({
         monsterName={monsterName}
         playerMana={playerMana}
         playerStats={playerStats}
+        onPromptEffectChange={setPromptEffect}
         targetOptions={targetOptions}
         turn={turn}
         onAction={onAction}

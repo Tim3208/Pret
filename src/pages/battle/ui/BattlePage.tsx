@@ -60,6 +60,7 @@ export default function BattlePage({
     turn,
     victoryBannerText,
   } = useBattleFlow({
+    equippedItems,
     language,
     onBattleEnd,
   });

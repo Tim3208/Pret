@@ -1,4 +1,5 @@
 export {
+  evaluatePromptAction,
   getActionCritChance,
   getActionHitChance,
   getActionTargeting,
@@ -12,6 +13,11 @@ export type {
   BattleTargetSide,
   CombatAnimationRequest,
   CombatMonsterIntent,
+  PromptEvaluation,
+  PromptFailureReason,
+  PromptOutcome,
+  PromptToken,
+  PromptTokenKind,
   PlayerAction,
   PlayerActionDraft,
 } from "./model/combat";

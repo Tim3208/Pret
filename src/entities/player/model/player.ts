@@ -4,10 +4,12 @@
 export interface PlayerStats {
   strength: number;
   agility: number;
-  literacy: number;
+  decipher: number;
+  combination: number;
+  stability: number;
 }
 
-export type LiteracyTier = 1 | 2 | 3;
+export type StabilityTier = 1 | 2 | 3;
 
 /**
  * 새 전투 시작 시 사용하는 기본 플레이어 능력치다.
@@ -15,15 +17,17 @@ export type LiteracyTier = 1 | 2 | 3;
 export const DEFAULT_STATS: PlayerStats = {
   strength: 6,
   agility: 5,
-  literacy: 8,
+  decipher: 1,
+  combination: 2,
+  stability: 2,
 };
 
 /**
- * 문해력 수치로 해금된 주문 티어를 계산한다.
+ * 안정성 수치로 해금된 주문 티어를 계산한다.
  */
-export function getLiteracyTier(literacy: number): LiteracyTier {
-  if (literacy >= 20) return 3;
-  if (literacy >= 12) return 2;
+export function getStabilityTier(stability: number): StabilityTier {
+  if (stability >= 7) return 3;
+  if (stability >= 4) return 2;
   return 1;
 }
 
@@ -38,7 +42,7 @@ export function getMaxHp(stats: PlayerStats): number {
  * 현재 능력치 기준 최대 마나를 계산한다.
  */
 export function getMaxMana(stats: PlayerStats): number {
-  return 8 + stats.literacy * 3;
+  return 8 + stats.stability * 3;
 }
 
 /**

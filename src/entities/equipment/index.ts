@@ -1,4 +1,5 @@
 export {
+  applyEquipmentModifiers,
   buildEquippedItems,
   EQUIPMENT_POOL,
   getEquippedItems,
@@ -9,6 +10,7 @@ export {
   TEST_START_EQUIPPED_ITEMS,
 } from "./model/equipment";
 export type {
+  AppliedEquipmentStats,
   EquipmentAnchor,
   EquipmentDefinition,
   EquipmentModifiers,

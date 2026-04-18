@@ -12,14 +12,15 @@ import {
   MONSTER_TARGET_ID,
   PLAYER_TARGET_ID,
 } from "@/entities/combat";
+import { type EquippedItems, applyEquipmentModifiers } from "@/entities/equipment";
 import {
   type Language,
-  getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
   interpolateText,
 } from "@/entities/locale";
 import {
   HOLLOW_WRAITH,
+  getMonsterIntentTelegraph,
   type MonsterIntent,
   pickMonsterIntent,
 } from "@/entities/monster";
@@ -36,6 +37,7 @@ import { resolvePlayerAction } from "./resolvePlayerAction";
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
 
 interface UseBattleFlowParams {
+  equippedItems: EquippedItems;
   language: Language;
   onBattleEnd: (result: { won: boolean }) => void;
 }
@@ -44,6 +46,7 @@ interface UseBattleFlowParams {
  * 전투 장면에서 사용하는 상태 전환, 턴 처리, 승패 판정을 한곳에서 관리한다.
  */
 export function useBattleFlow({
+  equippedItems,
   language,
   onBattleEnd,
 }: UseBattleFlowParams) {
@@ -51,10 +54,13 @@ export function useBattleFlow({
   const battleLogText = BATTLE_LOG_TEXT[language];
   const sceneText = BATTLE_SCENE_TEXT[language];
   const localizedMonsterName = getLocalizedMonsterName(monster.name, language);
-  const [playerStats] = useState<PlayerStats>(() => ({ ...DEFAULT_STATS }));
-
-  const playerMaxHp = getMaxHp(playerStats);
-  const playerMaxMana = getMaxMana(playerStats);
+  const combatStats = useMemo(
+    () => applyEquipmentModifiers(DEFAULT_STATS, equippedItems),
+    [equippedItems],
+  );
+  const playerStats: PlayerStats = combatStats.stats;
+  const playerMaxHp = getMaxHp(playerStats) + combatStats.maxHpBonus;
+  const playerMaxMana = getMaxMana(playerStats) + combatStats.maxManaBonus;
 
   const [phase, setPhase] = useState<BattlePhase>("encounter");
   const [playerHp, setPlayerHp] = useState(playerMaxHp);
@@ -77,8 +83,8 @@ export function useBattleFlow({
   }, [ambientIndex, language]);
 
   const nextIntentLabel = useMemo(
-    () => getLocalizedMonsterIntentLabel(nextIntent.label, language),
-    [language, nextIntent.label],
+    () => getMonsterIntentTelegraph(nextIntent, playerStats.decipher, language),
+    [language, nextIntent, playerStats.decipher],
   );
 
   const targetOptions = useMemo<BattleTargetOption[]>(
@@ -203,6 +209,7 @@ export function useBattleFlow({
         playerMana,
         playerMaxHp,
         playerStats,
+        shieldOnDefendBonus: combatStats.shieldOnDefendBonus,
         sceneText,
         setMonsterHp,
         setMonsterShield,
@@ -237,6 +244,7 @@ export function useBattleFlow({
     [
       turn,
       playerStats,
+      combatStats.shieldOnDefendBonus,
       playerMaxHp,
       playerMana,
       monster,

@@ -19,7 +19,7 @@ import {
   getBaseAttackDamage,
   getBaseShield,
   getHealAmount,
-  getLiteracyTier,
+  getStabilityTier,
 } from "@/entities/player";
 import { type Element, getElementMultiplier } from "@/entities/spell";
 
@@ -37,6 +37,7 @@ interface ResolvePlayerActionParams {
   playerMana: number;
   playerMaxHp: number;
   playerStats: PlayerStats;
+  shieldOnDefendBonus: number;
   sceneText: BattleSceneText;
   setMonsterHp: Dispatch<SetStateAction<number>>;
   setMonsterShield: Dispatch<SetStateAction<number>>;
@@ -66,6 +67,7 @@ export function resolvePlayerAction({
   playerMana,
   playerMaxHp,
   playerStats,
+  shieldOnDefendBonus,
   sceneText,
   setMonsterHp,
   setMonsterShield,
@@ -182,7 +184,7 @@ export function resolvePlayerAction({
     }
 
     case "defend": {
-      const shield = getBaseShield(playerStats);
+      const shield = getBaseShield(playerStats) + shieldOnDefendBonus;
       setPlayerShield(shield);
       addLog(
         interpolateText(battleLogText.defend, { shield }),
@@ -204,10 +206,10 @@ export function resolvePlayerAction({
     case "spell": {
       const { spell, mode } = action;
       const spellDisplayName = getLocalizedSpellName(spell.name, language);
-      const tier = getLiteracyTier(playerStats.literacy);
+      const tier = getStabilityTier(playerStats.stability);
       if (spell.tier > tier) {
         addLog(
-          interpolateText(battleLogText.spellNeedLiteracy, {
+          interpolateText(battleLogText.spellNeedStability, {
             tier: spell.tier,
           }),
           "text-red-400",
@@ -368,7 +370,8 @@ export function resolvePlayerAction({
         };
       }
 
-      const shield = spell.baseShield + Math.floor(playerStats.agility * 0.5);
+      const shield =
+        spell.baseShield + Math.floor(playerStats.agility * 0.5) + shieldOnDefendBonus;
       setPlayerShield(shield);
       addLog(
         interpolateText(battleLogText.spellWard, {
@@ -388,6 +391,189 @@ export function resolvePlayerAction({
         );
       }
 
+      return { animationRequest: null, shouldAdvanceTurn: true };
+    }
+
+    case "prompt": {
+      const { evaluation } = action;
+      const promptShieldGain =
+        evaluation.shieldGain > 0
+          ? evaluation.shieldGain + shieldOnDefendBonus
+          : 0;
+      const actionWord =
+        evaluation.runeCount > 0
+          ? "XLEW"
+          : evaluation.contrastCount > 0
+            ? "UBT"
+            : evaluation.connectorCount > 0
+              ? "MOR"
+              : evaluation.steps[0]?.verb === "defend"
+                ? "WARD"
+                : "STRIKE";
+
+      if (evaluation.outcome === "failure") {
+        setPlayerMana((value) => Math.max(0, value - evaluation.selfManaCost));
+        setPlayerHp((value) => Math.max(0, value - evaluation.selfHpCost));
+        addLog(
+          interpolateText(battleLogText.promptFailure, {
+            hpCost: evaluation.selfHpCost,
+            manaCost: evaluation.selfManaCost,
+          }),
+          "text-red-400",
+        );
+        return { animationRequest: null, shouldAdvanceTurn: true };
+      }
+
+      const applyBacklash = () => {
+        if (evaluation.selfManaCost > 0) {
+          setPlayerMana((value) => Math.max(0, value - evaluation.selfManaCost));
+        }
+
+        if (evaluation.selfHpCost > 0) {
+          setPlayerHp((value) => Math.max(0, value - evaluation.selfHpCost));
+          addLog(
+            interpolateText(battleLogText.promptBacklash, {
+              hpCost: evaluation.selfHpCost,
+              manaCost: evaluation.selfManaCost,
+            }),
+            "text-amber-300",
+          );
+        }
+      };
+
+      if (evaluation.attackDamage > 0) {
+        const hitChance = getActionHitChance(action, playerStats, "enemy");
+        const critChance = getActionCritChance(action, playerStats, "enemy");
+        const didHit = Math.random() < hitChance;
+        const didCrit = didHit && Math.random() < critChance;
+
+        let damage = evaluation.attackDamage;
+        let elementLog: { text: string; color: string } | null = null;
+        if (monsterElement && evaluation.element) {
+          const multiplier = getElementMultiplier(evaluation.element, monsterElement);
+          damage = Math.round(damage * multiplier);
+          if (multiplier > 1) {
+            elementLog = {
+              text: sceneText.elementalWeakness,
+              color: "text-yellow-300",
+            };
+          } else if (multiplier < 1) {
+            elementLog = {
+              text: sceneText.elementalResistance,
+              color: "text-gray-400",
+            };
+          }
+        }
+
+        if (didCrit) {
+          damage = getCriticalDamage(damage);
+        }
+
+        if (!didHit) {
+          return {
+            animationRequest: {
+              word: actionWord,
+              fromPlayer: true,
+              targetId: "monster",
+              targetSide: "enemy",
+              kind: "projectile",
+              element: evaluation.element,
+              missed: true,
+              onImpact: () => {
+                if (promptShieldGain > 0) {
+                  setPlayerShield(promptShieldGain);
+                  addLog(
+                    interpolateText(battleLogText.promptMissShield, {
+                      shield: promptShieldGain,
+                    }),
+                    "text-blue-300",
+                  );
+                }
+                applyBacklash();
+                addLog(
+                  interpolateText(battleLogText.promptMiss, {
+                    actionWord,
+                  }),
+                  "text-white/40",
+                );
+              },
+            },
+            shouldAdvanceTurn: true,
+          };
+        }
+
+        const shieldAbsorb = Math.min(currentMonsterShield, damage);
+        const hpDamage = damage - shieldAbsorb;
+
+        return {
+          animationRequest: {
+            word: actionWord,
+            fromPlayer: true,
+            targetId: "monster",
+            targetSide: "enemy",
+            kind: "projectile",
+            element: evaluation.element,
+            shielded: currentMonsterShield > 0,
+            blocked: currentMonsterShield >= damage,
+            critical: didCrit,
+            impactDamage: hpDamage,
+            onImpact: () => {
+              if (shieldAbsorb > 0) {
+                setMonsterShield((value) => Math.max(0, value - shieldAbsorb));
+              }
+              if (elementLog) {
+                addLog(elementLog.text, elementLog.color);
+              }
+              setMonsterHp((value) => Math.max(0, value - hpDamage));
+              if (promptShieldGain > 0) {
+                setPlayerShield(promptShieldGain);
+              }
+
+              addLog(
+                interpolateText(
+                  shieldAbsorb > 0
+                    ? didCrit
+                      ? battleLogText.promptShieldCriticalHit
+                      : battleLogText.promptShieldHit
+                    : didCrit
+                      ? battleLogText.promptCriticalHit
+                      : battleLogText.promptHit,
+                  {
+                    actionWord,
+                    damage,
+                    hpDamage,
+                    shieldAbsorb,
+                  },
+                ),
+                didCrit ? "text-yellow-300" : "text-cyan-300",
+              );
+
+              if (promptShieldGain > 0) {
+                addLog(
+                  interpolateText(battleLogText.promptShieldGainOnHit, {
+                    shield: promptShieldGain,
+                  }),
+                  "text-blue-300",
+                );
+              }
+
+              applyBacklash();
+            },
+          },
+          shouldAdvanceTurn: true,
+        };
+      }
+
+      if (promptShieldGain > 0) {
+        setPlayerShield(promptShieldGain);
+        addLog(
+          interpolateText(battleLogText.promptShieldOnly, {
+            shield: promptShieldGain,
+          }),
+          "text-blue-300",
+        );
+      }
+      applyBacklash();
       return { animationRequest: null, shouldAdvanceTurn: true };
     }
   }

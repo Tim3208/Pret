@@ -1,10 +1,11 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 interface BattleLogPanelProps {
   /** 전투 로그를 그리는 중앙 CRT 캔버스 ref */
   canvasRef: RefObject<HTMLCanvasElement | null>;
   /** CRT 글리치 애니메이션 활성화 여부 */
   glitchActive: boolean;
+  children?: ReactNode;
 }
 
 /**
@@ -14,6 +15,7 @@ interface BattleLogPanelProps {
 export default function BattleLogPanel({
   canvasRef,
   glitchActive,
+  children,
 }: BattleLogPanelProps) {
   return (
     <div
@@ -26,6 +28,7 @@ export default function BattleLogPanel({
         }`}
       >
         <canvas ref={canvasRef} className="relative block h-auto w-full" />
+        {children}
       </div>
     </div>
   );

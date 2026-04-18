@@ -1,4 +1,4 @@
-import type { LiteracyTier } from "@/entities/player";
+import type { StabilityTier } from "@/entities/player";
 
 export type Element = "fire" | "water" | "earth" | "nature";
 export type SpellMode = "attack" | "defend";
@@ -22,7 +22,7 @@ const ELEMENT_ADVANTAGE: Record<Element, Element> = {
 export interface Spell {
   name: string;
   element: Element;
-  tier: LiteracyTier;
+  tier: StabilityTier;
   manaCost: number;
   modes: SpellMode[];
   baseDamage: number;

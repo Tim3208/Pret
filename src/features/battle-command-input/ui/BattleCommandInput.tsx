@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BATTLE_COMBAT_TEXT } from "@/content/text/battle/ui";
 import {
   type BattleTargetOption,
@@ -16,12 +16,18 @@ import {
 } from "@/entities/locale";
 import type { PlayerStats } from "@/entities/player";
 import { findSpell } from "@/entities/spell";
+import {
+  buildPromptEffectViewModel,
+  isWordPromptCandidate,
+  type PromptEffectViewModel,
+} from "../model/promptEffect";
 
 interface BattleCommandInputProps {
   language: Language;
   monsterName: string;
   playerMana: number;
   playerStats: PlayerStats;
+  onPromptEffectChange?: (effect: PromptEffectViewModel | null) => void;
   targetOptions: BattleTargetOption[];
   turn: "player" | "monster";
   onAction: (action: PlayerAction) => void;
@@ -35,6 +41,7 @@ export default function BattleCommandInput({
   monsterName,
   playerMana,
   playerStats,
+  onPromptEffectChange,
   targetOptions,
   turn,
   onAction,
@@ -42,9 +49,12 @@ export default function BattleCommandInput({
   const combatText = BATTLE_COMBAT_TEXT[language];
   const [showPrompt, setShowPrompt] = useState(false);
   const [promptInput, setPromptInput] = useState("");
+  const [promptEffect, setPromptEffect] = useState<PromptEffectViewModel | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
   const [pendingAction, setPendingAction] = useState<PlayerActionDraft | null>(null);
+  const promptResolveTimeoutRef = useRef<number | null>(null);
+  const promptEffectActive = Boolean(promptEffect);
 
   const pendingTargeting = pendingAction ? getActionTargeting(pendingAction) : null;
   const availableTargets = useMemo(() => {
@@ -133,6 +143,7 @@ export default function BattleCommandInput({
         stageAction({ type: "defend" });
       } else {
         setPendingAction(null);
+        setPromptEffect(null);
         setPromptInput("");
         setShowPrompt(true);
       }
@@ -141,14 +152,33 @@ export default function BattleCommandInput({
   );
 
   useEffect(() => {
+    onPromptEffectChange?.(promptEffect);
+  }, [onPromptEffectChange, promptEffect]);
+
+  useEffect(() => {
+    return () => {
+      if (promptResolveTimeoutRef.current) {
+        window.clearTimeout(promptResolveTimeoutRef.current);
+      }
+      onPromptEffectChange?.(null);
+    };
+  }, [onPromptEffectChange]);
+
+  useEffect(() => {
     if (turn !== "player") {
       return;
     }
 
     const handler = (event: KeyboardEvent) => {
       if (showPrompt) {
+        if (promptEffectActive) {
+          event.preventDefault();
+          return;
+        }
+
         if (event.key === "Escape") {
           event.preventDefault();
+          setPromptEffect(null);
           setShowPrompt(false);
           setPromptInput("");
         }
@@ -226,6 +256,7 @@ export default function BattleCommandInput({
     selectedIndex,
     selectedTargetIndex,
     showPrompt,
+    promptEffectActive,
     turn,
   ]);
 
@@ -235,12 +266,30 @@ export default function BattleCommandInput({
   const handlePromptSubmit = useCallback(
     (event: FormEvent) => {
       event.preventDefault();
-      if (turn !== "player") {
+      if (turn !== "player" || promptEffectActive) {
         return;
       }
 
       const raw = promptInput.trim();
       if (!raw) {
+        return;
+      }
+
+      if (isWordPromptCandidate(raw)) {
+        const effect = buildPromptEffectViewModel(raw, language, playerStats);
+        setPromptInput("");
+        setPromptEffect(effect);
+
+        if (promptResolveTimeoutRef.current) {
+          window.clearTimeout(promptResolveTimeoutRef.current);
+        }
+
+        promptResolveTimeoutRef.current = window.setTimeout(() => {
+          promptResolveTimeoutRef.current = null;
+          setPromptEffect(null);
+          setShowPrompt(false);
+          onAction({ type: "prompt", evaluation: effect.evaluation });
+        }, effect.duration);
         return;
       }
 
@@ -268,7 +317,7 @@ export default function BattleCommandInput({
         stageAction({ type: "attack" });
       }
     },
-    [promptInput, stageAction, turn],
+    [language, onAction, playerStats, promptEffectActive, promptInput, stageAction, turn],
   );
 
   const choices = useMemo(
@@ -380,6 +429,10 @@ export default function BattleCommandInput({
         </p>
       </div>
     );
+  }
+
+  if (promptEffectActive) {
+    return null;
   }
 
   return (

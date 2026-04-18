@@ -7,6 +7,7 @@ import {
 import {
   type EquipmentDefinition,
   type EquippedItems,
+  applyEquipmentModifiers,
   isEquipmentPoolExhausted,
   rollEquipmentOffer,
 } from "@/entities/equipment";
@@ -16,10 +17,13 @@ import {
   LOCALE_STORAGE_KEY,
   pickText,
 } from "@/entities/locale";
+import { DEFAULT_STATS } from "@/entities/player";
 import BattlePage from "@/pages/battle";
 import PostBattleEvent from "@/pages/post-battle-event";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import type { BattleResult } from "@/pages/battle";
+import VocaLexicon from "@/widgets/voca-lexicon";
+import { getDefaultUnlockedLexiconIds } from "@/content/glossary/voca/lexicon";
 
 /**
  * 밝기에 따라 아스키 문자 밀도를 매핑할 때 사용하는 문자 램프다.
@@ -64,6 +68,10 @@ export default function App() {
    * 같은 장비가 연속 등장하는 빈도를 줄이기 위해 마지막 제시 장비 ID를 저장한다.
    */
   const [lastOfferedItemId, setLastOfferedItemId] = useState<string | null>(null);
+  /**
+   * 현재 실행 동안 해금된 사전 항목 목록이다.
+   */
+  const [learnedLexiconIds] = useState<string[]>(() => getDefaultUnlockedLexiconIds());
 
   /**
    * 전투 결과에 따라 다음 장면을 결정한다.
@@ -109,6 +117,8 @@ export default function App() {
     setOfferedItem(null);
     setPhase("transition");
   }, []);
+
+  const lexiconDecipher = applyEquipmentModifiers(DEFAULT_STATS, equippedItems).stats.decipher;
 
   /**
    * 모닥불 애니메이션 프레임을 취소하기 위해 최근 requestAnimationFrame ID를 보관한다.
@@ -714,6 +724,12 @@ export default function App() {
           onBattleEnd={handleBattleEnd}
         />
       )}
+
+      <VocaLexicon
+        language={language}
+        decipher={lexiconDecipher}
+        learnedEntryIds={learnedLexiconIds}
+      />
     </div>
   );
 }

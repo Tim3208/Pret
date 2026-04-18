@@ -12,7 +12,7 @@ export const BATTLE_LOG_TEXT = {
       "Critical strike! You hit yourself for {damage} damage!",
     defend: "Brace! Shield +{shield}!",
     heal: "Steady breath... +{heal} HP.",
-    spellNeedLiteracy: "Not enough literacy... (need tier {tier})",
+    spellNeedStability: "Not enough stability... (need tier {tier})",
     spellNeedMana: "Not enough mana! (need {manaCost})",
     spellMiss: "{spellName} misses {targetName}! (MP -{manaCost})",
     spellHit: "{spellName}! {damage} damage! (MP -{manaCost})",
@@ -24,6 +24,22 @@ export const BATTLE_LOG_TEXT = {
       "Critical {spellName}! You take {damage} damage. (MP -{manaCost})",
     spellWard: "{spellName} ward! Shield +{shield}! (MP -{manaCost})",
     spellDefendHeal: "Nature mends your wounds... +{heal} HP",
+    promptFailure:
+      "The phrase ruptures and lashes back... HP -{hpCost}, MP -{manaCost}",
+    promptBacklash:
+      "Backlash bites into you... HP -{hpCost}, MP -{manaCost}",
+    promptMiss: "{actionWord} slips through the dark.",
+    promptMissShield:
+      "The phrase misses, but its residue hardens into shield +{shield}.",
+    promptHit: "{actionWord} lands! {damage} damage!",
+    promptCriticalHit: "{actionWord} lands critically! {damage} damage!",
+    promptShieldHit:
+      "{actionWord} lands! {shieldAbsorb} absorbed, {hpDamage} damage!",
+    promptShieldCriticalHit:
+      "{actionWord} lands critically! {shieldAbsorb} absorbed, {hpDamage} damage!",
+    promptShieldGainOnHit:
+      "The phrase knits itself closed into shield +{shield}.",
+    promptShieldOnly: "The phrase coils around you. Shield +{shield}.",
     monsterStunned: "{monsterName} is stunned and cannot act!",
     monsterDefend: "{monsterName} hardens its guard! (Shield {shield})",
     monsterHitThroughShield:
@@ -47,7 +63,7 @@ export const BATTLE_LOG_TEXT = {
     attackSelfCriticalHit: "치명타! 당신 자신에게 {damage} 피해를 입혔다!",
     defend: "방어 태세! 방어막 +{shield}!",
     heal: "호흡을 가다듬는다... HP +{heal}.",
-    spellNeedLiteracy: "문해력이 부족하다... (필요 티어 {tier})",
+    spellNeedStability: "안정성이 부족하다... (필요 티어 {tier})",
     spellNeedMana: "마나가 부족하다! ({manaCost} 필요)",
     spellMiss: "{spellName}이(가) {targetName}에게 빗나갔다! (MP -{manaCost})",
     spellHit: "{spellName}! {damage} 피해! (MP -{manaCost})",
@@ -58,6 +74,22 @@ export const BATTLE_LOG_TEXT = {
       "치명적인 {spellName}! 당신이 {damage} 피해를 입었다. (MP -{manaCost})",
     spellWard: "{spellName} 수호! 방어막 +{shield}! (MP -{manaCost})",
     spellDefendHeal: "자연의 힘이 상처를 메운다... HP +{heal}",
+    promptFailure:
+      "문장이 폭주하며 당신을 되문다... HP -{hpCost}, MP -{manaCost}",
+    promptBacklash:
+      "반동이 몸을 파고든다... HP -{hpCost}, MP -{manaCost}",
+    promptMiss: "{actionWord} 구문이 허공을 가른다.",
+    promptMissShield:
+      "문장은 빗나갔지만 잔문이 응고된다... 방어막 +{shield}",
+    promptHit: "{actionWord} 구문이 적중한다! {damage} 피해!",
+    promptCriticalHit:
+      "{actionWord} 구문이 치명적으로 파고든다! {damage} 피해!",
+    promptShieldHit:
+      "{actionWord} 구문이 적중한다! {shieldAbsorb} 막히고 {hpDamage} 피해!",
+    promptShieldCriticalHit:
+      "{actionWord} 구문이 치명적으로 파고든다! {shieldAbsorb} 막히고 {hpDamage} 피해!",
+    promptShieldGainOnHit: "구문이 재정렬되며 방어막 +{shield}",
+    promptShieldOnly: "문장이 몸 둘레에 감기며 방어막 +{shield}",
     monsterStunned: "{monsterName}은(는) 기절해 움직이지 못한다!",
     monsterDefend:
       "{monsterName}이(가) 몸을 굳히며 방어한다! (방어막 {shield})",

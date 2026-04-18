@@ -3,8 +3,8 @@ export {
   getBaseAttackDamage,
   getBaseShield,
   getHealAmount,
-  getLiteracyTier,
+  getStabilityTier,
   getMaxHp,
   getMaxMana,
 } from "./model/player";
-export type { LiteracyTier, PlayerStats } from "./model/player";
+export type { PlayerStats, StabilityTier } from "./model/player";

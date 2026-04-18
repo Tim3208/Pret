@@ -2,6 +2,7 @@ import {
   EQUIPMENT_SLOT_LABEL_TEXT,
   EQUIPMENT_TEXT,
 } from "@/content/catalog/equipment/equipmentText";
+import type { PlayerStats } from "@/entities/player";
 
 export type LocalizedCopy = Record<"en" | "ko", string>;
 
@@ -18,10 +19,19 @@ export type EquipmentSlot =
 export interface EquipmentModifiers {
   strength?: number;
   agility?: number;
-  literacy?: number;
+  decipher?: number;
+  combination?: number;
+  stability?: number;
   maxHp?: number;
   maxMana?: number;
   shieldOnDefend?: number;
+}
+
+export interface AppliedEquipmentStats {
+  stats: PlayerStats;
+  maxHpBonus: number;
+  maxManaBonus: number;
+  shieldOnDefendBonus: number;
 }
 
 /**
@@ -108,7 +118,8 @@ export const EQUIPMENT_POOL: EquipmentDefinition[] = [
       { row: 5, startColumn: 11, endColumn: 17 },
     ],
     modifiers: {
-      literacy: 2,
+      decipher: 1,
+      stability: 1,
     },
   },
   {
@@ -299,6 +310,34 @@ export function getEquippedItems(
   return Object.values(equippedItems).filter(
     (item): item is EquipmentDefinition => Boolean(item),
   );
+}
+
+/**
+ * 장착한 장비 보정치를 현재 플레이어 능력치와 전투 보너스에 적용한다.
+ */
+export function applyEquipmentModifiers(
+  baseStats: PlayerStats,
+  equippedItems: EquippedItems,
+): AppliedEquipmentStats {
+  const totals: AppliedEquipmentStats = {
+    stats: { ...baseStats },
+    maxHpBonus: 0,
+    maxManaBonus: 0,
+    shieldOnDefendBonus: 0,
+  };
+
+  for (const item of getEquippedItems(equippedItems)) {
+    totals.stats.strength += item.modifiers.strength ?? 0;
+    totals.stats.agility += item.modifiers.agility ?? 0;
+    totals.stats.decipher += item.modifiers.decipher ?? 0;
+    totals.stats.combination += item.modifiers.combination ?? 0;
+    totals.stats.stability += item.modifiers.stability ?? 0;
+    totals.maxHpBonus += item.modifiers.maxHp ?? 0;
+    totals.maxManaBonus += item.modifiers.maxMana ?? 0;
+    totals.shieldOnDefendBonus += item.modifiers.shieldOnDefend ?? 0;
+  }
+
+  return totals;
 }
 
 /**
