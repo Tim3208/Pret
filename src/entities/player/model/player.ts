@@ -15,11 +15,11 @@ export type StabilityTier = 1 | 2 | 3;
  * 새 전투 시작 시 사용하는 기본 플레이어 능력치다.
  */
 export const DEFAULT_STATS: PlayerStats = {
-  strength: 6,
-  agility: 5,
-  decipher: 1,
-  combination: 2,
-  stability: 2,
+  strength: 2,
+  agility: 1,
+  decipher: 0,
+  combination: 0,
+  stability: 0,
 };
 
 /**

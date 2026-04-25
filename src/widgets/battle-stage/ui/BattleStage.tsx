@@ -1,5 +1,6 @@
 import {
   type MutableRefObject,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -55,8 +56,13 @@ import { useMonsterAsciiPresentation } from "../model/useMonsterAsciiPresentatio
 import { usePlayerAsciiPresentation } from "../model/usePlayerAsciiPresentation";
 
 interface BattleStageProps {
+  experience?: number;
+  experienceAnimating?: boolean;
+  level?: number;
+  levelUpHighlight?: boolean;
   monsterName: string;
   monsterAscii: string[];
+  overlay?: ReactNode;
   playerAscii: string[];
   equippedItems: EquippedItems;
   monsterHp: number;
@@ -74,8 +80,11 @@ interface BattleStageProps {
   playerMaxMana: number;
   playerShield: number;
   playerStats: PlayerStats;
+  showCommandInput?: boolean;
   targetOptions: BattleTargetOption[];
+  nextLevelExperience?: number;
   onAction: (action: PlayerAction) => void;
+  potionCharges: number;
   potionAvailable: boolean;
   onPotionUse: () => number;
   projectileCallbackRef: MutableRefObject<((request: CombatAnimationRequest) => void) | null>;
@@ -85,8 +94,13 @@ interface BattleStageProps {
  * 전투 콘솔, ASCII 캐릭터, 투사체 연출을 함께 렌더링하는 메인 전투 UI다.
  */
 export default function BattleStage({
+  experience = 0,
+  experienceAnimating = false,
+  level = 1,
+  levelUpHighlight = false,
   monsterName,
   monsterAscii,
+  overlay,
   playerAscii,
   equippedItems,
   monsterHp,
@@ -104,8 +118,11 @@ export default function BattleStage({
   playerMaxMana,
   playerShield,
   playerStats,
+  showCommandInput = true,
   targetOptions,
+  nextLevelExperience = 10,
   onAction,
+  potionCharges,
   potionAvailable,
   onPotionUse,
   projectileCallbackRef,
@@ -371,9 +388,10 @@ export default function BattleStage({
           </div>
         </div>
 
-        {potionAvailable && activePotionPosition && (
+        {showCommandInput && potionAvailable && activePotionPosition && (
           <PotionUseButton
             ariaLabel={combatText.potionAriaLabel}
+            charges={potionCharges}
             dragging={potionDragging}
             hovered={potionHovered}
             hoveringPlayer={potionHoveringPlayer}
@@ -417,11 +435,16 @@ export default function BattleStage({
 
         <div className="absolute left-1/2 top-[71%] z-30 flex -translate-x-1/2 flex-col items-center gap-2">
           <ResourcePanel
+            experienceAnimating={experienceAnimating}
             hpCurrent={playerHp}
             hpMax={playerMaxHp}
+            level={level}
+            levelUpHighlight={levelUpHighlight}
             manaCurrent={playerMana}
             manaMax={playerMaxMana}
+            nextLevelExperience={nextLevelExperience}
             shield={playerShield}
+            experience={experience}
             hpLabel={combatText.hpLabel}
             manaLabel={combatText.manaLabel}
             shieldLabel={combatText.shieldLabel}
@@ -438,19 +461,27 @@ export default function BattleStage({
           strengthLabel={combatText.strengthLabel}
         />
 
+        {overlay && (
+          <div className="pointer-events-none absolute inset-0 z-40">
+            {overlay}
+          </div>
+        )}
+
         <CrtOverlay glitchActive={glitchActive} noiseLevel={crtNoiseLevel} />
       </div>
 
-      <BattleCommandInput
-        language={language}
-        monsterName={monsterName}
-        playerMana={playerMana}
-        playerStats={playerStats}
-        onPromptEffectChange={setPromptEffect}
-        targetOptions={targetOptions}
-        turn={turn}
-        onAction={onAction}
-      />
+      {showCommandInput && (
+        <BattleCommandInput
+          language={language}
+          monsterName={monsterName}
+          playerMana={playerMana}
+          playerStats={playerStats}
+          onPromptEffectChange={setPromptEffect}
+          targetOptions={targetOptions}
+          turn={turn}
+          onAction={onAction}
+        />
+      )}
     </div>
   );
 }

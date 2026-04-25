@@ -1,25 +1,53 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
+  BONFIRE_ALLOCATE_KEYWORDS,
   BONFIRE_CONFIRM_KEYWORDS,
+  BONFIRE_VENTURE_KEYWORDS,
   CAMPFIRE_STORY_TEXT,
   CAMPFIRE_UI_TEXT,
 } from "@/content/text/app/campfire";
+import { POST_BATTLE_EVENT_TEXT } from "@/content/text/event/postBattle";
 import {
-  type EquipmentDefinition,
   type EquippedItems,
   applyEquipmentModifiers,
-  isEquipmentPoolExhausted,
-  rollEquipmentOffer,
 } from "@/entities/equipment";
 import {
   getInitialLanguage,
+  getLocalizedMonsterName,
   type Language,
+  interpolateText,
   LOCALE_STORAGE_KEY,
   pickText,
 } from "@/entities/locale";
-import { DEFAULT_STATS } from "@/entities/player";
+import { pickMonsterForDepth } from "@/entities/monster";
+import {
+  BATTLES_PER_BONFIRE,
+  getJourneyStatus,
+  MAX_RUN_POTION_CHARGES,
+  rollRunEvent,
+  type RunEvent,
+  type RunEventResolution,
+} from "@/entities/run";
+import {
+  BONFIRE_HP_RECOVERY_RATIO,
+  BONFIRE_MANA_RECOVERY_RATIO,
+  LEVEL_UP_STAT_POINT_GAIN,
+  clampPlayerResource,
+  createInitialPlayerProgress,
+  getMaxHp,
+  getMaxMana,
+  getPlayerBaseResources,
+  grantPlayerExperience,
+  recoverPlayerResourceAtBonfire,
+  spendPlayerStatPoint,
+  type PlayerProgress,
+  type PlayerStatKey,
+} from "@/entities/player";
 import BattlePage from "@/pages/battle";
 import PostBattleEvent from "@/pages/post-battle-event";
+import BonfireTrailPanel, {
+  type BonfireTrailStep,
+} from "@/shared/ui/bonfire-trail";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import type { BattleResult } from "@/pages/battle";
 import VocaLexicon from "@/widgets/voca-lexicon";
@@ -29,6 +57,135 @@ import { getDefaultUnlockedLexiconIds } from "@/content/glossary/voca/lexicon";
  * 밝기에 따라 아스키 문자 밀도를 매핑할 때 사용하는 문자 램프다.
  */
 const ASCII_RAMP = " .:-=+*#%@";
+
+interface RunState {
+  currentHp: number;
+  currentMana: number;
+  depth: number;
+  maxHpPenalty: number;
+  potionCharges: number;
+  progress: PlayerProgress;
+}
+
+interface BonfireRecoveryResult {
+  nextState: RunState;
+  recoveredHp: number;
+  recoveredMana: number;
+  refilledPotions: number;
+}
+
+const PLAYER_STAT_ORDER: readonly PlayerStatKey[] = [
+  "strength",
+  "agility",
+  "decipher",
+  "combination",
+  "stability",
+];
+
+/**
+ * 키워드 입력이 특정 행동을 가리키는지 검사한다.
+ *
+ * @param input 플레이어 입력 문자열
+ * @param keywords 허용할 키워드 목록
+ * @returns 키워드 일치 여부
+ */
+function matchesKeyword(input: string, keywords: readonly string[]): boolean {
+  return keywords.some((keyword) => input === keyword || input.includes(keyword));
+}
+
+/**
+ * 새 실행에서 사용할 초기 진행/자원 상태를 만든다.
+ *
+ * @returns 초기 플레이어 진행 정보와 시작 자원 상태
+ */
+function createInitialRunState(): RunState {
+  const progress = createInitialPlayerProgress();
+  const resources = getPlayerBaseResources(progress.baseStats);
+
+  return {
+    currentHp: resources.hp,
+    currentMana: resources.mana,
+    depth: 0,
+    maxHpPenalty: 0,
+    potionCharges: 1,
+    progress,
+  };
+}
+
+/**
+ * 흉터 페널티까지 반영한 실제 현재 최대 체력을 계산한다.
+ *
+ * @param baseMaxHp 장비와 스탯이 반영된 기본 최대 체력
+ * @param maxHpPenalty 이벤트로 누적된 최대 체력 감소량
+ * @returns 실제 전투에서 적용할 최대 체력
+ */
+function getRunMaxHp(baseMaxHp: number, maxHpPenalty: number): number {
+  return Math.max(1, baseMaxHp - Math.max(0, maxHpPenalty));
+}
+
+/**
+ * ASCII 프레임에 맞게 문자열을 자르고 남는 칸을 공백으로 채운다.
+ *
+ * @param text 표시할 문자열
+ * @param width 목표 폭
+ * @returns 고정 폭 ASCII 문자열
+ */
+function fitAsciiPanelText(text: string, width: number): string {
+  if (width <= 0) {
+    return "";
+  }
+
+  if (text.length <= width) {
+    return text.padEnd(width, " ");
+  }
+
+  if (width <= 3) {
+    return text.slice(0, width);
+  }
+
+  return `${text.slice(0, width - 3)}...`;
+}
+
+/**
+ * 모닥불에 도착했을 때 현재 자원을 부분 회복한 새 실행 상태를 만든다.
+ *
+ * @param runState 현재 실행 상태
+ * @param maxHp 현재 최대 체력
+ * @param maxMana 현재 최대 마나
+ * @returns 회복량과 함께 갱신된 실행 상태
+ */
+function recoverRunStateAtBonfire(
+  runState: RunState,
+  maxHp: number,
+  maxMana: number,
+): BonfireRecoveryResult {
+  const nextPotionCharges = Math.max(1, Math.min(MAX_RUN_POTION_CHARGES, runState.potionCharges));
+  const nextHp = recoverPlayerResourceAtBonfire(
+    runState.currentHp,
+    maxHp,
+    BONFIRE_HP_RECOVERY_RATIO,
+    4,
+  );
+  const nextMana = recoverPlayerResourceAtBonfire(
+    runState.currentMana,
+    maxMana,
+    BONFIRE_MANA_RECOVERY_RATIO,
+    3,
+  );
+
+  return {
+    nextState: {
+      ...runState,
+      currentHp: nextHp,
+      currentMana: nextMana,
+      maxHpPenalty: 0,
+      potionCharges: nextPotionCharges,
+    },
+    recoveredHp: Math.max(0, nextHp - runState.currentHp),
+    recoveredMana: Math.max(0, nextMana - runState.currentMana),
+    refilledPotions: Math.max(0, nextPotionCharges - runState.potionCharges),
+  };
+}
 
 /**
  * 게임의 텍스트 장면, 전환 장면, 전투 장면을 관리하는 루트 컴포넌트다.
@@ -56,14 +213,18 @@ export default function App() {
    * 플레이어가 입력창에 입력한 명령어를 저장한다.
    */
   const [input, setInput] = useState("");
+  const [bonfireCommand, setBonfireCommand] = useState("");
+  const [bonfireFeedback, setBonfireFeedback] = useState("");
+  const [levelUpPopupOpen, setLevelUpPopupOpen] = useState(false);
+  const [runState, setRunState] = useState<RunState>(() => createInitialRunState());
   /**
    * 현재 실행 동안 유지되는 장비 장착 상태다.
    */
   const [equippedItems, setEquippedItems] = useState<EquippedItems>({});
   /**
-   * 승리 이벤트에서 제시할 현재 장비다.
+    * 첫 전투 뒤에 노출할 현재 이벤트 정의다.
    */
-  const [offeredItem, setOfferedItem] = useState<EquipmentDefinition | null>(null);
+    const [activeRunEvent, setActiveRunEvent] = useState<RunEvent | null>(null);
   /**
    * 같은 장비가 연속 등장하는 빈도를 줄이기 위해 마지막 제시 장비 ID를 저장한다.
    */
@@ -73,52 +234,317 @@ export default function App() {
    */
   const [learnedLexiconIds] = useState<string[]>(() => getDefaultUnlockedLexiconIds());
 
+  const combatStats = applyEquipmentModifiers(runState.progress.baseStats, equippedItems);
+  const currentMonster = pickMonsterForDepth(runState.depth, combatStats.stats);
+  const currentBaseMaxHp = getMaxHp(combatStats.stats) + combatStats.maxHpBonus;
+  const currentMaxHp = getRunMaxHp(currentBaseMaxHp, runState.maxHpPenalty);
+  const currentMaxMana = getMaxMana(combatStats.stats) + combatStats.maxManaBonus;
+  const statLabels: Record<PlayerStatKey, string> = {
+    strength: pickText(language, CAMPFIRE_UI_TEXT.strengthLabel),
+    agility: pickText(language, CAMPFIRE_UI_TEXT.agilityLabel),
+    decipher: pickText(language, CAMPFIRE_UI_TEXT.decipherLabel),
+    combination: pickText(language, CAMPFIRE_UI_TEXT.combinationLabel),
+    stability: pickText(language, CAMPFIRE_UI_TEXT.stabilityLabel),
+  };
+  const journeyStatus = getJourneyStatus(
+    runState.depth,
+    phase === "battle"
+      ? "battle"
+      : phase === "post-battle-event"
+        ? "event"
+        : "bonfire",
+  );
+  const journeyTitle = pickText(language, CAMPFIRE_UI_TEXT.journeyTitle);
+  const journeyHint = pickText(
+    language,
+    journeyStatus.currentScene === "battle-1"
+      ? CAMPFIRE_UI_TEXT.journeyHintFirstBattle
+      : journeyStatus.currentScene === "event"
+        ? CAMPFIRE_UI_TEXT.journeyHintEvent
+        : journeyStatus.currentScene === "battle-2"
+          ? CAMPFIRE_UI_TEXT.journeyHintSecondBattle
+          : CAMPFIRE_UI_TEXT.journeyHintBonfire,
+  );
+  const journeySteps: BonfireTrailStep[] = journeyStatus.nodes.map((node) => ({
+    id: node.id,
+    label:
+      node.id === "event"
+        ? pickText(language, CAMPFIRE_UI_TEXT.journeyEventLabel)
+        : node.id === "bonfire"
+          ? pickText(language, CAMPFIRE_UI_TEXT.journeyBonfireLabel)
+          : pickText(language, CAMPFIRE_UI_TEXT.journeyBattleLabel),
+    state: node.state,
+  }));
+
+  /**
+   * 현재 실행을 초기 상태로 되돌린다.
+   */
+  const resetRun = useCallback(() => {
+    const initialRunState = createInitialRunState();
+    setRunState(initialRunState);
+    setEquippedItems({});
+    setActiveRunEvent(null);
+    setLastOfferedItemId(null);
+    setBonfireCommand("");
+    setBonfireFeedback("");
+    setLevelUpPopupOpen(false);
+    setInput("");
+    setPhase("text");
+  }, []);
+
+  /**
+   * 모닥불 화면에 누적해서 보여 줄 피드백 줄을 덧붙인다.
+   */
+  const appendBonfireFeedback = useCallback((lines: string[]) => {
+    if (lines.length === 0) {
+      return;
+    }
+
+    setBonfireFeedback((current) => (current ? `${current}\n${lines.join("\n")}` : lines.join("\n")));
+  }, []);
+
   /**
    * 전투 결과에 따라 다음 장면을 결정한다.
    *
    * @param result 전투 승패 정보
    */
   const handleBattleEnd = useCallback((result: BattleResult) => {
-    if (result.won) {
-      const nextOffer = rollEquipmentOffer(equippedItems, lastOfferedItemId);
-      if (!nextOffer) {
-        setOfferedItem(null);
-        setPhase("transition");
-        return;
-      }
+    if (!result.won) {
+      resetRun();
+      return;
+    }
 
-      setOfferedItem(nextOffer);
-      setLastOfferedItemId(nextOffer.id);
+    const experienceGain = result.experienceReward ?? 0;
+    const experienceResult = grantPlayerExperience(runState.progress, experienceGain);
+    const nextRunState: RunState = {
+      ...runState,
+      currentHp: clampPlayerResource(result.remainingHp ?? runState.currentHp, currentMaxHp),
+      currentMana: clampPlayerResource(result.remainingMana ?? runState.currentMana, currentMaxMana),
+      depth: runState.depth + 1,
+      potionCharges: Math.max(
+        0,
+        Math.min(MAX_RUN_POTION_CHARGES, result.remainingPotionCharges ?? runState.potionCharges),
+      ),
+      progress: experienceResult.progress,
+    };
+    const feedbackLines = [
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.victoryLine),
+        {
+          experience: experienceGain,
+          monsterName: getLocalizedMonsterName(result.defeatedMonsterName ?? currentMonster.name, language),
+        },
+      ),
+    ];
+
+    if (experienceResult.leveledUp) {
+      feedbackLines.push(
+        interpolateText(
+          pickText(language, CAMPFIRE_UI_TEXT.levelUpLine),
+          {
+            points: experienceResult.levelsGained * LEVEL_UP_STAT_POINT_GAIN,
+          },
+        ),
+      );
+    }
+
+    if (nextRunState.depth % BATTLES_PER_BONFIRE === 1) {
+      const rolledEvent = rollRunEvent({
+        currentMaxHp,
+        depth: nextRunState.depth,
+        effectiveStats: combatStats.stats,
+        equippedItems,
+        previousOfferId: lastOfferedItemId,
+      });
+
+      setRunState(nextRunState);
+      setBonfireFeedback(feedbackLines.join("\n"));
+      setBonfireCommand("");
+      setLevelUpPopupOpen(false);
+      setActiveRunEvent(rolledEvent.event);
+      setLastOfferedItemId(rolledEvent.offeredItemId);
       setPhase("post-battle-event");
       return;
     }
 
-    setOfferedItem(null);
-    setInput("");
-    setPhase("text");
-  }, [equippedItems, lastOfferedItemId]);
+    const recovered = recoverRunStateAtBonfire(nextRunState, currentBaseMaxHp, currentMaxMana);
+    if (recovered.recoveredHp > 0 || recovered.recoveredMana > 0) {
+      feedbackLines.push(
+        interpolateText(
+          pickText(language, CAMPFIRE_UI_TEXT.recoveryLine),
+          {
+            hp: recovered.recoveredHp,
+            mana: recovered.recoveredMana,
+          },
+        ),
+      );
+    }
+    if (recovered.refilledPotions > 0) {
+      feedbackLines.push(
+        interpolateText(
+          pickText(language, CAMPFIRE_UI_TEXT.potionRefillLine),
+          { potions: recovered.nextState.potionCharges },
+        ),
+      );
+    }
+
+    setRunState(recovered.nextState);
+    setBonfireFeedback(feedbackLines.join("\n"));
+    setBonfireCommand("");
+    setLevelUpPopupOpen(false);
+    setActiveRunEvent(null);
+    setPhase("transition");
+  }, [combatStats.stats, currentBaseMaxHp, currentMaxHp, currentMaxMana, currentMonster.name, equippedItems, language, lastOfferedItemId, resetRun, runState]);
 
   /**
-   * 이벤트에서 장비를 수락해 현재 실행의 장착 상태에 반영한다.
+   * 첫 전투 뒤 이벤트 선택 결과를 실행 상태에 반영하고 두 번째 전투로 넘어간다.
    */
-  const handleEquipItem = useCallback((item: EquipmentDefinition) => {
-    setEquippedItems((current) => ({
-      ...current,
-      [item.slot]: item,
-    }));
-    setOfferedItem(null);
-    setPhase("transition");
-  }, []);
+  const handleResolveRunEvent = useCallback((resolution: RunEventResolution) => {
+    let nextRunState = runState;
+    let nextEquippedItems = equippedItems;
+    const feedbackLines: string[] = [];
 
-  /**
-   * 이벤트에서 장비를 거절하고 다음 장면으로 넘어간다.
-   */
-  const handleDeclineItem = useCallback(() => {
-    setOfferedItem(null);
-    setPhase("transition");
-  }, []);
+    if (resolution.kind === "decline") {
+      feedbackLines.push(pickText(language, POST_BATTLE_EVENT_TEXT.leaveLine));
+    }
 
-  const lexiconDecipher = applyEquipmentModifiers(DEFAULT_STATS, equippedItems).stats.decipher;
+    if (resolution.kind === "equipment") {
+      nextEquippedItems = {
+        ...equippedItems,
+        [resolution.item.slot]: resolution.item,
+      };
+      const nextCombatStats = applyEquipmentModifiers(runState.progress.baseStats, nextEquippedItems);
+      const nextMaxHp = getRunMaxHp(
+        getMaxHp(nextCombatStats.stats) + nextCombatStats.maxHpBonus,
+        runState.maxHpPenalty,
+      );
+      const nextMaxMana = getMaxMana(nextCombatStats.stats) + nextCombatStats.maxManaBonus;
+      nextRunState = {
+        ...runState,
+        currentHp: clampPlayerResource(runState.currentHp, nextMaxHp),
+        currentMana: clampPlayerResource(runState.currentMana, nextMaxMana),
+      };
+      feedbackLines.push(
+        interpolateText(
+          pickText(language, POST_BATTLE_EVENT_TEXT.equipLine),
+          { itemName: resolution.item.name[language] },
+        ),
+      );
+    }
+
+    if (resolution.kind === "experience" || resolution.kind === "choice-experience" || resolution.kind === "scar") {
+      const gainedExperience = resolution.experience;
+      const experienceResult = grantPlayerExperience(nextRunState.progress, gainedExperience);
+      nextRunState = {
+        ...nextRunState,
+        progress: experienceResult.progress,
+      };
+
+      if (resolution.kind === "experience") {
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, POST_BATTLE_EVENT_TEXT.experienceGainLine),
+            { experience: gainedExperience },
+          ),
+        );
+      }
+
+      if (resolution.kind === "choice-experience") {
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, POST_BATTLE_EVENT_TEXT.choiceExperienceGainLine),
+            { experience: gainedExperience },
+          ),
+        );
+      }
+
+      if (resolution.kind === "scar") {
+        const nextPenalty = Math.min(
+          Math.max(0, currentBaseMaxHp - 1),
+          nextRunState.maxHpPenalty + resolution.maxHpPenalty,
+        );
+        nextRunState = {
+          ...nextRunState,
+          currentHp: clampPlayerResource(
+            nextRunState.currentHp,
+            getRunMaxHp(currentBaseMaxHp, nextPenalty),
+          ),
+          maxHpPenalty: nextPenalty,
+        };
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, POST_BATTLE_EVENT_TEXT.scarGainLine),
+            { experience: gainedExperience, maxHpPenalty: resolution.maxHpPenalty },
+          ),
+        );
+      }
+
+      if (experienceResult.leveledUp) {
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, CAMPFIRE_UI_TEXT.levelUpLine),
+            { points: experienceResult.levelsGained * LEVEL_UP_STAT_POINT_GAIN },
+          ),
+        );
+      }
+    }
+
+    if (resolution.kind === "potion" || resolution.kind === "choice-potion" || resolution.kind === "ambush") {
+      const gainedCharges = Math.max(
+        0,
+        Math.min(
+          MAX_RUN_POTION_CHARGES,
+          nextRunState.potionCharges + resolution.potionCharges,
+        ) - nextRunState.potionCharges,
+      );
+      nextRunState = {
+        ...nextRunState,
+        potionCharges: nextRunState.potionCharges + gainedCharges,
+      };
+
+      if (resolution.kind === "potion") {
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, POST_BATTLE_EVENT_TEXT.potionGainLine),
+            { potions: gainedCharges },
+          ),
+        );
+      }
+
+      if (resolution.kind === "choice-potion") {
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, POST_BATTLE_EVENT_TEXT.choicePotionGainLine),
+            { potions: gainedCharges },
+          ),
+        );
+      }
+
+      if (resolution.kind === "ambush") {
+        nextRunState = {
+          ...nextRunState,
+          currentHp: Math.max(1, nextRunState.currentHp - resolution.damage),
+        };
+        feedbackLines.push(
+          interpolateText(
+            pickText(language, POST_BATTLE_EVENT_TEXT.ambushGainLine),
+            { damage: resolution.damage, potions: gainedCharges },
+          ),
+        );
+      }
+    }
+
+    if (nextEquippedItems !== equippedItems) {
+      setEquippedItems(nextEquippedItems);
+    }
+    setRunState(nextRunState);
+    appendBonfireFeedback(feedbackLines);
+    setActiveRunEvent(null);
+    setBonfireCommand("");
+    setPhase("battle");
+  }, [appendBonfireFeedback, currentBaseMaxHp, equippedItems, language, runState]);
+
+  const lexiconDecipher = combatStats.stats.decipher;
 
   /**
    * 모닥불 애니메이션 프레임을 취소하기 위해 최근 requestAnimationFrame ID를 보관한다.
@@ -609,10 +1035,80 @@ export default function App() {
     const answer = input.trim().toLowerCase();
 
     if (BONFIRE_CONFIRM_KEYWORDS.some((keyword) => answer === keyword || answer.includes(keyword))) {
+      setInput("");
+      setBonfireCommand("");
+      setBonfireFeedback("");
+      setLevelUpPopupOpen(false);
       setPhase("transition");
     }
   };
 
+  const handleBonfireActionSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const answer = bonfireCommand.trim().toLowerCase();
+
+    if (!answer) {
+      return;
+    }
+
+    if (matchesKeyword(answer, BONFIRE_VENTURE_KEYWORDS)) {
+      setBonfireCommand("");
+      setBonfireFeedback("");
+      setLevelUpPopupOpen(false);
+      setPhase("battle");
+      return;
+    }
+
+    if (matchesKeyword(answer, BONFIRE_ALLOCATE_KEYWORDS)) {
+      if (runState.progress.unspentStatPoints <= 0) {
+        setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.noStatPoints));
+      } else {
+        setLevelUpPopupOpen(true);
+      }
+      setBonfireCommand("");
+      return;
+    }
+
+    setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.invalidCommand));
+  };
+
+  const handleSpendStatPoint = useCallback((statKey: PlayerStatKey) => {
+    setRunState((current) => ({
+      ...current,
+      currentHp: clampPlayerResource(
+        current.currentHp,
+        getMaxHp(applyEquipmentModifiers(spendPlayerStatPoint(current.progress, statKey).baseStats, equippedItems).stats)
+          + applyEquipmentModifiers(spendPlayerStatPoint(current.progress, statKey).baseStats, equippedItems).maxHpBonus,
+      ),
+      currentMana: clampPlayerResource(
+        current.currentMana,
+        getMaxMana(applyEquipmentModifiers(spendPlayerStatPoint(current.progress, statKey).baseStats, equippedItems).stats)
+          + applyEquipmentModifiers(spendPlayerStatPoint(current.progress, statKey).baseStats, equippedItems).maxManaBonus,
+      ),
+      progress: spendPlayerStatPoint(current.progress, statKey),
+    }));
+  }, [equippedItems]);
+
+  const bonfireStatusLine = interpolateText(
+    pickText(language, CAMPFIRE_UI_TEXT.statusLine),
+    {
+      hp: runState.currentHp,
+      level: runState.progress.level,
+      mana: runState.currentMana,
+      maxHp: currentMaxHp,
+      maxMana: currentMaxMana,
+      potions: runState.potionCharges,
+      points: runState.progress.unspentStatPoints,
+    },
+  );
+  const bonfireProgressLine = interpolateText(
+    pickText(language, CAMPFIRE_UI_TEXT.progressLine),
+    {
+      depth: runState.depth,
+      experience: runState.progress.experience,
+      nextExperience: runState.progress.nextLevelExperience,
+    },
+  );
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-void px-4 py-8 sm:px-8">
       <div className="absolute right-4 top-4 z-[80] flex items-center gap-2 rounded-full border border-white/12 bg-black/45 px-2 py-1 font-crt text-[0.68rem] tracking-[0.12em] text-white/70 backdrop-blur-sm">
@@ -678,7 +1174,14 @@ export default function App() {
           )}
 
           {phase === "transition" && (
-            <div className="relative z-0 flex flex-col items-center">
+            <div className="relative z-0 flex w-full flex-col items-center gap-6">
+              <BonfireTrailPanel
+                hint={journeyHint}
+                steps={journeySteps}
+                title={journeyTitle}
+              />
+
+              <div className="relative z-0 flex flex-col items-center">
               <canvas
                 ref={displayCanvasRef}
                 className="h-auto w-full max-w-[800px] cursor-crosshair [image-rendering:pixelated] animate-fade-in-text"
@@ -694,33 +1197,135 @@ export default function App() {
               >
                 {pickText(language, CAMPFIRE_UI_TEXT.bonfireLine)}
               </p>
-              <button
-                type="button"
-                className="mt-8 cursor-pointer border border-white/30 bg-transparent px-6 py-2 text-[0.95rem] tracking-[0.1em] text-white/60 opacity-0 transition-colors duration-300 hover:border-ember hover:text-ember [animation:fade_1s_3s_forwards]"
-                onClick={() => setPhase("battle")}
-              >
-                {pickText(language, CAMPFIRE_UI_TEXT.ventureForth)}
-              </button>
+              <div className="mt-8 w-full max-w-[680px] rounded-[18px] border border-white/10 bg-black/32 px-5 py-4 font-crt opacity-0 backdrop-blur-sm [animation:fade_1s_3s_forwards]">
+                <p className="text-[0.82rem] tracking-[0.18em] text-white/42">
+                  {pickText(language, CAMPFIRE_UI_TEXT.commandTitle)}
+                </p>
+                <p className="mt-3 text-[0.92rem] leading-[1.8] text-white/70">
+                  {pickText(language, CAMPFIRE_UI_TEXT.bonfireActionLine)}
+                </p>
+                <pre className="mt-4 m-0 whitespace-pre-wrap text-[0.74rem] leading-[1.7] tracking-[0.12em] text-[rgba(214,204,188,0.78)]">
+                  {bonfireStatusLine}
+                  {"\n"}
+                  {bonfireProgressLine}
+                </pre>
+
+                <div className="mt-4 space-y-1 text-[0.82rem] tracking-[0.14em] text-white/62">
+                  <p>[1] {pickText(language, CAMPFIRE_UI_TEXT.ventureForth)}</p>
+                  <p className={runState.progress.unspentStatPoints > 0 ? "text-white/62" : "text-white/28"}>
+                    [2] {pickText(language, CAMPFIRE_UI_TEXT.allocateStats)}
+                  </p>
+                </div>
+
+                {bonfireFeedback && (
+                  <pre className="mt-4 m-0 whitespace-pre-wrap text-[0.76rem] leading-[1.7] text-ember/85">
+                    {bonfireFeedback}
+                  </pre>
+                )}
+
+                <form onSubmit={handleBonfireActionSubmit} className="mt-4 flex items-center gap-2">
+                  <span className="font-bold text-ember">{">"}</span>
+                  <input
+                    type="text"
+                    value={bonfireCommand}
+                    onChange={(event) => setBonfireCommand(event.target.value)}
+                    placeholder={pickText(language, CAMPFIRE_UI_TEXT.commandPlaceholder)}
+                    autoFocus
+                    className="w-full border-0 border-b border-white/20 bg-transparent text-[0.95rem] text-ember outline-none placeholder:text-white/28 focus:border-ember"
+                  />
+                </form>
+              </div>
+
+              {levelUpPopupOpen && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 px-4 backdrop-blur-[2px]">
+                  <div className="w-full max-w-[420px] rounded-[18px] border border-white/12 bg-[#080808] px-6 py-6 font-crt shadow-[0_0_30px_rgba(0,0,0,0.45)]">
+                    <div className="px-1 py-1">
+                      <p className="text-[0.86rem] uppercase tracking-[0.2em] text-ember/90">
+                        {pickText(language, CAMPFIRE_UI_TEXT.popupTitle)}
+                      </p>
+                      <p className="mt-3 text-[0.84rem] leading-[1.7] text-white/62">
+                        {pickText(language, CAMPFIRE_UI_TEXT.popupHint)}
+                      </p>
+                      <pre className="mt-4 m-0 whitespace-pre-wrap text-[0.76rem] leading-[1.65] tracking-[0.12em] text-[rgba(214,204,188,0.74)]">
+                        {`${pickText(language, CAMPFIRE_UI_TEXT.statPointsLabel)}: ${runState.progress.unspentStatPoints}`}
+                      </pre>
+
+                      <div className="mt-4 space-y-2">
+                        {PLAYER_STAT_ORDER.map((statKey, index) => (
+                          <button
+                            key={statKey}
+                            type="button"
+                            className={`flex w-full items-center justify-between rounded-[12px] border border-white/8 bg-white/[0.02] px-3 py-2 text-left transition-[transform,border-color,color] duration-150 ${
+                              runState.progress.unspentStatPoints > 0
+                                ? "cursor-pointer hover:border-ember/40 hover:translate-x-[2px]"
+                                : "cursor-default"
+                            }`}
+                            disabled={runState.progress.unspentStatPoints <= 0}
+                            onClick={() => handleSpendStatPoint(statKey)}
+                          >
+                            <pre className="m-0 whitespace-pre text-[0.74rem] leading-[1.5] tracking-[0.12em] text-white/72">
+                              {`[${String(index + 1).padStart(2, "0")}] ${fitAsciiPanelText(statLabels[statKey].toUpperCase(), 12)}  ${String(runState.progress.baseStats[statKey]).padStart(2, "0")}`}
+                            </pre>
+                            <span className={`text-[0.78rem] ${runState.progress.unspentStatPoints > 0 ? "text-ember/92" : "text-white/24"}`}>
+                              [+]
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-5 flex justify-end">
+                        <button
+                          type="button"
+                          className="rounded border border-white/15 px-3 py-2 text-[0.82rem] tracking-[0.12em] text-white/72 transition-colors hover:border-ember/55 hover:text-ember"
+                          onClick={() => setLevelUpPopupOpen(false)}
+                        >
+                          {pickText(language, CAMPFIRE_UI_TEXT.popupDone)}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              </div>
             </div>
           )}
 
-          {phase === "post-battle-event" && offeredItem && (
-            <PostBattleEvent
-              language={language}
-              offeredItem={offeredItem}
-              equippedItems={equippedItems}
-              onEquip={handleEquipItem}
-              onDecline={handleDeclineItem}
-            />
+          {phase === "post-battle-event" && activeRunEvent && (
+            <div className="relative z-0 flex w-full flex-col items-center gap-6">
+              <BonfireTrailPanel
+                hint={journeyHint}
+                steps={journeySteps}
+                title={journeyTitle}
+              />
+
+              <PostBattleEvent
+                key={activeRunEvent.id}
+                language={language}
+                runEvent={activeRunEvent}
+                equippedItems={equippedItems}
+                onResolve={handleResolveRunEvent}
+              />
+            </div>
           )}
 
           <CrtOverlay />
         </div>
       ) : (
         <BattlePage
-          hasPostBattleEvent={!isEquipmentPoolExhausted(equippedItems)}
+          baseStats={runState.progress.baseStats}
+          experience={runState.progress.experience}
+          hasPostBattleEvent={runState.depth % BATTLES_PER_BONFIRE === 0}
+          initialHp={runState.currentHp}
+          initialMana={runState.currentMana}
+          initialPotionCharges={runState.potionCharges}
+          journeyHint={journeyHint}
+          journeyNodes={journeySteps}
+          journeyTitle={journeyTitle}
           language={language}
+          level={runState.progress.level}
           equippedItems={equippedItems}
+          monster={currentMonster}
+          nextLevelExperience={runState.progress.nextLevelExperience}
           onBattleEnd={handleBattleEnd}
         />
       )}

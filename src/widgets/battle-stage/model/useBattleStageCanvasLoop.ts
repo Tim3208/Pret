@@ -277,6 +277,10 @@ export function useBattleStageCanvasLoop({
           continue;
         }
 
+        if (now < projectile.startTime) {
+          continue;
+        }
+
         const progress = clamp01(
           (now - projectile.startTime) / projectile.duration,
         );

@@ -1173,7 +1173,7 @@ export function renderIntentSparks(
     return;
   }
 
-  const defensive = nextIntent.kind === "defend";
+  const defensive = nextIntent.kind === "defend" || nextIntent.kind === "heal";
   const spawnLimit = defensive ? 28 : 40;
   const originX = w * 0.14;
   const originY = h * 0.54;

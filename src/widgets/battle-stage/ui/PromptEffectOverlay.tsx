@@ -23,6 +23,13 @@ interface PromptEffectOverlayProps {
   judgementLabel: string;
 }
 
+interface PromptEffectOverlayWord {
+  text: string;
+  kind: PromptEffectViewModel["evaluation"]["tokens"][number]["kind"];
+}
+
+type PromptFailureMode = "combination" | "stability";
+
 function parseRgbaChannels(color: string) {
   const match = color.match(
     /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+)\s*)?\)/,
@@ -79,8 +86,191 @@ function drawAsciiPanelFrame(
   };
 }
 
-function seededWave(index: number, salt: number): number {
-  return Math.sin(index * 12.9898 + salt * 78.233);
+/**
+ * 현재 실패가 조합 계열인지 안정성 계열인지 분류한다.
+ */
+function getPromptFailureMode(effect: PromptEffectViewModel): PromptFailureMode | null {
+  if (effect.evaluation.outcome !== "failure") {
+    return null;
+  }
+
+  return effect.evaluation.failureReason === "stability-overload"
+    ? "stability"
+    : "combination";
+}
+
+/**
+ * 안정성 과부하의 부분 실패 구간인지 판별한다.
+ */
+function isPromptStabilityPartial(effect: PromptEffectViewModel): boolean {
+  return effect.evaluation.outcome === "risky" && effect.evaluation.selfHpCost > 0;
+}
+
+/**
+ * prompt 토큰을 화면 전용 단어 목록으로 정리한다.
+ */
+function buildPromptWords(effect: PromptEffectViewModel): PromptEffectOverlayWord[] {
+  const words = effect.evaluation.tokens.map((token) => ({
+    text: token.specialWord ?? token.raw,
+    kind: token.kind,
+  }));
+
+  return words.length > 0 ? words : [{ text: effect.text, kind: "unknown" }];
+}
+
+/**
+ * 판정 전 단어에 쓰는 중립 발광색을 고른다.
+ */
+function getPromptWordColor(kind: PromptEffectOverlayWord["kind"]): string {
+  switch (kind) {
+    case "connector":
+      return "rgba(176, 208, 236, 0.92)";
+    case "contrast":
+      return "rgba(236, 198, 150, 0.94)";
+    case "rune":
+      return "rgba(224, 178, 156, 0.94)";
+    case "unknown":
+      return "rgba(228, 170, 164, 0.92)";
+    default:
+      return "rgba(236, 224, 204, 0.96)";
+  }
+}
+
+/**
+ * 최종 판정이 공개될 때 쓸 강조색을 고른다.
+ */
+function getPromptOutcomeColor(effect: PromptEffectViewModel): string {
+  if (effect.evaluation.outcome === "failure") {
+    return "rgba(255, 126, 112, 0.96)";
+  }
+
+  if (effect.evaluation.outcome === "risky") {
+    return "rgba(240, 208, 122, 0.96)";
+  }
+
+  return "rgba(138, 255, 182, 0.96)";
+}
+
+/**
+ * 조합 실패에서 폭발의 핵이 될 단어 인덱스를 고른다.
+ */
+function getCombinationCulpritIndexes(words: PromptEffectOverlayWord[]): number[] {
+  const indexes = words.flatMap((word, index) =>
+    word.kind === "connector" || word.kind === "contrast" ? [index] : [],
+  );
+
+  if (indexes.length > 0) {
+    return indexes;
+  }
+
+  const fallbackIndex = words.findIndex((word) => word.kind !== "verb");
+  return [fallbackIndex >= 0 ? fallbackIndex : Math.max(0, Math.floor(words.length / 2))];
+}
+
+/**
+ * 가장 가까운 폭발 핵 단어와의 거리를 계산한다.
+ */
+function getNearestCulpritDistance(index: number, culpritIndexes: number[]): number {
+  return culpritIndexes.reduce((nearest, culpritIndex) => {
+    return Math.min(nearest, Math.abs(index - culpritIndex));
+  }, Number.POSITIVE_INFINITY);
+}
+
+/**
+ * 안정성 부분실패에서 끝까지 발사 동작을 유지할 핵심 단어인지 판별한다.
+ */
+function isStabilityCoreWord(
+  word: PromptEffectOverlayWord,
+  outerWeight: number,
+): boolean {
+  return outerWeight <= 0.34 || word.kind === "verb" || word.kind === "rune";
+}
+
+/**
+ * 조합 실패 시 connector/contrast 단어 주변으로 ASCII 파편을 뿌린다.
+ */
+function drawCombinationBurst(
+  ctx: CanvasRenderingContext2D,
+  positions: Array<{ x: number; y: number }>,
+  progress: number,
+) {
+  if (progress <= 0) {
+    return;
+  }
+
+  const shards = ["#", "*", "+", "x", "\\", "/"];
+  ctx.save();
+  ctx.font = makeFont(700, 12);
+  positions.forEach((position, positionIndex) => {
+    for (let ray = 0; ray < 10; ray += 1) {
+      const angle = (Math.PI * 2 * ray) / 10 + positionIndex * 0.45 + progress * 0.3;
+      const radius = (18 + (ray % 4) * 8) * easeOutCubic(progress);
+      const x = position.x + Math.cos(angle) * radius;
+      const y = position.y + Math.sin(angle) * radius * 0.72;
+      ctx.globalAlpha = Math.max(0, 0.84 - progress * 0.56);
+      ctx.fillStyle = ray % 2 === 0 ? "rgba(255, 104, 92, 0.96)" : "rgba(255, 172, 144, 0.92)";
+      ctx.fillText(shards[ray % shards.length], x, y);
+    }
+  });
+  ctx.restore();
+}
+
+/**
+ * 안정성 과부하 동안 문장 전체에 걸리는 진동 오프셋을 계산한다.
+ */
+function getStabilitySentenceShake(
+  elapsed: number,
+  index: number,
+  intensity: number,
+): { x: number; y: number } {
+  if (intensity <= 0) {
+    return { x: 0, y: 0 };
+  }
+
+  const swayX =
+    Math.sin(elapsed * 0.062 + index * 0.9) * (0 + intensity * 2.4) +
+    Math.cos(elapsed * 0.037 + index * 1.7) * (1.4 + intensity * 2.8);
+  const swayY =
+    Math.cos(elapsed * 0.054 + index * 1.2) * (0 + intensity * 1.2) +
+    Math.sin(elapsed * 0.029 + index * 0.7) * (1 + intensity * 1.8);
+
+  return {
+    x: swayX * intensity,
+    y: swayY * intensity * 0.9,
+  };
+}
+
+/**
+ * 중앙 판정 패널 외곽을 도는 결과 링을 그린다.
+ */
+function drawResultRing(
+  ctx: CanvasRenderingContext2D,
+  frame: AsciiConsoleFrame,
+  charWidth: number,
+  progress: number,
+  color: string,
+) {
+  if (progress <= 0) {
+    return;
+  }
+
+  const x = frame.startX + charWidth * 0.9;
+  const y = frame.topY + LINE_H * 0.8;
+  const width = Math.max(160, (frame.cols - 2.8) * charWidth);
+  const height = Math.max(LINE_H * 2.8, (frame.rows - 2.5) * LINE_H);
+
+  ctx.save();
+  ctx.strokeStyle = mixRgbaColors("rgba(255, 255, 255, 0)", color, progress);
+  ctx.lineWidth = 1.2 + progress * 1.2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18 * progress;
+  ctx.setLineDash([26, 12]);
+  ctx.lineDashOffset = -72 * progress;
+  ctx.strokeRect(x, y, width, height);
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.16 + progress * 0.14;
+  ctx.strokeRect(x, y, width, height);
+  ctx.restore();
 }
 
 export default function PromptEffectOverlay({
@@ -101,31 +291,48 @@ export default function PromptEffectOverlay({
     canvas.height = H;
 
     let frame = 0;
+    const words = buildPromptWords(effect);
+    const failureMode = getPromptFailureMode(effect);
+    const stabilityPartial = isPromptStabilityPartial(effect);
+    const culpritIndexes = failureMode === "combination" ? getCombinationCulpritIndexes(words) : [];
+    const wordStageDuration =
+      effect.wordLiftDuration + effect.wordStagger * Math.max(0, words.length - 1);
 
     const draw = () => {
       const evaluation = effect.evaluation;
       const elapsed = performance.now() - effect.startedAt;
-      const explosiveFailure = evaluation.outcome === "failure";
-      const deflectBeforeBox = !explosiveFailure && !evaluation.combinationAdequate && evaluation.combinationLoad > 0;
-      const arrivalDuration = explosiveFailure ? 1380 : deflectBeforeBox ? 1280 : 1180;
-      const holdDuration = explosiveFailure ? 260 : deflectBeforeBox ? 120 : 0;
-      const flightProgress = clamp01(elapsed / arrivalDuration);
-      const holdProgress = clamp01(Math.max(0, elapsed - arrivalDuration) / Math.max(1, holdDuration));
-      const resolveProgress = clamp01(
-        Math.max(0, elapsed - arrivalDuration - holdDuration) /
-          Math.max(1, effect.duration - arrivalDuration - holdDuration),
+      const outcomeColor = getPromptOutcomeColor(effect);
+      const resultProgress = clamp01(
+        Math.max(0, elapsed - wordStageDuration) / Math.max(1, effect.resultRevealDuration),
       );
-      const sourceChars = Array.from(`> ${effect.text}`);
-      const flightChars = Array.from(effect.text);
+      const ringProgress = clamp01((resultProgress - 0.18) / 0.44);
+      const tagProgress = clamp01((resultProgress - 0.48) / 0.24);
+      const titleProgress = clamp01((resultProgress - 0.66) / 0.34);
+      const holdProgress = clamp01(
+        Math.max(0, elapsed - wordStageDuration - effect.resultRevealDuration) /
+          Math.max(1, effect.postRevealHoldDuration),
+      );
+      const combinationPulseProgress =
+        failureMode === "combination" ? clamp01((resultProgress - 0.12) / 0.28) : 0;
+      const combinationBurstProgress =
+        failureMode === "combination" ? clamp01((resultProgress - 0.38) / 0.42) : 0;
+      const stabilityFailureBurstProgress =
+        failureMode === "stability" ? clamp01((resultProgress - 0.18) / 0.68) : 0;
+      const stabilityPartialCollapseProgress =
+        stabilityPartial ? clamp01((resultProgress - 0.2) / 0.64) : 0;
+      const stabilityShakeProgress =
+        failureMode === "stability" || stabilityPartial
+          ? clamp01(elapsed / Math.max(1, wordStageDuration)) *
+            (1 - clamp01(resultProgress / 0.16))
+          : 0;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle =
-        explosiveFailure
-          ? "rgba(18, 5, 5, 0.94)"
-          : effect.evaluation.outcome === "risky"
-            ? "rgba(18, 22, 10, 0.93)"
-            : "rgba(8, 18, 12, 0.94)";
+      ctx.fillStyle = "rgba(7, 8, 10, 0.96)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (ringProgress > 0) {
+        ctx.fillStyle = mixRgbaColors("rgba(7, 8, 10, 0)", outcomeColor, ringProgress * 0.08);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
 
       ctx.save();
       ctx.font = CRT_FONT;
@@ -133,203 +340,253 @@ export default function PromptEffectOverlay({
       const consoleCharWidth = ctx.measureText("M").width;
       const consoleFrame = drawAsciiConsoleFrame(
         ctx,
-        explosiveFailure
-          ? "rgba(214, 116, 108, 0.34)"
-          : effect.evaluation.outcome === "risky"
-            ? "rgba(188, 255, 146, 0.28)"
-            : "rgba(132, 255, 168, 0.28)",
+        mixRgbaColors("rgba(214, 204, 188, 0.24)", outcomeColor, ringProgress * 0.24),
       );
       const ruleY = consoleFrame.topY + LINE_H * 2;
       drawAsciiConsoleRule(
         ctx,
         ruleY,
         consoleFrame,
-        explosiveFailure
-          ? "rgba(255, 132, 120, 0.2)"
-          : effect.evaluation.outcome === "risky"
-            ? "rgba(182, 255, 136, 0.2)"
-            : "rgba(122, 255, 156, 0.2)",
+        mixRgbaColors("rgba(214, 204, 188, 0.16)", outcomeColor, ringProgress * 0.18),
       );
-
-      const sourceWidths = sourceChars.map((char) => ctx.measureText(char).width);
-      const textWidths = flightChars.map((char) => ctx.measureText(char).width);
-      const textTotalWidth = textWidths.reduce((sum, width) => sum + width, 0);
       const sourceStartX = consoleFrame.startX + consoleCharWidth * 2;
       const sourceY = consoleFrame.bottomY - LINE_H * 2.35;
-      const sourceCharX: number[] = [];
-      let sourceCursorX = sourceStartX;
-      sourceWidths.forEach((width) => {
-        sourceCharX.push(sourceCursorX);
-        sourceCursorX += width;
+      const promptPrefix = "> ";
+      const wordWidths = words.map((word) => ctx.measureText(word.text).width);
+      const wordGap = consoleCharWidth * 1.7;
+      const boxTopOffset = 18;
+      const destinationRowOffset = 2.55;
+      const failureTagRowOffset = 4.45;
+      const failureTitleRowOffset = 3.35;
+      const sourceWordX: number[] = [];
+      let sourceCursorX = sourceStartX + ctx.measureText(promptPrefix).width;
+      wordWidths.forEach((width) => {
+        sourceWordX.push(sourceCursorX);
+        sourceCursorX += width + wordGap;
       });
 
       const boxCols = Math.max(24, consoleFrame.cols - 9);
-      const boxRows = 7;
+      const boxRows = 6;
       const boxFrame = drawAsciiPanelFrame(
         ctx,
         consoleFrame.startX + consoleCharWidth * 3,
-        ruleY + LINE_H + 8,
+        ruleY + LINE_H + boxTopOffset,
         boxCols,
         boxRows,
-        explosiveFailure
-          ? "rgba(255, 118, 108, 0.34)"
-          : effect.evaluation.outcome === "risky"
-            ? "rgba(182, 255, 136, 0.28)"
-            : "rgba(122, 255, 156, 0.3)",
+        mixRgbaColors("rgba(214, 204, 188, 0.22)", outcomeColor, ringProgress * 0.22),
       );
-      const boxX = boxFrame.startX;
-      const boxY = boxFrame.topY;
       const boxRightX = boxFrame.startX + (boxFrame.cols - 1) * consoleCharWidth;
       const boxInnerStartX = boxFrame.startX + consoleCharWidth * 1.5;
       const boxInnerWidth = Math.max(180, boxRightX - boxInnerStartX - consoleCharWidth * 2);
-      const boxHeight = boxFrame.bottomY - boxFrame.topY;
-      const targetStartX = Math.max(boxInnerStartX, boxInnerStartX + (boxInnerWidth - textTotalWidth) / 2);
-      const targetCharX: number[] = [];
+      const boxInnerTopY = boxFrame.topY + LINE_H * 0.88;
+      const boxInnerHeight = Math.max(LINE_H * 3.1, boxFrame.bottomY - boxInnerTopY - LINE_H * 0.74);
+      const totalTargetWidth =
+        wordWidths.reduce((sum, width) => sum + width, 0) + wordGap * Math.max(0, words.length - 1);
+      const targetStartX = Math.max(boxInnerStartX, boxInnerStartX + (boxInnerWidth - totalTargetWidth) / 2);
+      const targetWordX: number[] = [];
       let targetCursorX = targetStartX;
-      textWidths.forEach((width) => {
-        targetCharX.push(targetCursorX);
-        targetCursorX += width;
+      wordWidths.forEach((width) => {
+        targetWordX.push(targetCursorX);
+        targetCursorX += width + wordGap;
       });
-      const destinationY = boxY + LINE_H * 2.6;
-      const deflectPlaneY = boxFrame.bottomY - LINE_H * 1.35;
+      const destinationY = boxFrame.topY + LINE_H * destinationRowOffset;
 
-      ctx.fillStyle = "rgba(244, 214, 170, 0.18)";
-      ctx.fillText(
-        explosiveFailure ? "| integrity://fractured" : deflectBeforeBox ? "| integrity://frayed" : "| integrity://stable",
-        boxFrame.startX + consoleCharWidth * 2,
-        boxFrame.topY + LINE_H * 0.95,
-      );
+      if (failureMode || stabilityPartial) {
+        const failurePulseProgress =
+          failureMode === "combination"
+            ? clamp01((resultProgress - 0.14) / 0.42)
+            : clamp01((resultProgress - 0.2) / 0.46);
+
+        if (failurePulseProgress > 0) {
+          const failurePulse = 0.5 + Math.sin(elapsed * 0.024) * 0.5;
+          const baseFill =
+            failureMode === "combination"
+              ? "rgba(86, 14, 12, 0.12)"
+              : stabilityPartial
+                ? "rgba(92, 18, 16, 0.09)"
+                : "rgba(104, 18, 16, 0.12)";
+          const flashFill =
+            failureMode === "combination"
+              ? "rgba(196, 42, 34, 0.26)"
+              : stabilityPartial
+                ? "rgba(170, 66, 54, 0.18)"
+                : "rgba(224, 62, 50, 0.28)";
+
+          ctx.save();
+          ctx.fillStyle = mixRgbaColors(
+            baseFill,
+            flashFill,
+            failurePulseProgress * (0.34 + failurePulse * 0.66),
+          );
+          ctx.fillRect(
+            boxInnerStartX - consoleCharWidth * 0.45,
+            boxInnerTopY,
+            boxInnerWidth + consoleCharWidth * 0.9,
+            boxInnerHeight,
+          );
+          ctx.restore();
+        }
+      }
 
       ctx.fillStyle = "rgba(255, 190, 112, 0.22)";
       ctx.fillText(">", sourceStartX, sourceY);
-      ctx.fillStyle = "rgba(244, 214, 170, 0.18)";
-      ctx.fillText(
-        "_".repeat(Math.max(10, Math.min(boxFrame.cols - 6, Math.ceil((textTotalWidth + consoleCharWidth * 1.5) / consoleCharWidth)))),
-        sourceStartX + consoleCharWidth * 1.2,
-        sourceY + LINE_H * 0.76,
+
+      const burstCenters: Array<{ x: number; y: number }> = [];
+      const centerIndex = (words.length - 1) / 2;
+      const maxOuterDistance = Math.max(
+        1,
+        ...words.map((_, index) => Math.abs(index - centerIndex)),
       );
+      words.forEach((word, index) => {
+        const startTime = index * effect.wordStagger;
+        const wordProgress = clamp01(
+          Math.max(0, elapsed - startTime) / Math.max(1, effect.wordLiftDuration),
+        );
+        const travelProgress = easeInOutCubic(wordProgress);
+        const sourceX = sourceWordX[index] ?? sourceStartX;
+        const targetX = targetWordX[index] ?? targetStartX;
+        let x = lerp(sourceX, targetX, travelProgress);
+        let y = lerp(sourceY, destinationY, travelProgress);
+        let alpha = elapsed < startTime ? 0.12 : lerp(0.18, 1, travelProgress);
+        let drawText = word.text;
+        let drawColor = getPromptWordColor(word.kind);
+        let scale = 1;
+        const radialIndex = index - centerIndex;
+        const outerWeight = Math.abs(radialIndex) / maxOuterDistance;
+        const stabilityCoreWord = isStabilityCoreWord(word, outerWeight);
 
-      if (deflectBeforeBox) {
-        const barrierProgress = clamp01((flightProgress - 0.64) / 0.3);
-        if (barrierProgress > 0) {
-          const glow = 0.2 + Math.sin(elapsed * 0.018) * 0.06 + barrierProgress * 0.16;
-          ctx.fillStyle = `rgba(255, 214, 166, ${Math.max(0.12, glow).toFixed(2)})`;
-          ctx.fillText(
-            "=".repeat(Math.max(10, boxFrame.cols - 6)),
-            boxFrame.startX + consoleCharWidth * 2,
-            deflectPlaneY,
-          );
+        if (elapsed < startTime) {
+          x = sourceX;
+          y = sourceY;
         }
-      }
 
-      flightChars.forEach((char, index) => {
-        const kind = effect.charKinds[index] ?? "unknown";
-        if (kind === "space") {
+        if (wordProgress >= 1 && evaluation.outcome !== "failure") {
+          drawColor = mixRgbaColors(drawColor, outcomeColor, clamp01((resultProgress - 0.52) / 0.48));
+        }
+
+        if (wordProgress >= 1 && (failureMode === "stability" || stabilityPartial)) {
+          const shake = getStabilitySentenceShake(elapsed, index, stabilityShakeProgress);
+          x += shake.x;
+          y += shake.y;
+          scale += stabilityShakeProgress * 0.03;
+          drawColor = mixRgbaColors(drawColor, "rgba(255, 164, 136, 0.96)", stabilityShakeProgress * 0.34);
+        }
+
+        if (wordProgress >= 1 && failureMode === "combination") {
+          const isCulprit = culpritIndexes.includes(index);
+          if (isCulprit) {
+            drawColor = mixRgbaColors(drawColor, "rgba(255, 92, 78, 0.98)", Math.max(0.24, combinationPulseProgress));
+            scale = 1 + combinationPulseProgress * 0.24 + Math.sin(elapsed * 0.035 + index) * 0.05 * (1 - combinationBurstProgress);
+            alpha *= 1 - combinationBurstProgress * 0.94;
+            y -= combinationPulseProgress * 6;
+            x += Math.sin(elapsed * 0.02 + index) * 2.6 * (1 - combinationBurstProgress);
+            burstCenters.push({
+              x: targetX + wordWidths[index] / 2,
+              y: destinationY + LINE_H * 0.42,
+            });
+          } else {
+            const distance = getNearestCulpritDistance(index, culpritIndexes);
+            const push = Math.max(0, 1 - distance / 2.6) * combinationBurstProgress;
+            const direction = culpritIndexes.length > 0 && index < culpritIndexes[0] ? -1 : 1;
+            x += direction * easeOutCubic(push) * (22 + distance * 8);
+            y += (index % 2 === 0 ? -1 : 1) * 10 * push;
+            alpha *= 1 - push * 0.42;
+
+            if (push > 0.18) {
+              const visibleCharacters = Math.max(1, Math.ceil(word.text.length * (1 - push * 0.46)));
+              drawText = direction < 0 ? word.text.slice(word.text.length - visibleCharacters) : word.text.slice(0, visibleCharacters);
+            }
+          }
+        }
+
+        if (wordProgress >= 1 && failureMode === "stability") {
+          const fallDirection = radialIndex === 0 ? (index % 2 === 0 ? -1 : 1) : Math.sign(radialIndex);
+          const sideDrift = fallDirection * easeOutCubic(stabilityFailureBurstProgress) * (6 + outerWeight * 18);
+          const fallDistance = easeOutCubic(stabilityFailureBurstProgress) * (22 + outerWeight * 30);
+          drawColor = mixRgbaColors(
+            drawColor,
+            "rgba(255, 148, 136, 0.98)",
+            Math.min(1, 0.3 + stabilityFailureBurstProgress * 0.7),
+          );
+          alpha *= 1 - stabilityFailureBurstProgress * 0.92;
+          x += sideDrift;
+          y += fallDistance;
+          scale = 1 - stabilityFailureBurstProgress * 0.05;
+        }
+
+        if (wordProgress >= 1 && stabilityPartial) {
+          if (!stabilityCoreWord) {
+            const collapseDirection = radialIndex === 0 ? (index % 2 === 0 ? -1 : 1) : Math.sign(radialIndex);
+            const collapseWindow = clamp01(
+              (stabilityPartialCollapseProgress - (1 - outerWeight) * 0.3) / 0.7,
+            );
+            if (collapseWindow > 0) {
+              const outwardShift = easeOutCubic(collapseWindow) * (10 + outerWeight * 30);
+              drawColor = mixRgbaColors(drawColor, "rgba(214, 126, 108, 0.94)", collapseWindow * 0.6);
+              alpha *= 1 - collapseWindow * (0.24 + outerWeight * 0.56);
+              x += collapseDirection * outwardShift;
+              y += easeOutCubic(collapseWindow) * (10 + outerWeight * 22);
+              scale = 1 - collapseWindow * 0.08;
+            }
+          } else {
+            drawColor = mixRgbaColors(drawColor, "rgba(255, 206, 158, 0.98)", stabilityPartialCollapseProgress * 0.24);
+          }
+        }
+
+        if (!drawText) {
           return;
         }
 
-        const seedIndex = index + 1;
-        const sourceX = sourceCharX[index + 2] ?? sourceStartX;
-        const targetX = targetCharX[index] ?? targetStartX;
-        const baseColor =
-          kind === "connector"
-            ? "rgba(112, 196, 255, 0.95)"
-            : kind === "contrast"
-              ? "rgba(255, 174, 92, 0.96)"
-              : kind === "rune"
-                ? "rgba(255, 108, 88, 0.98)"
-                : "rgba(238, 214, 172, 0.96)";
-        const successColor =
-          effect.evaluation.outcome === "risky"
-            ? "rgba(176, 255, 146, 0.96)"
-            : "rgba(122, 255, 156, 0.98)";
-        const swirlRadius = 42 + ((seededWave(seedIndex, 1.8) + 1) / 2) * 22;
-        const spiralTurns = 1.6 + ((seededWave(seedIndex, 3.4) + 1) / 2) * 1.8;
-        const baseTravel = easeInOutCubic(flightProgress);
-        const xTravel = lerp(sourceX, targetX, baseTravel);
-        const yTravel = lerp(sourceY, destinationY, baseTravel);
-        const spiralAngle = elapsed * 0.01 + seedIndex * 0.7 + (1 - baseTravel) * spiralTurns * Math.PI * 2;
-        const spiralStrength = (1 - baseTravel) * swirlRadius;
-        let x = xTravel + Math.cos(spiralAngle) * spiralStrength;
-        let y = yTravel + Math.sin(spiralAngle) * spiralStrength * 0.65;
-        let rotation = (1 - baseTravel) * seededWave(seedIndex, 6.2) * 1.2;
-        let alpha = 0.96;
-        let drawColor = mixRgbaColors(baseColor, successColor, Math.min(1, baseTravel * 0.82));
-
-        if (deflectBeforeBox) {
-          const deflectAt = 0.76;
-          if (baseTravel >= deflectAt) {
-            const deflectT = clamp01((baseTravel - deflectAt) / (1 - deflectAt));
-            const deflectDirection = seededWave(seedIndex, 7.1) >= 0 ? 1 : -1;
-            const reboundLift = Math.sin(deflectT * Math.PI) * (10 + ((seededWave(seedIndex, 5.1) + 1) / 2) * 10);
-            const reboundSpread = (22 + ((seededWave(seedIndex, 7.4) + 1) / 2) * 36) * easeOutCubic(deflectT);
-            x = targetX + deflectDirection * reboundSpread;
-            y = deflectPlaneY - reboundLift + 116 * deflectT * deflectT;
-            rotation += deflectT * seededWave(seedIndex, 8.9) * 3.4;
-            alpha = Math.max(0.08, 1 - deflectT * 0.62);
-            drawColor = mixRgbaColors(baseColor, "rgba(255, 230, 204, 0.98)", Math.min(0.76, deflectT * 0.94));
-          }
-        }
-
-        if (explosiveFailure) {
-          if (elapsed <= arrivalDuration + holdDuration) {
-            x = lerp(sourceX, targetX, baseTravel) + Math.cos(spiralAngle) * spiralStrength;
-            y = lerp(sourceY, destinationY, baseTravel) + Math.sin(spiralAngle) * spiralStrength * 0.65;
-            if (flightProgress >= 1) {
-              const jitter = (1 - holdProgress) * 2.4;
-              x = targetX + seededWave(seedIndex, 10.1) * jitter;
-              y = destinationY + seededWave(seedIndex, 11.3) * jitter;
-            }
-            drawColor = mixRgbaColors(baseColor, "rgba(255, 230, 212, 0.98)", Math.min(0.62, flightProgress * 0.58 + holdProgress * 0.22));
-          } else {
-            const spreadProgress = clamp01(resolveProgress / 0.42);
-            const fallProgress = clamp01((resolveProgress - 0.18) / 0.82);
-            const angle = ((seededWave(seedIndex, 2.7) + 1) / 2) * Math.PI * 2;
-            const burstDistance =
-              (96 + ((seededWave(seedIndex, 4.6) + 1) / 2) * 164) * easeOutCubic(spreadProgress);
-            const drop = 14 * spreadProgress + 172 * fallProgress * fallProgress;
-            x = targetX + Math.cos(angle) * burstDistance;
-            y = destinationY + Math.sin(angle) * burstDistance * 0.86 + drop;
-            rotation = (spreadProgress + fallProgress * 0.6) * seededWave(seedIndex, 9.7) * 9.2;
-            alpha = Math.max(0, 1 - resolveProgress * 0.72);
-            drawColor = mixRgbaColors(baseColor, "rgba(255, 248, 236, 0.98)", 0.56);
-          }
-        }
-
         ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(rotation);
+        ctx.translate(x + wordWidths[index] / 2, y + LINE_H * 0.4);
+        ctx.scale(scale, scale);
+        ctx.translate(-(wordWidths[index] / 2), -(LINE_H * 0.4));
         ctx.globalAlpha = alpha;
         ctx.shadowColor = drawColor;
-        ctx.shadowBlur = effect.evaluation.outcome === "failure" ? 14 : 18;
+        ctx.shadowBlur = failureMode === "combination" && culpritIndexes.includes(index) ? 20 : 12;
         ctx.fillStyle = drawColor;
-        ctx.fillText(char, 0, 0);
-        if (effect.evaluation.outcome !== "failure") {
-          ctx.globalAlpha = alpha * 0.2;
-          ctx.fillText(char, 0.9, 0.9);
-        }
+        ctx.fillText(drawText, 0, 0);
         ctx.restore();
       });
 
-      if (explosiveFailure) {
-        const burstAlpha = Math.max(0.08, 0.4 - resolveProgress * 0.24 + holdProgress * 0.1);
-        const burstChars = ["#", "*", "+", "x", "\\", "/"];
-        ctx.font = makeFont(680, 13);
-        ctx.fillStyle = `rgba(255, 214, 196, ${burstAlpha.toFixed(2)})`;
-        for (let ray = 0; ray < 18; ray += 1) {
-          const angle = (Math.PI * 2 * ray) / 18 + resolveProgress * 0.24;
-          const radius = 18 + easeOutCubic(resolveProgress) * (34 + (ray % 4) * 16);
-          const x = canvas.width / 2 + Math.cos(angle) * radius;
-          const y = destinationY + 12 + Math.sin(angle) * radius * 0.72;
-          ctx.fillText(burstChars[ray % burstChars.length], x, y);
-        }
+      if (failureMode === "combination" && burstCenters.length > 0) {
+        drawCombinationBurst(ctx, burstCenters, combinationBurstProgress);
+      }
+
+      drawResultRing(ctx, boxFrame, consoleCharWidth, ringProgress, outcomeColor);
+
+      if (tagProgress > 0 && effect.judgement.failureTag) {
+        ctx.font = makeFont(620, 10);
+        ctx.globalAlpha = tagProgress;
+        ctx.fillStyle = mixRgbaColors("rgba(214, 204, 188, 0.22)", outcomeColor, Math.max(0.42, tagProgress));
+        ctx.fillText(
+          effect.judgement.failureTag,
+          consoleFrame.startX + consoleCharWidth * 2,
+          consoleFrame.bottomY - LINE_H * failureTagRowOffset,
+        );
+        ctx.globalAlpha = 1;
         ctx.font = CRT_FONT;
       }
 
-      if (deflectBeforeBox) {
-        const drainAlpha = 0.16 + Math.sin(elapsed * 0.014) * 0.05;
-        ctx.fillStyle = `rgba(255, 196, 136, ${Math.max(0.08, drainAlpha).toFixed(2)})`;
-        ctx.fillRect(boxX + 16, boxY + boxHeight - 26, Math.max(120, textTotalWidth * 0.72), 1);
+      if (titleProgress > 0) {
+        ctx.font = makeFont(700, 15);
+        ctx.globalAlpha = titleProgress;
+        ctx.fillStyle = mixRgbaColors("rgba(214, 204, 188, 0.2)", outcomeColor, titleProgress);
+        ctx.fillText(
+          effect.judgement.title,
+          consoleFrame.startX + consoleCharWidth * 2,
+          consoleFrame.bottomY - LINE_H * failureTitleRowOffset,
+        );
+        ctx.globalAlpha = 1;
+        ctx.font = CRT_FONT;
+      }
+
+      if (holdProgress > 0 && holdProgress < 1) {
+        ctx.save();
+        ctx.globalAlpha = holdProgress * 0.06;
+        ctx.fillStyle = outcomeColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
       }
 
       ctx.restore();
@@ -354,22 +611,6 @@ export default function PromptEffectOverlay({
       <div className="absolute left-[10.2%] right-[10.2%] top-[8.6%] flex items-center justify-between font-crt text-[0.56rem] uppercase tracking-[0.16em] text-white/32">
         <span>{judgementLabel}</span>
         <span>{busyLabel}</span>
-      </div>
-      <div className="absolute left-[10.2%] right-[10.2%] bottom-[7.2%] font-crt">
-        <p
-          className={`text-[0.74rem] uppercase tracking-[0.16em] ${
-            effect.evaluation.outcome === "failure"
-              ? "text-[rgba(255,132,122,0.92)]"
-              : effect.evaluation.outcome === "risky"
-                ? "text-[rgba(182,255,136,0.94)]"
-                : "text-[rgba(122,255,156,0.96)]"
-          }`}
-        >
-          {effect.judgement.title}
-        </p>
-        <p className="mt-1 text-[0.66rem] leading-[1.45] text-white/52">
-          {effect.judgement.detail}
-        </p>
       </div>
     </div>
   );

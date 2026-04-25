@@ -20,10 +20,12 @@ interface ResolveMonsterTurnParams {
   isTurnResolved: () => boolean;
   language: Language;
   localizedMonsterName: string;
+  monsterMaxHp?: number;
   monsterStunned: boolean;
   nextIntent: MonsterIntent;
   playerShield: number;
   projectileCallback: ((request: CombatAnimationRequest) => void) | null;
+  setMonsterHp?: Dispatch<SetStateAction<number>>;
   scheduleTimeout: (callback: () => void, delay: number) => void;
   setMonsterShield: Dispatch<SetStateAction<number>>;
   setMonsterStunned: Dispatch<SetStateAction<boolean>>;
@@ -44,10 +46,12 @@ export function resolveMonsterTurn({
   isTurnResolved,
   language,
   localizedMonsterName,
+  monsterMaxHp,
   monsterStunned,
   nextIntent,
   playerShield,
   projectileCallback,
+  setMonsterHp,
   scheduleTimeout,
   setMonsterShield,
   setMonsterStunned,
@@ -79,6 +83,34 @@ export function resolveMonsterTurn({
         shield,
       }),
       "text-orange-300",
+    );
+
+    if (skipAnimation) {
+      finishMonsterTurn();
+    } else {
+      scheduleTimeout(finishMonsterTurn, 920);
+    }
+
+    return finishMonsterTurn;
+  }
+
+  if (nextIntent.kind === "heal") {
+    const heal = Math.max(0, nextIntent.healing ?? 0);
+    const localizedIntent = trimIntentLabel(
+      getLocalizedMonsterIntentLabel(nextIntent.label, language),
+    );
+
+    if (heal > 0 && setMonsterHp && monsterMaxHp !== undefined) {
+      setMonsterHp((value) => Math.min(monsterMaxHp, value + heal));
+    }
+
+    addLog(
+      interpolateText(battleLogText.monsterHeal, {
+        heal,
+        intentLabel: localizedIntent,
+        monsterName: localizedMonsterName,
+      }),
+      "text-green-300",
     );
 
     if (skipAnimation) {

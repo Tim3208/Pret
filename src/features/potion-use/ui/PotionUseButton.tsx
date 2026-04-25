@@ -10,6 +10,8 @@ interface PotionUseButtonProps {
   ariaLabel: string;
   /** 포션 위에 표시되는 짧은 라벨 */
   label: string;
+  /** 현재 남은 포션 수량 */
+  charges: number;
   /** 포션 아래 툴팁 문구 */
   tooltip: string;
   /** 전투 프레임 내부 기준 포션 중심 좌표 */
@@ -40,6 +42,7 @@ interface PotionUseButtonProps {
  */
 export default function PotionUseButton({
   ariaLabel,
+  charges,
   label,
   tooltip,
   position,
@@ -86,6 +89,9 @@ export default function PotionUseButton({
       >
         <span className="pointer-events-none absolute left-1/2 top-[-0.9rem] -translate-x-1/2 whitespace-nowrap font-crt text-[0.52rem] tracking-[0.18em] text-[rgba(255,156,156,0.82)] [text-shadow:0_0_6px_rgba(184,28,44,0.26)]">
           {label}
+        </span>
+        <span className="pointer-events-none absolute right-[-0.2rem] top-[0.1rem] flex h-[1.15rem] min-w-[1.15rem] items-center justify-center rounded-full border border-[rgba(255,194,194,0.22)] bg-[rgba(33,6,6,0.86)] px-1 font-crt text-[0.56rem] leading-none text-[rgba(255,214,214,0.86)]">
+          {charges}
         </span>
         <div className="pointer-events-none absolute left-1/2 top-[66px] h-[15px] w-[34px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,102,102,0.34)_0%,rgba(255,102,102,0.06)_58%,rgba(255,102,102,0)_100%)] blur-[4px]" />
         <div className="pointer-events-none absolute left-1/2 top-[7px] -translate-x-1/2">

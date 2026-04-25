@@ -55,6 +55,7 @@ export interface PromptActionStep {
   verb: PromptVerb;
   rune: boolean;
   contrast: boolean;
+  multiplier: number;
 }
 
 /**
@@ -108,6 +109,9 @@ export interface CombatAnimationRequest {
   targetId: string;
   targetSide: BattleTargetSide;
   kind?: "projectile" | "crescent-slash";
+  charged?: boolean;
+  delayMs?: number;
+  durationMs?: number;
   element?: Element;
   shielded?: boolean;
   blocked?: boolean;
@@ -311,6 +315,7 @@ export function evaluatePromptAction(
             verb: "attack",
             rune: true,
             contrast: false,
+            multiplier: 1,
           });
           runeCount += 1;
           expectVerb = false;
@@ -339,6 +344,7 @@ export function evaluatePromptAction(
         verb: token.verb,
         rune: pendingRune,
         contrast: false,
+        multiplier: 1,
       });
       pendingRune = false;
       expectVerb = false;
@@ -461,6 +467,8 @@ export function evaluatePromptAction(
     if (step.rune) {
       multiplier *= 1.8;
     }
+
+    step.multiplier = multiplier;
 
     if (step.verb === "attack") {
       attackDamage += Math.max(1, Math.round(getBaseAttackDamage(stats) * multiplier));

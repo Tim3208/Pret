@@ -24,6 +24,27 @@ interface PromptJudgementContext {
 export interface PromptJudgementCopy {
   title: string;
   detail: string;
+  failureTag?: string;
+}
+
+/**
+ * 실패 원인을 안정성/조합 계열 태그로 압축해 보여준다.
+ */
+function getPromptFailureTag(
+  language: PromptJudgementContext["language"],
+  failureReason: PromptJudgementContext["failureReason"],
+): string | undefined {
+  if (!failureReason) {
+    return undefined;
+  }
+
+  return failureReason === "stability-overload"
+    ? language === "ko"
+      ? "안정성 실패"
+      : "STABILITY FAILURE"
+    : language === "ko"
+      ? "조합 실패"
+      : "COMBINATION FAILURE";
 }
 
 /**
@@ -43,16 +64,19 @@ export function getPromptJudgementCopy({
   selfManaCost,
 }: PromptJudgementContext): PromptJudgementCopy {
   const combinationShort = !combinationAdequate && combinationLoad > 0;
+  const failureTag = getPromptFailureTag(language, failureReason);
 
   if (outcome === "failure") {
     if (failureReason === "stability-overload") {
       if (decipher >= 3) {
         return language === "ko"
           ? {
+              failureTag,
               title: "안정성 파단",
               detail: `코스트 ${stabilityCost}가 안정성 ${stability}을 넘어 문장이 스스로 찢어진다.`,
             }
           : {
+              failureTag,
               title: "Stability Breach",
               detail: `Cost ${stabilityCost} overwhelms stability ${stability}; the phrase tears itself apart.`,
             };
@@ -61,10 +85,12 @@ export function getPromptJudgementCopy({
       if (decipher >= 2) {
         return language === "ko"
           ? {
+              failureTag,
               title: "결속 붕괴",
               detail: "문장이 감당할 수 있는 무게를 넘겨 반동이 돌아온다.",
             }
           : {
+              failureTag,
               title: "Binding Collapse",
               detail: "The sentence carries more weight than you can anchor.",
             };
@@ -72,10 +98,12 @@ export function getPromptJudgementCopy({
 
       return language === "ko"
         ? {
+            failureTag,
             title: "무언가 찢어진다",
             detail: "말이 당신을 거스른다.",
           }
         : {
+            failureTag,
             title: "Something Tears",
             detail: "The phrase turns on you.",
           };
@@ -100,17 +128,19 @@ export function getPromptJudgementCopy({
       })();
 
       return language === "ko"
-        ? { title: "구문 파열", detail }
-        : { title: "Syntax Fracture", detail };
+        ? { failureTag, title: "구문 파열", detail }
+        : { failureTag, title: "Syntax Fracture", detail };
     }
 
     if (decipher >= 2) {
       return language === "ko"
         ? {
+            failureTag,
             title: "문장이 엇물리지 않는다",
             detail: "어떤 단어가 제자리를 찾지 못했다.",
           }
         : {
+            failureTag,
             title: "The Words Refuse",
             detail: "Something in the phrase never found its place.",
           };
@@ -118,10 +148,12 @@ export function getPromptJudgementCopy({
 
     return language === "ko"
       ? {
+          failureTag,
           title: "받지 않는다",
           detail: "문장이 입안에서 깨진다.",
         }
       : {
+          failureTag,
           title: "It Will Not Take",
           detail: "The phrase breaks in your mouth.",
         };

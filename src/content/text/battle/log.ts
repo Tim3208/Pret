@@ -42,6 +42,7 @@ export const BATTLE_LOG_TEXT = {
     promptShieldOnly: "The phrase coils around you. Shield +{shield}.",
     monsterStunned: "{monsterName} is stunned and cannot act!",
     monsterDefend: "{monsterName} hardens its guard! (Shield {shield})",
+    monsterHeal: "{intentLabel} - {monsterName} recovers {heal} HP!",
     monsterHitThroughShield:
       "{intentLabel} - {absorbed} blocked, {hpDamage} damage!",
     monsterHitBlocked: "{intentLabel} - fully blocked by shield!",
@@ -93,6 +94,7 @@ export const BATTLE_LOG_TEXT = {
     monsterStunned: "{monsterName}은(는) 기절해 움직이지 못한다!",
     monsterDefend:
       "{monsterName}이(가) 몸을 굳히며 방어한다! (방어막 {shield})",
+    monsterHeal: "{intentLabel} - {monsterName}이(가) HP를 {heal} 회복했다!",
     monsterHitThroughShield:
       "{intentLabel} - {absorbed} 막아내고 {hpDamage} 피해!",
     monsterHitBlocked: "{intentLabel} - 방어막이 완전히 막아냈다!",

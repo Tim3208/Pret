@@ -1,5 +1,7 @@
 export {
   getInitialLanguage,
+  getLocalizedMonsterAmbientLines,
+  getLocalizedMonsterEncounterText,
   getLocalizedMonsterIntentLabel,
   getLocalizedMonsterName,
   getLocalizedSpellName,

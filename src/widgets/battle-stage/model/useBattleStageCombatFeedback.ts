@@ -82,7 +82,6 @@ export function useBattleStageCombatFeedback({
   const noiseResetRef = useRef<number | null>(null);
   const playerHitWaveFrameRef = useRef<number | null>(null);
   const monsterHitWaveFrameRef = useRef<number | null>(null);
-  const monsterImpactCallbackTimeoutRef = useRef<number | null>(null);
 
   /**
    * 추후 정리가 가능하도록 timeout을 등록하고, 완료되면 추적 목록에서 제거한다.
@@ -279,6 +278,10 @@ export function useBattleStageCombatFeedback({
           request.targetSide === "enemy" &&
           !request.blocked &&
           !isSelfReturn;
+        const isChargedPlayerCast =
+          request.charged &&
+          request.targetSide === "enemy" &&
+          !request.missed;
         const target = request.missed
           ? sampleRandomOffscreenPoint(projectileSceneAnchors.playerMuzzle, missHeading)
           : isSelfReturn
@@ -295,12 +298,22 @@ export function useBattleStageCombatFeedback({
               x: projectileSceneAnchors.playerMuzzle.x + SCENE_W * 0.24,
               y: projectileSceneAnchors.playerMuzzle.y - SCENE_H * 0.23,
             }
+          : isChargedPlayerCast
+            ? {
+                x: projectileSceneAnchors.playerMuzzle.x - SCENE_W * 0.08,
+                y: projectileSceneAnchors.playerMuzzle.y + SCENE_H * 0.05,
+              }
           : undefined;
         const returnControl = isSelfReturn && returnTurn
           ? {
               x: returnTurn.x + SCENE_W * 0.04,
               y: returnTurn.y + SCENE_H * 0.05,
             }
+          : isChargedPlayerCast && returnTurn
+            ? {
+                x: returnTurn.x - SCENE_W * 0.03,
+                y: returnTurn.y - SCENE_H * 0.08,
+              }
           : undefined;
         const directionX = target.x - projectileSceneAnchors.playerMuzzle.x;
         const directionY = target.y - projectileSceneAnchors.playerMuzzle.y;
@@ -315,6 +328,10 @@ export function useBattleStageCombatFeedback({
         const impactX = target.x + (directionX / directionLength) * impactInset;
         const impactY = target.y + (directionY / directionLength) * impactInset;
 
+        if (isChargedPlayerCast) {
+          triggerEffect("charge", "player", Math.max(460, request.durationMs ?? 1120), request.element);
+        }
+
         projectilesRef.current.push({
           chars: request.word.split(""),
           x: projectileSceneAnchors.playerMuzzle.x,
@@ -327,8 +344,8 @@ export function useBattleStageCombatFeedback({
           turnY: returnTurn?.y,
           targetX: impactX,
           targetY: impactY,
-          startTime: performance.now(),
-          duration: isSelfReturn ? 1180 : 920,
+          startTime: performance.now() + (request.delayMs ?? 0),
+          duration: request.durationMs ?? (isSelfReturn ? 1180 : isChargedPlayerCast ? 1220 : 920),
           alive: true,
           fromPlayer: true,
           element: request.element,
@@ -361,21 +378,14 @@ export function useBattleStageCombatFeedback({
                   request.impactDamage ?? 0,
                 );
               } else {
-                const settleDelay = flashMonsterImpact(
+                flashMonsterImpact(
                   request.word,
                   { x: impactX, y: impactY },
                   request.element,
                   request.impactDamage ?? 0,
                   request.critical,
                 );
-                if (monsterImpactCallbackTimeoutRef.current) {
-                  clearTrackedTimeout(monsterImpactCallbackTimeoutRef.current);
-                  monsterImpactCallbackTimeoutRef.current = null;
-                }
-                monsterImpactCallbackTimeoutRef.current = trackTimeout(() => {
-                  monsterImpactCallbackTimeoutRef.current = null;
-                  request.onImpact?.();
-                }, settleDelay);
+                request.onImpact?.();
                 return;
               }
             }
@@ -424,6 +434,7 @@ export function useBattleStageCombatFeedback({
     sceneAnchors,
     sceneScatterRef,
     trackTimeout,
+    triggerEffect,
   ]);
 
   useEffect(() => {
@@ -434,9 +445,6 @@ export function useBattleStageCombatFeedback({
     return () => {
       if (noiseResetRef.current) {
         clearTrackedTimeout(noiseResetRef.current);
-      }
-      if (monsterImpactCallbackTimeoutRef.current) {
-        clearTrackedTimeout(monsterImpactCallbackTimeoutRef.current);
       }
       if (playerHitWaveFrame.current) {
         window.cancelAnimationFrame(playerHitWaveFrame.current);

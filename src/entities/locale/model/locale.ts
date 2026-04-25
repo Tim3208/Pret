@@ -1,4 +1,6 @@
 import {
+  MONSTER_AMBIENT_LINE_TEXT,
+  MONSTER_ENCOUNTER_TEXT,
   MONSTER_INTENT_LABEL_TEXT,
   MONSTER_NAME_TEXT,
 } from "@/content/glossary/monsters/monsterText";
@@ -84,6 +86,30 @@ export function getLocalizedMonsterIntentLabel(label: string, language: Language
   return MONSTER_INTENT_LABEL_TEXT[
     label as keyof typeof MONSTER_INTENT_LABEL_TEXT
   ]?.[language] ?? label;
+}
+
+/**
+ * 영문 몬스터 조우 문장을 현재 언어의 표시문으로 변환한다.
+ */
+export function getLocalizedMonsterEncounterText(
+  name: string,
+  language: Language,
+): string {
+  return MONSTER_ENCOUNTER_TEXT[
+    name as keyof typeof MONSTER_ENCOUNTER_TEXT
+  ]?.[language] ?? name;
+}
+
+/**
+ * 영문 몬스터 이름으로 현재 언어의 전투 배경 문장 목록을 가져온다.
+ */
+export function getLocalizedMonsterAmbientLines(
+  name: string,
+  language: Language,
+): readonly string[] {
+  return MONSTER_AMBIENT_LINE_TEXT[
+    name as keyof typeof MONSTER_AMBIENT_LINE_TEXT
+  ]?.[language] ?? [];
 }
 
 /**

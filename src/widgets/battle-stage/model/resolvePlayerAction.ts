@@ -48,7 +48,7 @@ interface ResolvePlayerActionParams {
 }
 
 interface ResolvePlayerActionResult {
-  animationRequest: CombatAnimationRequest | null;
+  animationRequest: CombatAnimationRequest | CombatAnimationRequest[] | null;
   shouldAdvanceTurn: boolean;
 }
 
@@ -396,6 +396,7 @@ export function resolvePlayerAction({
 
     case "prompt": {
       const { evaluation } = action;
+      const attackSteps = evaluation.steps.filter((step) => step.verb === "attack");
       const promptShieldGain =
         evaluation.shieldGain > 0
           ? evaluation.shieldGain + shieldOnDefendBonus
@@ -411,123 +412,181 @@ export function resolvePlayerAction({
                 ? "WARD"
                 : "STRIKE";
 
-      if (evaluation.outcome === "failure") {
-        setPlayerMana((value) => Math.max(0, value - evaluation.selfManaCost));
-        setPlayerHp((value) => Math.max(0, value - evaluation.selfHpCost));
-        addLog(
-          interpolateText(battleLogText.promptFailure, {
-            hpCost: evaluation.selfHpCost,
-            manaCost: evaluation.selfManaCost,
-          }),
-          "text-red-400",
-        );
-        return { animationRequest: null, shouldAdvanceTurn: true };
-      }
-
-      const applyBacklash = () => {
+      /**
+       * prompt 반동 자원 손실과 로그를 한 번에 적용한다.
+       */
+      const applyPromptBacklashCosts = (
+        logText: string,
+        logColor: string,
+      ) => {
         if (evaluation.selfManaCost > 0) {
           setPlayerMana((value) => Math.max(0, value - evaluation.selfManaCost));
         }
 
         if (evaluation.selfHpCost > 0) {
           setPlayerHp((value) => Math.max(0, value - evaluation.selfHpCost));
-          addLog(
-            interpolateText(battleLogText.promptBacklash, {
-              hpCost: evaluation.selfHpCost,
-              manaCost: evaluation.selfManaCost,
-            }),
-            "text-amber-300",
-          );
         }
+
+        addLog(
+          interpolateText(logText, {
+            hpCost: evaluation.selfHpCost,
+            manaCost: evaluation.selfManaCost,
+          }),
+          logColor,
+        );
       };
+
+      /**
+       * prompt 반동이 체력 피해를 줄 때 플레이어 쪽으로 되돌아오는 투사체를 만든다.
+       */
+      const buildPromptBacklashAnimation = (
+        logText: string,
+        logColor: string,
+        delayMs: number = 0,
+      ): CombatAnimationRequest | null => {
+        if (evaluation.selfHpCost <= 0) {
+          return null;
+        }
+
+        return {
+          word: actionWord,
+          fromPlayer: true,
+          targetId: PLAYER_TARGET_ID,
+          targetSide: "player",
+          kind: "projectile",
+          delayMs,
+          durationMs: 1040,
+          impactDamage: evaluation.selfHpCost,
+          onImpact: () => {
+            applyPromptBacklashCosts(logText, logColor);
+          },
+        } satisfies CombatAnimationRequest;
+      };
+
+      if (evaluation.outcome === "failure") {
+        const backlashAnimation = buildPromptBacklashAnimation(
+          battleLogText.promptFailure,
+          "text-red-400",
+        );
+
+        if (backlashAnimation) {
+          return {
+            animationRequest: backlashAnimation,
+            shouldAdvanceTurn: true,
+          };
+        }
+
+        applyPromptBacklashCosts(battleLogText.promptFailure, "text-red-400");
+        return { animationRequest: null, shouldAdvanceTurn: true };
+      }
 
       if (evaluation.attackDamage > 0) {
         const hitChance = getActionHitChance(action, playerStats, "enemy");
         const critChance = getActionCritChance(action, playerStats, "enemy");
-        const didHit = Math.random() < hitChance;
-        const didCrit = didHit && Math.random() < critChance;
+        const guaranteedMultiStrike =
+          evaluation.connectorCount > 0 && attackSteps.length > 1;
+        let remainingMonsterShield = currentMonsterShield;
 
-        let damage = evaluation.attackDamage;
-        let elementLog: { text: string; color: string } | null = null;
-        if (monsterElement && evaluation.element) {
-          const multiplier = getElementMultiplier(evaluation.element, monsterElement);
-          damage = Math.round(damage * multiplier);
-          if (multiplier > 1) {
-            elementLog = {
-              text: sceneText.elementalWeakness,
-              color: "text-yellow-300",
-            };
-          } else if (multiplier < 1) {
-            elementLog = {
-              text: sceneText.elementalResistance,
-              color: "text-gray-400",
-            };
+        const finalizePromptSequence = (missed: boolean) => {
+          if (promptShieldGain > 0) {
+            setPlayerShield(promptShieldGain);
+            addLog(
+              interpolateText(
+                missed
+                  ? battleLogText.promptMissShield
+                  : battleLogText.promptShieldGainOnHit,
+                {
+                  shield: promptShieldGain,
+                },
+              ),
+              "text-blue-300",
+            );
           }
-        }
+        };
 
-        if (didCrit) {
-          damage = getCriticalDamage(damage);
-        }
+        const attackRequests = attackSteps.map((step, index) => {
+          const didHit = guaranteedMultiStrike || Math.random() < hitChance;
+          const didCrit = didHit && Math.random() < critChance;
+          const stepElement = step.rune ? evaluation.element : undefined;
+          let damage = Math.max(1, Math.round(getBaseAttackDamage(playerStats) * step.multiplier));
+          let elementLog: { text: string; color: string } | null = null;
 
-        if (!didHit) {
-          return {
-            animationRequest: {
+          if (monsterElement && stepElement) {
+            const multiplier = getElementMultiplier(stepElement, monsterElement);
+            damage = Math.round(damage * multiplier);
+            if (multiplier > 1) {
+              elementLog = {
+                text: sceneText.elementalWeakness,
+                color: "text-yellow-300",
+              };
+            } else if (multiplier < 1) {
+              elementLog = {
+                text: sceneText.elementalResistance,
+                color: "text-gray-400",
+              };
+            }
+          }
+
+          if (didCrit) {
+            damage = getCriticalDamage(damage);
+          }
+
+          const isLastAttack = index === attackSteps.length - 1;
+
+          if (!didHit) {
+            return {
               word: actionWord,
               fromPlayer: true,
               targetId: "monster",
               targetSide: "enemy",
               kind: "projectile",
-              element: evaluation.element,
+              charged: step.contrast,
+              delayMs: index * 340,
+              durationMs: step.contrast ? 1220 : 920,
+              element: stepElement,
               missed: true,
               onImpact: () => {
-                if (promptShieldGain > 0) {
-                  setPlayerShield(promptShieldGain);
-                  addLog(
-                    interpolateText(battleLogText.promptMissShield, {
-                      shield: promptShieldGain,
-                    }),
-                    "text-blue-300",
-                  );
-                }
-                applyBacklash();
                 addLog(
                   interpolateText(battleLogText.promptMiss, {
                     actionWord,
                   }),
                   "text-white/40",
                 );
+
+                if (isLastAttack) {
+                  finalizePromptSequence(true);
+                }
               },
-            },
-            shouldAdvanceTurn: true,
-          };
-        }
+            } satisfies CombatAnimationRequest;
+          }
 
-        const shieldAbsorb = Math.min(currentMonsterShield, damage);
-        const hpDamage = damage - shieldAbsorb;
-
-        return {
-          animationRequest: {
+          return {
             word: actionWord,
             fromPlayer: true,
             targetId: "monster",
             targetSide: "enemy",
             kind: "projectile",
-            element: evaluation.element,
-            shielded: currentMonsterShield > 0,
-            blocked: currentMonsterShield >= damage,
+            charged: step.contrast,
+            delayMs: index * 340,
+            durationMs: step.contrast ? 1220 : 920,
+            element: stepElement,
+            shielded: remainingMonsterShield > 0,
+            blocked: remainingMonsterShield >= damage,
             critical: didCrit,
-            impactDamage: hpDamage,
+            impactDamage: Math.max(0, damage - Math.min(remainingMonsterShield, damage)),
             onImpact: () => {
+              const shieldAbsorb = Math.min(remainingMonsterShield, damage);
+              const hpDamage = damage - shieldAbsorb;
+              remainingMonsterShield = Math.max(0, remainingMonsterShield - shieldAbsorb);
+
               if (shieldAbsorb > 0) {
-                setMonsterShield((value) => Math.max(0, value - shieldAbsorb));
+                setMonsterShield(remainingMonsterShield);
               }
               if (elementLog) {
                 addLog(elementLog.text, elementLog.color);
               }
+
               setMonsterHp((value) => Math.max(0, value - hpDamage));
-              if (promptShieldGain > 0) {
-                setPlayerShield(promptShieldGain);
-              }
 
               addLog(
                 interpolateText(
@@ -548,18 +607,30 @@ export function resolvePlayerAction({
                 didCrit ? "text-yellow-300" : "text-cyan-300",
               );
 
-              if (promptShieldGain > 0) {
-                addLog(
-                  interpolateText(battleLogText.promptShieldGainOnHit, {
-                    shield: promptShieldGain,
-                  }),
-                  "text-blue-300",
-                );
+              if (isLastAttack) {
+                finalizePromptSequence(false);
               }
-
-              applyBacklash();
             },
-          },
+          } satisfies CombatAnimationRequest;
+        });
+
+        const backlashDelay =
+          attackRequests.reduce((latest, request) => {
+            return Math.max(
+              latest,
+              (request.delayMs ?? 0) + (request.durationMs ?? 0),
+            );
+          }, 0) + 140;
+        const backlashAnimation = buildPromptBacklashAnimation(
+          battleLogText.promptBacklash,
+          "text-amber-300",
+          backlashDelay,
+        );
+
+        return {
+          animationRequest: backlashAnimation
+            ? [...attackRequests, backlashAnimation]
+            : attackRequests,
           shouldAdvanceTurn: true,
         };
       }
@@ -573,7 +644,20 @@ export function resolvePlayerAction({
           "text-blue-300",
         );
       }
-      applyBacklash();
+
+      const backlashAnimation = buildPromptBacklashAnimation(
+        battleLogText.promptBacklash,
+        "text-amber-300",
+      );
+
+      if (backlashAnimation) {
+        return {
+          animationRequest: backlashAnimation,
+          shouldAdvanceTurn: true,
+        };
+      }
+
+      applyPromptBacklashCosts(battleLogText.promptBacklash, "text-amber-300");
       return { animationRequest: null, shouldAdvanceTurn: true };
     }
   }

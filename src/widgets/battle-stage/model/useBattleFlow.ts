@@ -15,12 +15,14 @@ import {
 import { type EquippedItems, applyEquipmentModifiers } from "@/entities/equipment";
 import {
   type Language,
+  getLocalizedMonsterAmbientLines,
   getLocalizedMonsterName,
   interpolateText,
 } from "@/entities/locale";
 import {
   HOLLOW_WRAITH,
   getMonsterIntentTelegraph,
+  type MonsterDef,
   type MonsterIntent,
   pickMonsterIntent,
 } from "@/entities/monster";
@@ -37,50 +39,72 @@ import { resolvePlayerAction } from "./resolvePlayerAction";
 type BattlePhase = "encounter" | "intro" | "combat" | "victory" | "defeat";
 
 interface UseBattleFlowParams {
+  baseStats?: PlayerStats;
   equippedItems: EquippedItems;
+  initialHp?: number;
+  initialMana?: number;
+  initialPotionCharges?: number;
   language: Language;
-  onBattleEnd: (result: { won: boolean }) => void;
+  monster?: MonsterDef;
+  onBattleEnd: (result: {
+    won: boolean;
+    defeatedMonsterName?: string;
+    experienceReward?: number;
+    remainingHp?: number;
+    remainingMana?: number;
+    remainingPotionCharges?: number;
+  }) => void;
 }
 
 /**
  * 전투 장면에서 사용하는 상태 전환, 턴 처리, 승패 판정을 한곳에서 관리한다.
  */
 export function useBattleFlow({
+  baseStats,
   equippedItems,
+  initialHp,
+  initialMana,
+  initialPotionCharges = 1,
   language,
+  monster,
   onBattleEnd,
 }: UseBattleFlowParams) {
-  const monster = HOLLOW_WRAITH;
+  const activeMonster = monster ?? HOLLOW_WRAITH;
   const battleLogText = BATTLE_LOG_TEXT[language];
   const sceneText = BATTLE_SCENE_TEXT[language];
-  const localizedMonsterName = getLocalizedMonsterName(monster.name, language);
+  const localizedMonsterName = getLocalizedMonsterName(activeMonster.name, language);
   const combatStats = useMemo(
-    () => applyEquipmentModifiers(DEFAULT_STATS, equippedItems),
-    [equippedItems],
+    () => applyEquipmentModifiers(baseStats ?? DEFAULT_STATS, equippedItems),
+    [baseStats, equippedItems],
   );
   const playerStats: PlayerStats = combatStats.stats;
   const playerMaxHp = getMaxHp(playerStats) + combatStats.maxHpBonus;
   const playerMaxMana = getMaxMana(playerStats) + combatStats.maxManaBonus;
 
   const [phase, setPhase] = useState<BattlePhase>("encounter");
-  const [playerHp, setPlayerHp] = useState(playerMaxHp);
-  const [playerMana, setPlayerMana] = useState(playerMaxMana);
+  const [playerHp, setPlayerHp] = useState(() => Math.max(1, Math.min(initialHp ?? playerMaxHp, playerMaxHp)));
+  const [playerMana, setPlayerMana] = useState(() => Math.max(0, Math.min(initialMana ?? playerMaxMana, playerMaxMana)));
   const [playerShield, setPlayerShield] = useState(0);
-  const [monsterHp, setMonsterHp] = useState(monster.maxHp);
+  const [monsterHp, setMonsterHp] = useState(activeMonster.maxHp);
   const [monsterShield, setMonsterShield] = useState(0);
   const [monsterStunned, setMonsterStunned] = useState(false);
   const [turn, setTurn] = useState<"player" | "monster">("player");
   const [nextIntent, setNextIntent] = useState<MonsterIntent>(() =>
-    pickMonsterIntent(monster),
+    pickMonsterIntent(activeMonster),
   );
   const [battleLog, setBattleLog] = useState<BattleLogEntry[]>([]);
   const [ambientIndex, setAmbientIndex] = useState(0);
-  const [potionUsed, setPotionUsed] = useState(false);
+  const [potionCharges, setPotionCharges] = useState(() => Math.max(0, initialPotionCharges));
 
   const ambientText = useMemo(() => {
-    const lines = BATTLE_AMBIENT_LINES[language];
+    const lines = getLocalizedMonsterAmbientLines(activeMonster.name, language);
+    if (lines.length === 0) {
+      const fallbackLines = BATTLE_AMBIENT_LINES[language];
+      return fallbackLines[ambientIndex % fallbackLines.length];
+    }
+
     return lines[ambientIndex % lines.length];
-  }, [ambientIndex, language]);
+  }, [activeMonster.name, ambientIndex, language]);
 
   const nextIntentLabel = useMemo(
     () => getMonsterIntentTelegraph(nextIntent, playerStats.decipher, language),
@@ -113,8 +137,8 @@ export function useBattleFlow({
   );
 
   const rollNextIntent = useCallback(() => {
-    setNextIntent(pickMonsterIntent(monster));
-  }, [monster]);
+    setNextIntent(pickMonsterIntent(activeMonster));
+  }, [activeMonster]);
 
   const handleEncounterDone = useCallback(() => setPhase("intro"), []);
 
@@ -127,7 +151,7 @@ export function useBattleFlow({
    * 포션 사용 가능 여부를 검사하고 실제 회복량을 반환한다.
    */
   const handlePotionUse = useCallback(() => {
-    if (phase !== "combat" || potionUsed || playerHp >= playerMaxHp) {
+    if (phase !== "combat" || potionCharges <= 0 || playerHp >= playerMaxHp) {
       return 0;
     }
 
@@ -139,7 +163,7 @@ export function useBattleFlow({
       return 0;
     }
 
-    setPotionUsed(true);
+    setPotionCharges((value) => Math.max(0, value - 1));
     setPlayerHp((value) => Math.min(playerMaxHp, value + healAmount));
     addLog(
       interpolateText(battleLogText.potionUse, { healAmount }),
@@ -150,10 +174,10 @@ export function useBattleFlow({
     addLog,
     battleLogText,
     phase,
+    potionCharges,
     playerHp,
     playerMaxHp,
     playerStats,
-    potionUsed,
   ]);
 
   const monsterShieldRef = useRef(monsterShield);
@@ -205,7 +229,7 @@ export function useBattleFlow({
         currentMonsterShield: monsterShieldRef.current,
         language,
         localizedMonsterName,
-        monsterElement: monster.element,
+        monsterElement: activeMonster.element,
         playerMana,
         playerMaxHp,
         playerStats,
@@ -223,7 +247,27 @@ export function useBattleFlow({
         return;
       }
 
-      const turnDelay = animationRequest ? 1920 : 400;
+      const animationRequests = !animationRequest
+        ? []
+        : Array.isArray(animationRequest)
+          ? animationRequest
+          : [animationRequest];
+
+      const turnDelay = animationRequests.length > 0
+        ? Math.max(
+          ...animationRequests.map((request) => {
+            const baseDuration =
+              request.durationMs ??
+              (request.kind === "crescent-slash"
+                ? 1050
+                : request.charged
+                  ? 1220
+                  : 920);
+            return (request.delayMs ?? 0) + baseDuration + 1000;
+          }),
+        )
+        : 400;
+
       playerActionCommittedRef.current = true;
       if (monsterTurnTimeoutRef.current) {
         window.clearTimeout(monsterTurnTimeoutRef.current);
@@ -233,11 +277,20 @@ export function useBattleFlow({
         setTurn("monster");
       }, turnDelay);
 
-      if (animationRequest) {
+      if (animationRequests.length > 0) {
         if (projectileCallbackRef.current) {
-          projectileCallbackRef.current(animationRequest);
+          animationRequests.forEach((request) => {
+            projectileCallbackRef.current?.(request);
+          });
         } else {
-          animationRequest.onImpact?.();
+          animationRequests.forEach((request) => {
+            if ((request.delayMs ?? 0) > 0) {
+              window.setTimeout(() => request.onImpact?.(), request.delayMs);
+              return;
+            }
+
+            request.onImpact?.();
+          });
         }
       }
     },
@@ -247,7 +300,7 @@ export function useBattleFlow({
       combatStats.shieldOnDefendBonus,
       playerMaxHp,
       playerMana,
-      monster,
+      activeMonster,
       addLog,
       battleLogText,
       language,
@@ -257,18 +310,20 @@ export function useBattleFlow({
   );
 
   const nextIntentRef = useRef(nextIntent);
+  const monsterHpRef = useRef(monsterHp);
   const playerShieldRef = useRef(playerShield);
 
   useEffect(() => {
     nextIntentRef.current = nextIntent;
+    monsterHpRef.current = monsterHp;
     playerShieldRef.current = playerShield;
-  }, [nextIntent, playerShield]);
+  }, [monsterHp, nextIntent, playerShield]);
 
   useEffect(() => {
     if (turn !== "monster") {
       return;
     }
-    if (monsterHp <= 0) {
+    if (monsterHpRef.current <= 0) {
       return;
     }
 
@@ -312,6 +367,7 @@ export function useBattleFlow({
         isTurnResolved: () => turnResolved,
         language,
         localizedMonsterName,
+        monsterMaxHp: activeMonster.maxHp,
         monsterStunned,
         nextIntent: nextIntentRef.current,
         playerShield: playerShieldRef.current,
@@ -319,6 +375,7 @@ export function useBattleFlow({
         scheduleTimeout: (callback, delay) => {
           timeoutIds.push(window.setTimeout(callback, delay));
         },
+        setMonsterHp,
         setMonsterShield,
         setMonsterStunned,
         setPlayerHp,
@@ -342,12 +399,12 @@ export function useBattleFlow({
     };
   }, [
     turn,
-    monsterHp,
     monsterStunned,
     addLog,
     battleLogText,
     language,
     localizedMonsterName,
+    activeMonster.maxHp,
     rollNextIntent,
     trimIntentLabel,
   ]);
@@ -378,9 +435,20 @@ export function useBattleFlow({
     if (phase !== "victory") {
       return;
     }
-    const id = window.setTimeout(() => onBattleEnd({ won: true }), 3500);
+    const id = window.setTimeout(
+      () =>
+        onBattleEnd({
+          won: true,
+          defeatedMonsterName: activeMonster.name,
+          experienceReward: activeMonster.experienceReward,
+          remainingHp: playerHp,
+          remainingMana: playerMana,
+          remainingPotionCharges: potionCharges,
+        }),
+      3500,
+    );
     return () => window.clearTimeout(id);
-  }, [phase, onBattleEnd]);
+  }, [activeMonster.experienceReward, activeMonster.name, onBattleEnd, phase, playerHp, playerMana, potionCharges]);
 
   useEffect(() => {
     if (phase !== "combat") {
@@ -406,9 +474,12 @@ export function useBattleFlow({
     if (phase !== "defeat") {
       return;
     }
-    const id = window.setTimeout(() => onBattleEnd({ won: false }), 3500);
+    const id = window.setTimeout(
+      () => onBattleEnd({ won: false, remainingHp: 0, remainingMana: playerMana, remainingPotionCharges: potionCharges }),
+      3500,
+    );
     return () => window.clearTimeout(id);
-  }, [phase, onBattleEnd]);
+  }, [onBattleEnd, phase, playerMana, potionCharges]);
 
   return {
     ambientText,
@@ -419,7 +490,7 @@ export function useBattleFlow({
     handlePotionUse,
     localizedMonsterName,
     monsterHp,
-    monsterMaxHp: monster.maxHp,
+    monsterMaxHp: activeMonster.maxHp,
     monsterShield,
     nextIntent,
     nextIntentLabel,
@@ -430,7 +501,8 @@ export function useBattleFlow({
     playerMaxMana,
     playerShield,
     playerStats,
-    potionAvailable: !potionUsed,
+    potionAvailable: potionCharges > 0,
+    potionCharges,
     projectileCallbackRef,
     sceneText,
     targetOptions,

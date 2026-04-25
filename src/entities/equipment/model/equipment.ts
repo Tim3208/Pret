@@ -161,7 +161,7 @@ export const EQUIPMENT_POOL: EquipmentDefinition[] = [
     slot: "shoulders",
     ...EQUIPMENT_TEXT["graveshard-spaulder"],
     fragment: "WARD",
-    fragmentTone: "rgba(65, 255, 113, 0.92)",
+    fragmentTone: "rgba(136, 214, 158, 0.84)",
     equippedAscii: [
       " _[###  ",
       "[#####= ",

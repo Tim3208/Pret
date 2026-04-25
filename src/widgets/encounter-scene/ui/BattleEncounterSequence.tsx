@@ -9,6 +9,7 @@ import SkullEncounter from "./SkullEncounter";
 export type BattleEncounterSequencePhase = "encounter" | "intro";
 
 interface BattleEncounterSequenceProps {
+  encounterText?: string;
   language: Language;
   phase: BattleEncounterSequencePhase;
   onEncounterComplete: () => void;
@@ -21,12 +22,13 @@ interface BattleEncounterSequenceProps {
  * @param props 프리컴뱃 단계 정보와 단계별 완료 콜백
  */
 export default function BattleEncounterSequence({
+  encounterText,
   language,
   phase,
   onEncounterComplete,
   onIntroComplete,
 }: BattleEncounterSequenceProps) {
-  const encounterText = pickText(language, BATTLE_ENCOUNTER_TEXT);
+  const resolvedEncounterText = encounterText ?? pickText(language, BATTLE_ENCOUNTER_TEXT);
 
   if (phase === "encounter") {
     return <SkullEncounter onComplete={onEncounterComplete} />;
@@ -39,7 +41,7 @@ export default function BattleEncounterSequence({
       className="max-w-[500px] cursor-pointer px-6 py-8 animate-fade-in-quick"
       onClick={onIntroComplete}
     >
-      <TypewriterText key={encounterText} text={encounterText} speed={30} />
+      <TypewriterText key={resolvedEncounterText} text={resolvedEncounterText} speed={30} />
       <p className="mt-6 text-center text-[0.9rem] tracking-[0.15em] text-white/40 opacity-0 [animation:fade_1s_4s_forwards]">
         {sceneText.clickToFight}
       </p>
