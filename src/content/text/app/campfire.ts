@@ -9,8 +9,8 @@ export const CAMPFIRE_UI_TEXT = {
     ko: "(불을 켠다 / 예)",
   },
   commandPlaceholder: {
-    en: "(1 / 2 / venture / stats)",
-    ko: "(1 / 2 / 출발 / 스탯)",
+    en: "(rest / craft / cook / stats / venture)",
+    ko: "(휴식 / 제작 / 요리 / 스탯 / 출발)",
   },
   bonfireLine: {
     en: "The bonfire crackles to life, its warmth wrapping around you...",
@@ -28,6 +28,22 @@ export const CAMPFIRE_UI_TEXT = {
     en: "[ venture forth ]",
     ko: "[ 앞으로 나아간다 ]",
   },
+  rest: {
+    en: "[ rest ]",
+    ko: "[ 휴식 ]",
+  },
+  craftGear: {
+    en: "[ forge gear ]",
+    ko: "[ 장비 제작 ]",
+  },
+  craftSigil: {
+    en: "[ shape sigil ]",
+    ko: "[ 인장 제작 ]",
+  },
+  cookStew: {
+    en: "[ cook stew ]",
+    ko: "[ 요리 ]",
+  },
   allocateStats: {
     en: "[ allocate stats ]",
     ko: "[ 스탯을 배분한다 ]",
@@ -39,6 +55,82 @@ export const CAMPFIRE_UI_TEXT = {
   noStatPoints: {
     en: "No unused stat points remain.",
     ko: "남은 스탯 포인트가 없다.",
+  },
+  restLockedByMaintenance: {
+    en: "Your hands already chose work over sleep. Rest must wait for the next bonfire.",
+    ko: "손은 이미 잠 대신 일을 골랐다. 휴식은 다음 모닥불까지 미뤄진다.",
+  },
+  maintenanceLockedByRest: {
+    en: "The rest has settled too deep. Crafting and cooking must wait for the next bonfire.",
+    ko: "휴식이 너무 깊게 내려앉았다. 제작과 요리는 다음 모닥불까지 미뤄진다.",
+  },
+  restUsedLine: {
+    en: "You lie close to the coals. HP +{hp}, MP +{mana}, potion charges {potions}.",
+    ko: "숯불 가까이에 몸을 눕힌다. HP +{hp}, MP +{mana}, 물약 충전 {potions}.",
+  },
+  restAlreadyUsed: {
+    en: "The fire will not grant the same sleep twice.",
+    ko: "불길은 같은 잠을 두 번 허락하지 않는다.",
+  },
+  materialRewardLine: {
+    en: "Recovered materials: {items}.",
+    ko: "회수한 재료: {items}.",
+  },
+  eventMaterialRewardLine: {
+    en: "The path yields materials: {items}.",
+    ko: "길목에서 재료를 챙겼다: {items}.",
+  },
+  missingMaterialsLine: {
+    en: "Missing materials: {items}.",
+    ko: "부족한 재료: {items}.",
+  },
+  equipmentPoolEmptyLine: {
+    en: "No unclaimed equipment shape remains in the ash.",
+    ko: "재 속에 아직 취하지 않은 장비 형상이 남아 있지 않다.",
+  },
+  craftEquipmentLine: {
+    en: "The fire hammers a shape into being: {itemName}.",
+    ko: "불길이 형상을 두드려 낸다: {itemName}.",
+  },
+  craftQuestLine: {
+    en: "The ash keeps the mark. Quest item stored: {itemName}.",
+    ko: "재가 표식을 간직한다. 퀘스트 아이템 보관: {itemName}.",
+  },
+  cookStewLine: {
+    en: "The stew burns clean. HP +{hp}, MP +{mana}. Next battle: attack +{attack}, shield +{shield}.",
+    ko: "스튜가 맑게 타오른다. HP +{hp}, MP +{mana}. 다음 전투: 공격 +{attack}, 방어막 +{shield}.",
+  },
+  mealEffectLine: {
+    en: "Meal effect ready: {mealName} // ATK +{attack}, SHD +{shield}",
+    ko: "요리 효과 준비: {mealName} // 공격 +{attack}, 방어막 +{shield}",
+  },
+  noMealEffectLine: {
+    en: "Meal effect ready: none",
+    ko: "요리 효과 준비: 없음",
+  },
+  inventoryTitle: {
+    en: "[ RUN INVENTORY ]",
+    ko: "[ 런 인벤토리 ]",
+  },
+  inventoryEmpty: {
+    en: "empty",
+    ko: "비어 있음",
+  },
+  recipeTitle: {
+    en: "[ MAINTENANCE RITES ]",
+    ko: "[ 정비 의식 ]",
+  },
+  sessionRestedLine: {
+    en: "Rest chosen. Crafting and cooking are sealed until the next bonfire.",
+    ko: "휴식을 선택했다. 다음 모닥불까지 제작과 요리는 닫힌다.",
+  },
+  sessionMaintenanceLine: {
+    en: "Maintenance chosen. Rest is sealed until the next bonfire.",
+    ko: "정비를 선택했다. 다음 모닥불까지 휴식은 닫힌다.",
+  },
+  sessionIdleLine: {
+    en: "Choose rest, or work the fire before moving on.",
+    ko: "휴식하거나, 떠나기 전에 불가에서 손을 움직여라.",
   },
   recoveryLine: {
     en: "Bonfire warmth restores +{hp} HP and +{mana} MP.",
@@ -147,7 +239,7 @@ export const CAMPFIRE_UI_TEXT = {
 } as const;
 
 export const BONFIRE_VENTURE_KEYWORDS = [
-  "1",
+  "6",
   "venture",
   "go",
   "forth",
@@ -159,7 +251,7 @@ export const BONFIRE_VENTURE_KEYWORDS = [
 ] as const;
 
 export const BONFIRE_ALLOCATE_KEYWORDS = [
-  "2",
+  "5",
   "stats",
   "stat",
   "allocate",
@@ -168,6 +260,48 @@ export const BONFIRE_ALLOCATE_KEYWORDS = [
   "배분",
   "분배",
   "찍기",
+] as const;
+
+export const BONFIRE_REST_KEYWORDS = [
+  "1",
+  "rest",
+  "sleep",
+  "휴식",
+  "쉰다",
+  "쉬기",
+  "잠",
+] as const;
+
+export const BONFIRE_CRAFT_GEAR_KEYWORDS = [
+  "2",
+  "craft",
+  "gear",
+  "forge",
+  "equipment",
+  "제작",
+  "장비",
+  "벼린다",
+] as const;
+
+export const BONFIRE_CRAFT_SIGIL_KEYWORDS = [
+  "3",
+  "sigil",
+  "mark",
+  "quest",
+  "인장",
+  "표식",
+  "퀘스트",
+] as const;
+
+export const BONFIRE_COOK_STEW_KEYWORDS = [
+  "4",
+  "cook",
+  "stew",
+  "meal",
+  "food",
+  "요리",
+  "스튜",
+  "음식",
 ] as const;
 
 export const BONFIRE_CONFIRM_KEYWORDS = [

@@ -33,6 +33,7 @@ import {
   getMaxMana,
   type PlayerStats,
 } from "@/entities/player";
+import type { BonfireMealEffect } from "@/entities/run";
 import { resolveMonsterTurn } from "./resolveMonsterTurn";
 import { resolvePlayerAction } from "./resolvePlayerAction";
 
@@ -45,6 +46,7 @@ interface UseBattleFlowParams {
   initialMana?: number;
   initialPotionCharges?: number;
   language: Language;
+  mealEffect?: BonfireMealEffect | null;
   monster?: MonsterDef;
   onBattleEnd: (result: {
     won: boolean;
@@ -66,6 +68,7 @@ export function useBattleFlow({
   initialMana,
   initialPotionCharges = 1,
   language,
+  mealEffect = null,
   monster,
   onBattleEnd,
 }: UseBattleFlowParams) {
@@ -80,6 +83,8 @@ export function useBattleFlow({
   const playerStats: PlayerStats = combatStats.stats;
   const playerMaxHp = getMaxHp(playerStats) + combatStats.maxHpBonus;
   const playerMaxMana = getMaxMana(playerStats) + combatStats.maxManaBonus;
+  const attackDamageBonus = mealEffect?.attackDamageBonus ?? 0;
+  const mealShieldOnDefendBonus = mealEffect?.shieldOnDefendBonus ?? 0;
 
   const [phase, setPhase] = useState<BattlePhase>("encounter");
   const [playerHp, setPlayerHp] = useState(() => Math.max(1, Math.min(initialHp ?? playerMaxHp, playerMaxHp)));
@@ -145,7 +150,16 @@ export function useBattleFlow({
   const handleIntroDone = useCallback(() => {
     setPhase("combat");
     addLog(sceneText.battleBegins, "text-ember");
-  }, [addLog, sceneText.battleBegins]);
+    if (mealEffect) {
+      addLog(
+        interpolateText(battleLogText.mealEffectStart, {
+          attack: mealEffect.attackDamageBonus,
+          shield: mealEffect.shieldOnDefendBonus,
+        }),
+        "text-amber-200",
+      );
+    }
+  }, [addLog, battleLogText, mealEffect, sceneText.battleBegins]);
 
   /**
    * 포션 사용 가능 여부를 검사하고 실제 회복량을 반환한다.
@@ -225,6 +239,7 @@ export function useBattleFlow({
       const { animationRequest, shouldAdvanceTurn } = resolvePlayerAction({
         action,
         addLog,
+        attackDamageBonus,
         battleLogText,
         currentMonsterShield: monsterShieldRef.current,
         language,
@@ -233,7 +248,7 @@ export function useBattleFlow({
         playerMana,
         playerMaxHp,
         playerStats,
-        shieldOnDefendBonus: combatStats.shieldOnDefendBonus,
+        shieldOnDefendBonus: combatStats.shieldOnDefendBonus + mealShieldOnDefendBonus,
         sceneText,
         setMonsterHp,
         setMonsterShield,
@@ -298,6 +313,8 @@ export function useBattleFlow({
       turn,
       playerStats,
       combatStats.shieldOnDefendBonus,
+      attackDamageBonus,
+      mealShieldOnDefendBonus,
       playerMaxHp,
       playerMana,
       activeMonster,

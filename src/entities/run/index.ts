@@ -1,12 +1,21 @@
 export {
   BATTLES_PER_BONFIRE,
+  canMaintainAtBonfire,
+  canRestAtBonfire,
+  createBonfireSession,
   getEffectiveCombatPower,
   getJourneyStatus,
   MAX_RUN_POTION_CHARGES,
+  markBonfireCooked,
+  markBonfireCrafted,
+  markBonfireRested,
   rollRunEvent,
 } from "./model/run";
 export type {
   AmbushRunEvent,
+  BonfireMealEffect,
+  BonfireSession,
+  BonfireSessionMode,
   ChoiceRunEvent,
   EquipmentRunEvent,
   ExperienceRunEvent,

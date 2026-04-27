@@ -5,7 +5,7 @@ import {
   type Language,
 } from "@/entities/locale";
 import { HOLLOW_WRAITH, type MonsterDef } from "@/entities/monster";
-import type { JourneyNode } from "@/entities/run";
+import type { BonfireMealEffect, JourneyNode } from "@/entities/run";
 import {
   DEFAULT_STATS,
   grantPlayerExperience,
@@ -41,6 +41,7 @@ interface Props {
   journeyTitle?: string;
   language: Language;
   level?: number;
+  mealEffect?: BonfireMealEffect | null;
   experience?: number;
   monster?: MonsterDef;
   nextLevelExperience?: number;
@@ -58,6 +59,7 @@ export default function BattlePage({
   initialMana,
   language,
   level = 1,
+  mealEffect = null,
   experience = 0,
   monster,
   nextLevelExperience = 10,
@@ -126,6 +128,7 @@ export default function BattlePage({
     initialMana,
     initialPotionCharges,
     language,
+    mealEffect,
     monster: activeMonster,
     onBattleEnd,
   });

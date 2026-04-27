@@ -29,6 +29,7 @@ type BattleSceneText = (typeof BATTLE_SCENE_TEXT)[Language];
 interface ResolvePlayerActionParams {
   action: PlayerAction;
   addLog: (text: string, color?: string) => void;
+  attackDamageBonus: number;
   battleLogText: BattleLogText;
   currentMonsterShield: number;
   language: Language;
@@ -59,6 +60,7 @@ interface ResolvePlayerActionResult {
 export function resolvePlayerAction({
   action,
   addLog,
+  attackDamageBonus,
   battleLogText,
   currentMonsterShield,
   language,
@@ -85,7 +87,7 @@ export function resolvePlayerAction({
       const critChance = getActionCritChance(action, playerStats, targetSide);
       const didHit = targetSide === "player" || Math.random() < hitChance;
       const didCrit = didHit && Math.random() < critChance;
-      const baseDamage = getBaseAttackDamage(playerStats);
+      const baseDamage = getBaseAttackDamage(playerStats) + attackDamageBonus;
       const totalDamage = didCrit ? getCriticalDamage(baseDamage) : baseDamage;
 
       if (!didHit) {

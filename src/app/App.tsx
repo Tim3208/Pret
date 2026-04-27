@@ -1,16 +1,36 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   BONFIRE_ALLOCATE_KEYWORDS,
+  BONFIRE_COOK_STEW_KEYWORDS,
   BONFIRE_CONFIRM_KEYWORDS,
+  BONFIRE_CRAFT_GEAR_KEYWORDS,
+  BONFIRE_CRAFT_SIGIL_KEYWORDS,
+  BONFIRE_REST_KEYWORDS,
   BONFIRE_VENTURE_KEYWORDS,
   CAMPFIRE_STORY_TEXT,
   CAMPFIRE_UI_TEXT,
 } from "@/content/text/app/campfire";
+import { INVENTORY_ITEM_TEXT } from "@/content/catalog/inventory/inventoryText";
 import { POST_BATTLE_EVENT_TEXT } from "@/content/text/event/postBattle";
 import {
+  type EquipmentDefinition,
   type EquippedItems,
   applyEquipmentModifiers,
+  getOfferableEquipmentItems,
 } from "@/entities/equipment";
+import {
+  BONFIRE_MATERIAL_REWARDS,
+  BONFIRE_RECIPES,
+  POST_EVENT_MATERIAL_REWARDS,
+  addInventoryItem,
+  addInventoryItems,
+  consumeInventoryItems,
+  createEmptyInventory,
+  getMissingInventoryItems,
+  hasInventoryItems,
+  type InventoryRequirement,
+  type RunInventory,
+} from "@/entities/inventory";
 import {
   getInitialLanguage,
   getLocalizedMonsterName,
@@ -22,9 +42,17 @@ import {
 import { pickMonsterForDepth } from "@/entities/monster";
 import {
   BATTLES_PER_BONFIRE,
+  canMaintainAtBonfire,
+  canRestAtBonfire,
+  createBonfireSession,
   getJourneyStatus,
   MAX_RUN_POTION_CHARGES,
+  markBonfireCooked,
+  markBonfireCrafted,
+  markBonfireRested,
   rollRunEvent,
+  type BonfireMealEffect,
+  type BonfireSession,
   type RunEvent,
   type RunEventResolution,
 } from "@/entities/run";
@@ -50,6 +78,7 @@ import BonfireTrailPanel, {
 } from "@/shared/ui/bonfire-trail";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import type { BattleResult } from "@/pages/battle";
+import BonfireMaintenancePanel from "@/widgets/bonfire-maintenance";
 import VocaLexicon from "@/widgets/voca-lexicon";
 import { getDefaultUnlockedLexiconIds } from "@/content/glossary/voca/lexicon";
 
@@ -59,9 +88,12 @@ import { getDefaultUnlockedLexiconIds } from "@/content/glossary/voca/lexicon";
 const ASCII_RAMP = " .:-=+*#%@";
 
 interface RunState {
+  activeMealEffect: BonfireMealEffect | null;
+  bonfireSession: BonfireSession;
   currentHp: number;
   currentMana: number;
   depth: number;
+  inventory: RunInventory;
   maxHpPenalty: number;
   potionCharges: number;
   progress: PlayerProgress;
@@ -103,9 +135,12 @@ function createInitialRunState(): RunState {
   const resources = getPlayerBaseResources(progress.baseStats);
 
   return {
+    activeMealEffect: null,
+    bonfireSession: createBonfireSession(),
     currentHp: resources.hp,
     currentMana: resources.mana,
     depth: 0,
+    inventory: createEmptyInventory(),
     maxHpPenalty: 0,
     potionCharges: 1,
     progress,
@@ -178,7 +213,65 @@ function recoverRunStateAtBonfire(
       ...runState,
       currentHp: nextHp,
       currentMana: nextMana,
+      bonfireSession: createBonfireSession(),
       maxHpPenalty: 0,
+      potionCharges: nextPotionCharges,
+    },
+    recoveredHp: Math.max(0, nextHp - runState.currentHp),
+    recoveredMana: Math.max(0, nextMana - runState.currentMana),
+    refilledPotions: Math.max(0, nextPotionCharges - runState.potionCharges),
+  };
+}
+
+/**
+ * 재료 요구량 목록을 현재 언어의 짧은 표시 문자열로 만든다.
+ *
+ * @param requirements 표시할 재료와 수량 목록
+ * @param language 현재 UI 언어
+ * @returns 재료 이름과 수량을 합친 문자열
+ */
+function formatInventoryRequirements(
+  requirements: readonly InventoryRequirement[],
+  language: Language,
+): string {
+  return requirements
+    .map((requirement) => `${INVENTORY_ITEM_TEXT[requirement.id].name[language]} x${requirement.quantity}`)
+    .join(" // ");
+}
+
+/**
+ * 제작할 장비 후보를 현재 장착 상태 기준으로 선택한다.
+ *
+ * @param equippedItems 현재 장착 중인 장비 목록
+ * @returns 제작 가능한 장비 정의
+ */
+function pickCraftableEquipment(equippedItems: EquippedItems): EquipmentDefinition | null {
+  return getOfferableEquipmentItems(equippedItems)[0] ?? null;
+}
+
+/**
+ * 모닥불에서 추가 휴식으로 회복할 자원 값을 계산한다.
+ *
+ * @param runState 현재 실행 상태
+ * @param maxHp 현재 최대 체력
+ * @param maxMana 현재 최대 마나
+ * @returns 휴식 회복량과 갱신된 실행 상태
+ */
+function restRunStateAtBonfire(
+  runState: RunState,
+  maxHp: number,
+  maxMana: number,
+): BonfireRecoveryResult {
+  const nextHp = recoverPlayerResourceAtBonfire(runState.currentHp, maxHp, 0.5, 6);
+  const nextMana = recoverPlayerResourceAtBonfire(runState.currentMana, maxMana, 0.5, 4);
+  const nextPotionCharges = Math.min(MAX_RUN_POTION_CHARGES, runState.potionCharges + 1);
+
+  return {
+    nextState: {
+      ...runState,
+      bonfireSession: markBonfireRested(runState.bonfireSession),
+      currentHp: nextHp,
+      currentMana: nextMana,
       potionCharges: nextPotionCharges,
     },
     recoveredHp: Math.max(0, nextHp - runState.currentHp),
@@ -304,6 +397,211 @@ export default function App() {
   }, []);
 
   /**
+   * 모닥불에서 다음 전투로 출발한다.
+   */
+  const handleVentureFromBonfire = useCallback(() => {
+    setBonfireCommand("");
+    setBonfireFeedback("");
+    setLevelUpPopupOpen(false);
+    setPhase("battle");
+  }, []);
+
+  /**
+   * 모닥불에서 스탯 배분 팝업을 연다.
+   */
+  const handleOpenStatsAtBonfire = useCallback(() => {
+    if (runState.progress.unspentStatPoints <= 0) {
+      setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.noStatPoints));
+    } else {
+      setLevelUpPopupOpen(true);
+    }
+    setBonfireCommand("");
+  }, [language, runState.progress.unspentStatPoints]);
+
+  /**
+   * 모닥불 휴식 행동을 실행한다.
+   */
+  const handleRestAtBonfire = useCallback(() => {
+    if (!canRestAtBonfire(runState.bonfireSession)) {
+      setBonfireFeedback(
+        runState.bonfireSession.mode === "maintenance"
+          ? pickText(language, CAMPFIRE_UI_TEXT.restLockedByMaintenance)
+          : pickText(language, CAMPFIRE_UI_TEXT.restAlreadyUsed),
+      );
+      setBonfireCommand("");
+      return;
+    }
+
+    const rested = restRunStateAtBonfire(runState, currentMaxHp, currentMaxMana);
+    setRunState(rested.nextState);
+    setBonfireCommand("");
+    appendBonfireFeedback([
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.restUsedLine),
+        {
+          hp: rested.recoveredHp,
+          mana: rested.recoveredMana,
+          potions: rested.nextState.potionCharges,
+        },
+      ),
+      pickText(language, CAMPFIRE_UI_TEXT.sessionRestedLine),
+    ]);
+  }, [appendBonfireFeedback, currentMaxHp, currentMaxMana, language, runState]);
+
+  /**
+   * 재료 부족 피드백을 모닥불 로그에 표시한다.
+   */
+  const showMissingMaterialFeedback = useCallback((missing: InventoryRequirement[]) => {
+    setBonfireFeedback(
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.missingMaterialsLine),
+        { items: formatInventoryRequirements(missing, language) },
+      ),
+    );
+    setBonfireCommand("");
+  }, [language]);
+
+  /**
+   * 모닥불에서 장비 제작 레시피를 실행한다.
+   */
+  const handleCraftGearAtBonfire = useCallback(() => {
+    if (!canMaintainAtBonfire(runState.bonfireSession)) {
+      setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.maintenanceLockedByRest));
+      setBonfireCommand("");
+      return;
+    }
+
+    const recipe = BONFIRE_RECIPES["field-forged-gear"];
+    const missing = getMissingInventoryItems(runState.inventory, recipe.requirements);
+    if (missing.length > 0) {
+      showMissingMaterialFeedback(missing);
+      return;
+    }
+
+    const craftedItem = pickCraftableEquipment(equippedItems);
+    if (!craftedItem) {
+      setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.equipmentPoolEmptyLine));
+      setBonfireCommand("");
+      return;
+    }
+
+    const consumed = consumeInventoryItems(runState.inventory, recipe.requirements);
+    if (!consumed.success) {
+      showMissingMaterialFeedback(consumed.missing);
+      return;
+    }
+
+    const nextEquippedItems = {
+      ...equippedItems,
+      [craftedItem.slot]: craftedItem,
+    };
+    const nextCombatStats = applyEquipmentModifiers(runState.progress.baseStats, nextEquippedItems);
+    const nextMaxHp = getRunMaxHp(
+      getMaxHp(nextCombatStats.stats) + nextCombatStats.maxHpBonus,
+      runState.maxHpPenalty,
+    );
+    const nextMaxMana = getMaxMana(nextCombatStats.stats) + nextCombatStats.maxManaBonus;
+
+    setEquippedItems(nextEquippedItems);
+    setRunState({
+      ...runState,
+      bonfireSession: markBonfireCrafted(runState.bonfireSession),
+      currentHp: clampPlayerResource(runState.currentHp, nextMaxHp),
+      currentMana: clampPlayerResource(runState.currentMana, nextMaxMana),
+      inventory: consumed.inventory,
+    });
+    setBonfireCommand("");
+    appendBonfireFeedback([
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.craftEquipmentLine),
+        { itemName: craftedItem.name[language] },
+      ),
+      pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine),
+    ]);
+  }, [appendBonfireFeedback, equippedItems, language, runState, showMissingMaterialFeedback]);
+
+  /**
+   * 모닥불에서 퀘스트 표식 제작 레시피를 실행한다.
+   */
+  const handleCraftSigilAtBonfire = useCallback(() => {
+    if (!canMaintainAtBonfire(runState.bonfireSession)) {
+      setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.maintenanceLockedByRest));
+      setBonfireCommand("");
+      return;
+    }
+
+    const recipe = BONFIRE_RECIPES["ashen-sigil"];
+    const consumed = consumeInventoryItems(runState.inventory, recipe.requirements);
+    if (!consumed.success) {
+      showMissingMaterialFeedback(consumed.missing);
+      return;
+    }
+
+    const itemName = INVENTORY_ITEM_TEXT["ashen-sigil"].name[language];
+    setRunState({
+      ...runState,
+      bonfireSession: markBonfireCrafted(runState.bonfireSession),
+      inventory: addInventoryItem(consumed.inventory, { id: "ashen-sigil", quantity: 1 }),
+    });
+    setBonfireCommand("");
+    appendBonfireFeedback([
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.craftQuestLine),
+        { itemName },
+      ),
+      pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine),
+    ]);
+  }, [appendBonfireFeedback, language, runState, showMissingMaterialFeedback]);
+
+  /**
+   * 모닥불에서 요리 레시피를 실행하고 다음 전투 효과를 준비한다.
+   */
+  const handleCookStewAtBonfire = useCallback(() => {
+    if (!canMaintainAtBonfire(runState.bonfireSession)) {
+      setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.maintenanceLockedByRest));
+      setBonfireCommand("");
+      return;
+    }
+
+    const recipe = BONFIRE_RECIPES["ember-stew"];
+    const consumed = consumeInventoryItems(runState.inventory, recipe.requirements);
+    if (!consumed.success) {
+      showMissingMaterialFeedback(consumed.missing);
+      return;
+    }
+
+    const nextHp = clampPlayerResource(runState.currentHp + 6, currentMaxHp);
+    const nextMana = clampPlayerResource(runState.currentMana + 4, currentMaxMana);
+    const activeMealEffect: BonfireMealEffect = {
+      attackDamageBonus: 1,
+      id: "ember-stew",
+      shieldOnDefendBonus: 1,
+    };
+
+    setRunState({
+      ...runState,
+      activeMealEffect,
+      bonfireSession: markBonfireCooked(runState.bonfireSession),
+      currentHp: nextHp,
+      currentMana: nextMana,
+      inventory: consumed.inventory,
+    });
+    setBonfireCommand("");
+    appendBonfireFeedback([
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.cookStewLine),
+        {
+          attack: activeMealEffect.attackDamageBonus,
+          hp: Math.max(0, nextHp - runState.currentHp),
+          mana: Math.max(0, nextMana - runState.currentMana),
+          shield: activeMealEffect.shieldOnDefendBonus,
+        },
+      ),
+      pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine),
+    ]);
+  }, [appendBonfireFeedback, currentMaxHp, currentMaxMana, language, runState, showMissingMaterialFeedback]);
+
+  /**
    * 전투 결과에 따라 다음 장면을 결정한다.
    *
    * @param result 전투 승패 정보
@@ -316,11 +614,14 @@ export default function App() {
 
     const experienceGain = result.experienceReward ?? 0;
     const experienceResult = grantPlayerExperience(runState.progress, experienceGain);
+    const rewardedInventory = addInventoryItems(runState.inventory, BONFIRE_MATERIAL_REWARDS);
     const nextRunState: RunState = {
       ...runState,
+      activeMealEffect: null,
       currentHp: clampPlayerResource(result.remainingHp ?? runState.currentHp, currentMaxHp),
       currentMana: clampPlayerResource(result.remainingMana ?? runState.currentMana, currentMaxMana),
       depth: runState.depth + 1,
+      inventory: rewardedInventory,
       potionCharges: Math.max(
         0,
         Math.min(MAX_RUN_POTION_CHARGES, result.remainingPotionCharges ?? runState.potionCharges),
@@ -336,6 +637,12 @@ export default function App() {
         },
       ),
     ];
+    feedbackLines.push(
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.materialRewardLine),
+        { items: formatInventoryRequirements(BONFIRE_MATERIAL_REWARDS, language) },
+      ),
+    );
 
     if (experienceResult.leveledUp) {
       feedbackLines.push(
@@ -400,9 +707,17 @@ export default function App() {
    * 첫 전투 뒤 이벤트 선택 결과를 실행 상태에 반영하고 두 번째 전투로 넘어간다.
    */
   const handleResolveRunEvent = useCallback((resolution: RunEventResolution) => {
-    let nextRunState = runState;
+    let nextRunState: RunState = {
+      ...runState,
+      inventory: addInventoryItems(runState.inventory, POST_EVENT_MATERIAL_REWARDS),
+    };
     let nextEquippedItems = equippedItems;
-    const feedbackLines: string[] = [];
+    const feedbackLines: string[] = [
+      interpolateText(
+        pickText(language, CAMPFIRE_UI_TEXT.eventMaterialRewardLine),
+        { items: formatInventoryRequirements(POST_EVENT_MATERIAL_REWARDS, language) },
+      ),
+    ];
 
     if (resolution.kind === "decline") {
       feedbackLines.push(pickText(language, POST_BATTLE_EVENT_TEXT.leaveLine));
@@ -420,9 +735,9 @@ export default function App() {
       );
       const nextMaxMana = getMaxMana(nextCombatStats.stats) + nextCombatStats.maxManaBonus;
       nextRunState = {
-        ...runState,
-        currentHp: clampPlayerResource(runState.currentHp, nextMaxHp),
-        currentMana: clampPlayerResource(runState.currentMana, nextMaxMana),
+        ...nextRunState,
+        currentHp: clampPlayerResource(nextRunState.currentHp, nextMaxHp),
+        currentMana: clampPlayerResource(nextRunState.currentMana, nextMaxMana),
       };
       feedbackLines.push(
         interpolateText(
@@ -1051,21 +1366,33 @@ export default function App() {
       return;
     }
 
+    if (matchesKeyword(answer, BONFIRE_REST_KEYWORDS)) {
+      handleRestAtBonfire();
+      return;
+    }
+
+    if (matchesKeyword(answer, BONFIRE_CRAFT_GEAR_KEYWORDS)) {
+      handleCraftGearAtBonfire();
+      return;
+    }
+
+    if (matchesKeyword(answer, BONFIRE_CRAFT_SIGIL_KEYWORDS)) {
+      handleCraftSigilAtBonfire();
+      return;
+    }
+
+    if (matchesKeyword(answer, BONFIRE_COOK_STEW_KEYWORDS)) {
+      handleCookStewAtBonfire();
+      return;
+    }
+
     if (matchesKeyword(answer, BONFIRE_VENTURE_KEYWORDS)) {
-      setBonfireCommand("");
-      setBonfireFeedback("");
-      setLevelUpPopupOpen(false);
-      setPhase("battle");
+      handleVentureFromBonfire();
       return;
     }
 
     if (matchesKeyword(answer, BONFIRE_ALLOCATE_KEYWORDS)) {
-      if (runState.progress.unspentStatPoints <= 0) {
-        setBonfireFeedback(pickText(language, CAMPFIRE_UI_TEXT.noStatPoints));
-      } else {
-        setLevelUpPopupOpen(true);
-      }
-      setBonfireCommand("");
+      handleOpenStatsAtBonfire();
       return;
     }
 
@@ -1109,6 +1436,18 @@ export default function App() {
       nextExperience: runState.progress.nextLevelExperience,
     },
   );
+  const canRestAtCurrentBonfire = canRestAtBonfire(runState.bonfireSession);
+  const canMaintainAtCurrentBonfire = canMaintainAtBonfire(runState.bonfireSession);
+  const canCraftGearAtCurrentBonfire =
+    canMaintainAtCurrentBonfire
+    && hasInventoryItems(runState.inventory, BONFIRE_RECIPES["field-forged-gear"].requirements)
+    && pickCraftableEquipment(equippedItems) !== null;
+  const canCraftSigilAtCurrentBonfire =
+    canMaintainAtCurrentBonfire
+    && hasInventoryItems(runState.inventory, BONFIRE_RECIPES["ashen-sigil"].requirements);
+  const canCookStewAtCurrentBonfire =
+    canMaintainAtCurrentBonfire
+    && hasInventoryItems(runState.inventory, BONFIRE_RECIPES["ember-stew"].requirements);
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-void px-4 py-8 sm:px-8">
       <div className="absolute right-4 top-4 z-[80] flex items-center gap-2 rounded-full border border-white/12 bg-black/45 px-2 py-1 font-crt text-[0.68rem] tracking-[0.12em] text-white/70 backdrop-blur-sm">
@@ -1197,44 +1536,29 @@ export default function App() {
               >
                 {pickText(language, CAMPFIRE_UI_TEXT.bonfireLine)}
               </p>
-              <div className="mt-8 w-full max-w-[680px] rounded-[18px] border border-white/10 bg-black/32 px-5 py-4 font-crt opacity-0 backdrop-blur-sm [animation:fade_1s_3s_forwards]">
-                <p className="text-[0.82rem] tracking-[0.18em] text-white/42">
-                  {pickText(language, CAMPFIRE_UI_TEXT.commandTitle)}
-                </p>
-                <p className="mt-3 text-[0.92rem] leading-[1.8] text-white/70">
-                  {pickText(language, CAMPFIRE_UI_TEXT.bonfireActionLine)}
-                </p>
-                <pre className="mt-4 m-0 whitespace-pre-wrap text-[0.74rem] leading-[1.7] tracking-[0.12em] text-[rgba(214,204,188,0.78)]">
-                  {bonfireStatusLine}
-                  {"\n"}
-                  {bonfireProgressLine}
-                </pre>
-
-                <div className="mt-4 space-y-1 text-[0.82rem] tracking-[0.14em] text-white/62">
-                  <p>[1] {pickText(language, CAMPFIRE_UI_TEXT.ventureForth)}</p>
-                  <p className={runState.progress.unspentStatPoints > 0 ? "text-white/62" : "text-white/28"}>
-                    [2] {pickText(language, CAMPFIRE_UI_TEXT.allocateStats)}
-                  </p>
-                </div>
-
-                {bonfireFeedback && (
-                  <pre className="mt-4 m-0 whitespace-pre-wrap text-[0.76rem] leading-[1.7] text-ember/85">
-                    {bonfireFeedback}
-                  </pre>
-                )}
-
-                <form onSubmit={handleBonfireActionSubmit} className="mt-4 flex items-center gap-2">
-                  <span className="font-bold text-ember">{">"}</span>
-                  <input
-                    type="text"
-                    value={bonfireCommand}
-                    onChange={(event) => setBonfireCommand(event.target.value)}
-                    placeholder={pickText(language, CAMPFIRE_UI_TEXT.commandPlaceholder)}
-                    autoFocus
-                    className="w-full border-0 border-b border-white/20 bg-transparent text-[0.95rem] text-ember outline-none placeholder:text-white/28 focus:border-ember"
-                  />
-                </form>
-              </div>
+              <BonfireMaintenancePanel
+                activeMealEffect={runState.activeMealEffect}
+                canCookStew={canCookStewAtCurrentBonfire}
+                canCraftGear={canCraftGearAtCurrentBonfire}
+                canCraftSigil={canCraftSigilAtCurrentBonfire}
+                canMaintain={canMaintainAtCurrentBonfire}
+                canRest={canRestAtCurrentBonfire}
+                command={bonfireCommand}
+                feedback={bonfireFeedback}
+                hasStatPoints={runState.progress.unspentStatPoints > 0}
+                inventory={runState.inventory}
+                language={language}
+                progressLine={bonfireProgressLine}
+                statusLine={bonfireStatusLine}
+                onCommandChange={setBonfireCommand}
+                onCommandSubmit={handleBonfireActionSubmit}
+                onCookStew={handleCookStewAtBonfire}
+                onCraftGear={handleCraftGearAtBonfire}
+                onCraftSigil={handleCraftSigilAtBonfire}
+                onOpenStats={handleOpenStatsAtBonfire}
+                onRest={handleRestAtBonfire}
+                onVenture={handleVentureFromBonfire}
+              />
 
               {levelUpPopupOpen && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 px-4 backdrop-blur-[2px]">
@@ -1323,6 +1647,7 @@ export default function App() {
           journeyTitle={journeyTitle}
           language={language}
           level={runState.progress.level}
+          mealEffect={runState.activeMealEffect}
           equippedItems={equippedItems}
           monster={currentMonster}
           nextLevelExperience={runState.progress.nextLevelExperience}

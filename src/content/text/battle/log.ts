@@ -1,6 +1,8 @@
 export const BATTLE_LOG_TEXT = {
   en: {
     potionUse: "The crimson flask bursts over you... +{healAmount} HP",
+    mealEffectStart:
+      "The meal burns steady in your blood. Attack +{attack}, shield +{shield}.",
     attackMiss: "Strike misses {targetName}!",
     attackShieldHit: "Strike! {shieldAbsorb} absorbed, {hpDamage} damage!",
     attackShieldCriticalHit:
@@ -53,6 +55,8 @@ export const BATTLE_LOG_TEXT = {
   },
   ko: {
     potionUse: "진홍 물약이 몸 위에서 터진다... HP +{healAmount}",
+    mealEffectStart:
+      "요리의 열기가 피 속에서 가라앉는다. 공격 +{attack}, 방어막 +{shield}.",
     attackMiss: "일격이 {targetName}에게 빗나갔다!",
     attackShieldHit:
       "일격! 방어막이 {shieldAbsorb} 막아내고 {hpDamage} 피해를 입혔다!",

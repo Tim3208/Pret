@@ -8,6 +8,21 @@ import type { PlayerStats } from "@/entities/player";
 export const BATTLES_PER_BONFIRE = 2;
 export const MAX_RUN_POTION_CHARGES = 3;
 
+export type BonfireSessionMode = "idle" | "maintenance" | "rested";
+
+export interface BonfireSession {
+  cookCount: number;
+  craftCount: number;
+  mode: BonfireSessionMode;
+  restUsed: boolean;
+}
+
+export interface BonfireMealEffect {
+  attackDamageBonus: number;
+  id: "ember-stew";
+  shieldOnDefendBonus: number;
+}
+
 export type JourneyScene = "battle-1" | "event" | "battle-2" | "bonfire";
 export type JourneyNodeState = "cleared" | "current" | "upcoming";
 export type RunEventCategory = "reward" | "choice" | "risk";
@@ -117,6 +132,82 @@ const JOURNEY_ORDER: readonly JourneyScene[] = [
   "battle-2",
   "bonfire",
 ];
+
+/**
+ * 새 모닥불 방문에서 사용할 정비 세션 상태를 만든다.
+ *
+ * @returns 아무 행동도 고르지 않은 모닥불 세션
+ */
+export function createBonfireSession(): BonfireSession {
+  return {
+    cookCount: 0,
+    craftCount: 0,
+    mode: "idle",
+    restUsed: false,
+  };
+}
+
+/**
+ * 현재 모닥불 세션에서 휴식이 가능한지 판정한다.
+ *
+ * @param session 현재 모닥불 정비 세션
+ * @returns 휴식 가능 여부
+ */
+export function canRestAtBonfire(session: BonfireSession): boolean {
+  return session.mode === "idle" && !session.restUsed;
+}
+
+/**
+ * 현재 모닥불 세션에서 제작이나 요리가 가능한지 판정한다.
+ *
+ * @param session 현재 모닥불 정비 세션
+ * @returns 제작/요리 가능 여부
+ */
+export function canMaintainAtBonfire(session: BonfireSession): boolean {
+  return session.mode !== "rested";
+}
+
+/**
+ * 휴식을 실행한 뒤의 모닥불 세션 상태를 만든다.
+ *
+ * @param session 현재 모닥불 정비 세션
+ * @returns 휴식이 기록된 세션
+ */
+export function markBonfireRested(session: BonfireSession): BonfireSession {
+  return {
+    ...session,
+    mode: "rested",
+    restUsed: true,
+  };
+}
+
+/**
+ * 제작을 실행한 뒤의 모닥불 세션 상태를 만든다.
+ *
+ * @param session 현재 모닥불 정비 세션
+ * @returns 제작 횟수가 기록된 세션
+ */
+export function markBonfireCrafted(session: BonfireSession): BonfireSession {
+  return {
+    ...session,
+    craftCount: session.craftCount + 1,
+    mode: "maintenance",
+  };
+}
+
+/**
+ * 요리를 실행한 뒤의 모닥불 세션 상태를 만든다.
+ *
+ * @param session 현재 모닥불 정비 세션
+ * @returns 요리 횟수가 기록된 세션
+ */
+export function markBonfireCooked(session: BonfireSession): BonfireSession {
+  return {
+    ...session,
+    cookCount: session.cookCount + 1,
+    mode: "maintenance",
+  };
+}
 
 function pickWeightedValue<TValue>(entries: readonly WeightedEntry<TValue>[]): TValue {
   const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
