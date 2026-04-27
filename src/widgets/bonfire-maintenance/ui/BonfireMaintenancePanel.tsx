@@ -122,6 +122,11 @@ export default function BonfireMaintenancePanel({
   const inventoryStacks = getInventoryStacks(inventory);
   const ritualLines = [
     pickText(language, CAMPFIRE_UI_TEXT.bonfireActionLine),
+    canRest && canMaintain
+      ? pickText(language, CAMPFIRE_UI_TEXT.sessionIdleLine)
+      : canMaintain
+        ? pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine)
+        : pickText(language, CAMPFIRE_UI_TEXT.sessionRestedLine),
     statusLine,
     progressLine,
     activeMealEffect
@@ -186,6 +191,9 @@ export default function BonfireMaintenancePanel({
                     </p>
                     <p className="m-0 mt-1 text-[0.66rem] leading-[1.45] text-white/45">
                       {BONFIRE_RECIPE_TEXT[recipeId].description[language]}
+                    </p>
+                    <p className="m-0 mt-1 text-[0.62rem] leading-[1.45] text-white/38">
+                      {BONFIRE_RECIPE_TEXT[recipeId].effect[language]}
                     </p>
                     <p className="m-0 mt-1 text-[0.62rem] leading-[1.45] text-ember/58">
                       {formatRequirements(language, BONFIRE_RECIPES[recipeId as BonfireRecipeId].requirements, inventory)}
