@@ -386,14 +386,14 @@ export default function App() {
   }, []);
 
   /**
-   * 모닥불 화면에 누적해서 보여 줄 피드백 줄을 덧붙인다.
+   * 모닥불 아래 typewriter 슬롯에 보여 줄 최신 알림을 교체한다.
    */
-  const appendBonfireFeedback = useCallback((lines: string[]) => {
+  const showBonfireFeedback = useCallback((lines: string[]) => {
     if (lines.length === 0) {
       return;
     }
 
-    setBonfireFeedback((current) => (current ? `${current}\n${lines.join("\n")}` : lines.join("\n")));
+    setBonfireFeedback(lines.join("\n"));
   }, []);
 
   /**
@@ -435,7 +435,7 @@ export default function App() {
     const rested = restRunStateAtBonfire(runState, currentMaxHp, currentMaxMana);
     setRunState(rested.nextState);
     setBonfireCommand("");
-    appendBonfireFeedback([
+    showBonfireFeedback([
       interpolateText(
         pickText(language, CAMPFIRE_UI_TEXT.restUsedLine),
         {
@@ -446,7 +446,7 @@ export default function App() {
       ),
       pickText(language, CAMPFIRE_UI_TEXT.sessionRestedLine),
     ]);
-  }, [appendBonfireFeedback, currentMaxHp, currentMaxMana, language, runState]);
+  }, [currentMaxHp, currentMaxMana, language, runState, showBonfireFeedback]);
 
   /**
    * 재료 부족 피드백을 모닥불 로그에 표시한다.
@@ -511,14 +511,14 @@ export default function App() {
       inventory: consumed.inventory,
     });
     setBonfireCommand("");
-    appendBonfireFeedback([
+    showBonfireFeedback([
       interpolateText(
         pickText(language, CAMPFIRE_UI_TEXT.craftEquipmentLine),
         { itemName: craftedItem.name[language] },
       ),
       pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine),
     ]);
-  }, [appendBonfireFeedback, equippedItems, language, runState, showMissingMaterialFeedback]);
+  }, [equippedItems, language, runState, showBonfireFeedback, showMissingMaterialFeedback]);
 
   /**
    * 모닥불에서 퀘스트 표식 제작 레시피를 실행한다.
@@ -544,14 +544,14 @@ export default function App() {
       inventory: addInventoryItem(consumed.inventory, { id: "ashen-sigil", quantity: 1 }),
     });
     setBonfireCommand("");
-    appendBonfireFeedback([
+    showBonfireFeedback([
       interpolateText(
         pickText(language, CAMPFIRE_UI_TEXT.craftQuestLine),
         { itemName },
       ),
       pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine),
     ]);
-  }, [appendBonfireFeedback, language, runState, showMissingMaterialFeedback]);
+  }, [language, runState, showBonfireFeedback, showMissingMaterialFeedback]);
 
   /**
    * 모닥불에서 요리 레시피를 실행하고 다음 전투 효과를 준비한다.
@@ -587,7 +587,7 @@ export default function App() {
       inventory: consumed.inventory,
     });
     setBonfireCommand("");
-    appendBonfireFeedback([
+    showBonfireFeedback([
       interpolateText(
         pickText(language, CAMPFIRE_UI_TEXT.cookStewLine),
         {
@@ -599,7 +599,7 @@ export default function App() {
       ),
       pickText(language, CAMPFIRE_UI_TEXT.sessionMaintenanceLine),
     ]);
-  }, [appendBonfireFeedback, currentMaxHp, currentMaxMana, language, runState, showMissingMaterialFeedback]);
+  }, [currentMaxHp, currentMaxMana, language, runState, showBonfireFeedback, showMissingMaterialFeedback]);
 
   /**
    * 전투 결과에 따라 다음 장면을 결정한다.
@@ -853,11 +853,11 @@ export default function App() {
       setEquippedItems(nextEquippedItems);
     }
     setRunState(nextRunState);
-    appendBonfireFeedback(feedbackLines);
+    showBonfireFeedback(feedbackLines);
     setActiveRunEvent(null);
     setBonfireCommand("");
     setPhase("battle");
-  }, [appendBonfireFeedback, currentBaseMaxHp, equippedItems, language, runState]);
+  }, [currentBaseMaxHp, equippedItems, language, runState, showBonfireFeedback]);
 
   const lexiconDecipher = combatStats.stats.decipher;
 
@@ -1449,7 +1449,7 @@ export default function App() {
     canMaintainAtCurrentBonfire
     && hasInventoryItems(runState.inventory, BONFIRE_RECIPES["ember-stew"].requirements);
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-void px-4 py-8 sm:px-8">
+    <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-void px-2 py-3 sm:px-5 sm:py-4">
       <div className="absolute right-4 top-4 z-[80] flex items-center gap-2 rounded-full border border-white/12 bg-black/45 px-2 py-1 font-crt text-[0.68rem] tracking-[0.12em] text-white/70 backdrop-blur-sm">
         <span className="px-1">{pickText(language, CAMPFIRE_UI_TEXT.languageLabel)}</span>
         <button
@@ -1489,7 +1489,7 @@ export default function App() {
       </svg>
 
       {phase !== "battle" ? (
-        <div className="relative w-full max-w-[min(92vw,920px)] overflow-hidden rounded-[18px] px-4 py-8 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-8">
+        <div className="relative flex max-h-[calc(100vh-1.5rem)] w-full max-w-[min(94vw,920px)] flex-col overflow-hidden rounded-[18px] px-3 py-3 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-6 sm:py-4">
           {phase === "text" && (
             <div className="relative z-0 max-w-[600px] text-[1.05rem] leading-[1.8] sm:text-[1.2rem] [text-shadow:0_0_5px_rgba(255,255,255,0.2)]">
               {pickText(language, CAMPFIRE_STORY_TEXT).split("\n").map((line, index) => (
@@ -1513,20 +1513,20 @@ export default function App() {
           )}
 
           {phase === "transition" && (
-            <div className="relative z-0 flex w-full flex-col items-center gap-6">
+            <div className="relative z-0 flex min-h-0 w-full flex-col items-center gap-2 sm:gap-3">
               <BonfireTrailPanel
                 hint={journeyHint}
                 steps={journeySteps}
                 title={journeyTitle}
               />
 
-              <div className="relative z-0 flex flex-col items-center">
+              <div className="relative z-0 flex min-h-0 w-full flex-col items-center">
               <canvas
                 ref={displayCanvasRef}
-                className="h-auto w-full max-w-[800px] cursor-crosshair [image-rendering:pixelated] animate-fade-in-text"
+                className="h-auto max-h-[34vh] w-full max-w-[680px] cursor-crosshair object-contain [image-rendering:pixelated] animate-fade-in-text"
               />
               <p
-                className="mt-12 text-center text-[1.05rem] opacity-0 sm:text-[1.2rem] [animation:fade_3s_forwards] [animation-delay:2s] bg-clip-text text-transparent"
+                className="mt-3 text-center text-[0.86rem] opacity-0 sm:text-[1rem] [animation:fade_3s_forwards] [animation-delay:2s] bg-clip-text text-transparent"
                 style={{
                   backgroundImage:
                     "radial-gradient(ellipse 280px 100px at center -20px, #bfbfbf 0%, rgba(191, 191, 191, 0.8) 30%, rgba(191, 191, 191, 0.39) 55%, rgba(191, 191, 191, 0.23) 80%, rgba(191, 191, 191, 0.13) 100%)",
