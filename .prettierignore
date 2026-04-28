@@ -1,0 +1,7 @@
+# .prettierignore
+node_modules
+build
+dist
+*.min.js
+dist/assets
+public/assets
