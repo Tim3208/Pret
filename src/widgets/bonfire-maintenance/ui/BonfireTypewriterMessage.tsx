@@ -19,6 +19,44 @@ const TYPEWRITER_LINE_HEIGHT = 20;
 const TYPEWRITER_INTERVAL_MS = 28;
 
 /**
+ * Pretext 레이아웃 실패 시 원문 한 줄을 표시 가능한 줄 객체로 바꾼다.
+ *
+ * @param text 표시할 원문 한 줄
+ * @param maxWidth 줄의 최대 폭
+ * @returns Pretext 줄 객체와 같은 형태의 대체 줄
+ */
+function createFallbackLayoutLine(text: string, maxWidth: number): LayoutLine {
+  return {
+    end: { graphemeIndex: 0, segmentIndex: 0 },
+    start: { graphemeIndex: 0, segmentIndex: 0 },
+    text,
+    width: maxWidth,
+  };
+}
+
+/**
+ * 명시적으로 분리된 알림 한 줄에만 Pretext 줄바꿈을 적용한다.
+ *
+ * @param line 표시할 알림 한 줄
+ * @param maxWidth 줄바꿈 기준 폭
+ * @returns 화면에 표시할 줄 목록
+ */
+function layoutSourceLine(line: string, maxWidth: number): LayoutLine[] {
+  try {
+    return layoutWithLines(
+      prepareWithSegments(line, TYPEWRITER_FONT, {
+        whiteSpace: "normal",
+        wordBreak: "normal",
+      }),
+      maxWidth,
+      TYPEWRITER_LINE_HEIGHT,
+    ).lines;
+  } catch {
+    return [createFallbackLayoutLine(line, maxWidth)];
+  }
+}
+
+/**
  * Pretext를 사용해 모닥불 알림 문장을 현재 폭에 맞게 나눈다.
  *
  * @param message 표시할 알림 문장
@@ -30,26 +68,21 @@ function layoutTypewriterLines(message: string, maxWidth: number): LayoutLine[] 
     return [];
   }
 
-  try {
-    return layoutWithLines(
-      prepareWithSegments(message.replace(/\s*\n+\s*/g, "  /  "), TYPEWRITER_FONT, {
-        whiteSpace: "normal",
-        wordBreak: "normal",
-      }),
-      maxWidth,
-      TYPEWRITER_LINE_HEIGHT,
-    ).lines.slice(0, 3);
-  } catch {
-    return message
-      .split("\n")
-      .slice(0, 3)
-      .map((line) => ({
-        end: { graphemeIndex: 0, segmentIndex: 0 },
-        start: { graphemeIndex: 0, segmentIndex: 0 },
-        text: line,
-        width: maxWidth,
-      }));
+  const sourceLines = message
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const layoutLines: LayoutLine[] = [];
+
+  for (const sourceLine of sourceLines) {
+    layoutLines.push(...layoutSourceLine(sourceLine, maxWidth));
+
+    if (layoutLines.length >= 3) {
+      break;
+    }
   }
+
+  return layoutLines.slice(0, 3);
 }
 
 /**
@@ -144,7 +177,7 @@ export default function BonfireTypewriterMessage({
   return (
     <div
       ref={bodyRef}
-      className="mx-auto flex min-h-[4.35rem] w-full max-w-[620px] items-center justify-center px-3 text-center font-crt"
+      className="mx-auto flex min-h-[4.35rem] w-full max-w-[720px] items-center justify-center px-3 text-center font-crt"
       aria-live="polite"
     >
       {message.trim() ? (
@@ -158,7 +191,7 @@ export default function BonfireTypewriterMessage({
             return (
               <p
                 key={`${layoutLines[index]?.text ?? ""}-${index}`}
-                className="m-0 min-h-[1.28rem] text-[0.8rem] leading-[1.55] tracking-[0.08em] text-[rgba(235,226,207,0.82)] [text-shadow:0_0_9px_rgba(255,170,0,0.12)] sm:text-[0.88rem]"
+                className="m-0 min-h-[1.28rem] text-[0.8rem] leading-[1.55] tracking-[0.04em] text-[rgba(235,226,207,0.82)] [text-shadow:0_0_9px_rgba(255,170,0,0.12)] sm:text-[0.88rem]"
               >
                 {line}
                 {isCursorLine && (

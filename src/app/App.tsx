@@ -78,7 +78,9 @@ import BonfireTrailPanel, {
 } from "@/shared/ui/bonfire-trail";
 import CrtOverlay from "@/shared/ui/crt-overlay";
 import type { BattleResult } from "@/pages/battle";
-import BonfireMaintenancePanel from "@/widgets/bonfire-maintenance";
+import BonfireMaintenancePanel, {
+  BonfireTypewriterMessage,
+} from "@/widgets/bonfire-maintenance";
 import VocaLexicon from "@/widgets/voca-lexicon";
 import { getDefaultUnlockedLexiconIds } from "@/content/glossary/voca/lexicon";
 
@@ -1489,7 +1491,13 @@ export default function App() {
       </svg>
 
       {phase !== "battle" ? (
-        <div className="relative flex max-h-[calc(100vh-1.5rem)] w-full max-w-[min(94vw,920px)] flex-col overflow-hidden rounded-[18px] px-3 py-3 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-6 sm:py-4">
+        <div
+          className={`relative flex w-full max-w-[min(94vw,920px)] flex-col overflow-hidden rounded-[18px] px-3 py-3 shadow-[inset_0_0_60px_rgba(0,0,0,0.6),0_0_40px_rgba(0,0,0,0.8)] sm:px-6 sm:py-4 ${
+            phase === "transition"
+              ? "mb-[8.5rem] max-h-[calc(100vh-10.5rem)]"
+              : "max-h-[calc(100vh-1.5rem)]"
+          }`}
+        >
           {phase === "text" && (
             <div className="relative z-0 max-w-[600px] text-[1.05rem] leading-[1.8] sm:text-[1.2rem] [text-shadow:0_0_5px_rgba(255,255,255,0.2)]">
               {pickText(language, CAMPFIRE_STORY_TEXT).split("\n").map((line, index) => (
@@ -1514,12 +1522,6 @@ export default function App() {
 
           {phase === "transition" && (
             <div className="relative z-0 flex min-h-0 w-full flex-col items-center gap-2 sm:gap-3">
-              <BonfireTrailPanel
-                hint={journeyHint}
-                steps={journeySteps}
-                title={journeyTitle}
-              />
-
               <div className="relative z-0 flex min-h-0 w-full flex-col items-center">
               <canvas
                 ref={displayCanvasRef}
@@ -1536,29 +1538,7 @@ export default function App() {
               >
                 {pickText(language, CAMPFIRE_UI_TEXT.bonfireLine)}
               </p>
-              <BonfireMaintenancePanel
-                activeMealEffect={runState.activeMealEffect}
-                canCookStew={canCookStewAtCurrentBonfire}
-                canCraftGear={canCraftGearAtCurrentBonfire}
-                canCraftSigil={canCraftSigilAtCurrentBonfire}
-                canMaintain={canMaintainAtCurrentBonfire}
-                canRest={canRestAtCurrentBonfire}
-                command={bonfireCommand}
-                feedback={bonfireFeedback}
-                hasStatPoints={runState.progress.unspentStatPoints > 0}
-                inventory={runState.inventory}
-                language={language}
-                progressLine={bonfireProgressLine}
-                statusLine={bonfireStatusLine}
-                onCommandChange={setBonfireCommand}
-                onCommandSubmit={handleBonfireActionSubmit}
-                onCookStew={handleCookStewAtBonfire}
-                onCraftGear={handleCraftGearAtBonfire}
-                onCraftSigil={handleCraftSigilAtBonfire}
-                onOpenStats={handleOpenStatsAtBonfire}
-                onRest={handleRestAtBonfire}
-                onVenture={handleVentureFromBonfire}
-              />
+              <BonfireTypewriterMessage key={bonfireFeedback} message={bonfireFeedback} />
 
               {levelUpPopupOpen && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 px-4 backdrop-blur-[2px]">
@@ -1653,6 +1633,38 @@ export default function App() {
           nextLevelExperience={runState.progress.nextLevelExperience}
           onBattleEnd={handleBattleEnd}
         />
+      )}
+
+      {phase === "transition" && (
+        <div className="fixed bottom-3 left-1/2 z-[70] flex w-[calc(100vw-1rem)] max-w-[920px] -translate-x-1/2 flex-col gap-2 sm:bottom-4 sm:w-[calc(100vw-2rem)]">
+          <BonfireTrailPanel
+            hint={journeyHint}
+            steps={journeySteps}
+            title={journeyTitle}
+          />
+          <BonfireMaintenancePanel
+            activeMealEffect={runState.activeMealEffect}
+            canCookStew={canCookStewAtCurrentBonfire}
+            canCraftGear={canCraftGearAtCurrentBonfire}
+            canCraftSigil={canCraftSigilAtCurrentBonfire}
+            canMaintain={canMaintainAtCurrentBonfire}
+            canRest={canRestAtCurrentBonfire}
+            command={bonfireCommand}
+            hasStatPoints={runState.progress.unspentStatPoints > 0}
+            inventory={runState.inventory}
+            language={language}
+            progressLine={bonfireProgressLine}
+            statusLine={bonfireStatusLine}
+            onCommandChange={setBonfireCommand}
+            onCommandSubmit={handleBonfireActionSubmit}
+            onCookStew={handleCookStewAtBonfire}
+            onCraftGear={handleCraftGearAtBonfire}
+            onCraftSigil={handleCraftSigilAtBonfire}
+            onOpenStats={handleOpenStatsAtBonfire}
+            onRest={handleRestAtBonfire}
+            onVenture={handleVentureFromBonfire}
+          />
+        </div>
       )}
 
       <VocaLexicon

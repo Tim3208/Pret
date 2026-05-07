@@ -15,7 +15,6 @@ import {
 import { type Language, interpolateText, pickText } from "@/entities/locale";
 import type { BonfireMealEffect } from "@/entities/run";
 import { useAsciiAsset } from "@/shared/lib/ascii";
-import BonfireTypewriterMessage from "./BonfireTypewriterMessage";
 
 interface BonfireMaintenancePanelProps {
   activeMealEffect: BonfireMealEffect | null;
@@ -25,7 +24,6 @@ interface BonfireMaintenancePanelProps {
   canMaintain: boolean;
   canRest: boolean;
   command: string;
-  feedback: string;
   hasStatPoints: boolean;
   inventory: RunInventory;
   language: Language;
@@ -199,7 +197,7 @@ function DockActionButton({ action }: { action: DockAction }) {
       type="button"
       aria-disabled={action.disabled}
       aria-label={action.label}
-      className={`group relative flex h-[3.4rem] w-[3.65rem] shrink-0 flex-col items-center justify-center rounded-[8px] border transition-[border-color,color,background-color,transform,filter] ${
+      className={`group relative flex h-[3.15rem] w-[3.25rem] shrink-0 flex-col items-center justify-center rounded-[8px] border transition-[border-color,color,background-color,transform,filter] sm:h-[3.3rem] sm:w-[3.45rem] ${
         action.disabled
           ? "border-white/8 bg-white/[0.012] text-white/24"
           : "border-white/12 bg-white/[0.035] text-white/66 hover:-translate-y-[2px] hover:border-ember/45 hover:text-ember hover:drop-shadow-[0_0_12px_rgba(255,170,0,0.18)]"
@@ -207,7 +205,7 @@ function DockActionButton({ action }: { action: DockAction }) {
       onClick={action.onClick}
     >
       <AsciiIcon className={action.iconClassName} lines={action.icon} />
-      <span className="pointer-events-none absolute bottom-[calc(100%+0.45rem)] left-1/2 z-40 w-[13rem] -translate-x-1/2 rounded-[8px] border border-white/12 bg-black/92 px-3 py-2 text-left font-crt opacity-0 shadow-[0_12px_34px_rgba(0,0,0,0.38)] transition-opacity group-hover:opacity-100 group-focus:opacity-100">
+      <span className="pointer-events-none absolute bottom-[calc(100%+0.45rem)] left-1/2 z-50 w-[13rem] -translate-x-1/2 rounded-[8px] border border-white/12 bg-black/92 px-3 py-2 text-left font-crt opacity-0 shadow-[0_12px_34px_rgba(0,0,0,0.38)] transition-opacity group-hover:opacity-100 group-focus:opacity-100">
         <span className="block text-[0.68rem] tracking-[0.14em] text-ember/86">
           {action.label}
         </span>
@@ -289,7 +287,6 @@ export default function BonfireMaintenancePanel({
   canMaintain,
   canRest,
   command,
-  feedback,
   hasStatPoints,
   inventory,
   language,
@@ -449,11 +446,9 @@ export default function BonfireMaintenancePanel({
         ];
 
   return (
-    <div className="relative mt-3 w-full max-w-[740px] font-crt opacity-0 [animation:fade_1s_2.65s_forwards]">
-      <BonfireTypewriterMessage key={feedback} message={feedback} />
-
-      <div className="flex items-center justify-between gap-3 rounded-[10px] border border-white/10 bg-black/38 px-3 py-2 shadow-[inset_0_0_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
-        <div className="min-w-0 flex-1">
+    <div className="relative w-full font-crt opacity-0 [animation:fade_1s_2.65s_forwards]">
+      <div className="flex min-h-[4.35rem] items-center justify-between gap-2 overflow-visible rounded-[10px] border border-white/10 bg-black/58 px-2 py-2 shadow-[inset_0_0_28px_rgba(0,0,0,0.32),0_12px_34px_rgba(0,0,0,0.42)] backdrop-blur-md sm:gap-3 sm:px-3">
+        <div className="min-w-0 flex-[1_1_10rem]">
           <pre className="m-0 truncate text-[0.62rem] leading-[1.45] tracking-[0.08em] text-white/55">
             {statusLine}
           </pre>
@@ -463,9 +458,9 @@ export default function BonfireMaintenancePanel({
         </div>
 
         {activeMealEffect && (
-          <div className="group/meal relative flex h-[3.15rem] w-[3.25rem] shrink-0 items-center justify-center rounded-[8px] border border-ember/22 bg-ember/[0.045] text-ember/78">
+          <div className="group/meal relative flex h-[3.05rem] w-[3.1rem] shrink-0 items-center justify-center rounded-[8px] border border-ember/22 bg-ember/[0.045] text-ember/78 sm:h-[3.15rem] sm:w-[3.25rem]">
             <AsciiIcon lines={ACTION_ICONS.cook} />
-            <span className="pointer-events-none absolute bottom-[calc(100%+0.45rem)] left-1/2 z-40 w-[13rem] -translate-x-1/2 rounded-[8px] border border-white/12 bg-black/92 px-3 py-2 text-left opacity-0 shadow-[0_12px_34px_rgba(0,0,0,0.38)] transition-opacity group-hover/meal:opacity-100">
+            <span className="pointer-events-none absolute bottom-[calc(100%+0.45rem)] left-1/2 z-50 w-[13rem] -translate-x-1/2 rounded-[8px] border border-white/12 bg-black/92 px-3 py-2 text-left opacity-0 shadow-[0_12px_34px_rgba(0,0,0,0.38)] transition-opacity group-hover/meal:opacity-100">
               <span className="block text-[0.68rem] tracking-[0.12em] text-ember/86">
                 {BONFIRE_RECIPE_TEXT[activeMealEffect.id].name[language]}
               </span>
@@ -484,7 +479,7 @@ export default function BonfireMaintenancePanel({
           </div>
         )}
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1 overflow-visible sm:gap-1.5">
           {dockActions.map((action) => (
             <DockActionButton key={action.id} action={action} />
           ))}
