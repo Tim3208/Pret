@@ -39,13 +39,15 @@ import {
   LOCALE_STORAGE_KEY,
   pickText,
 } from "@/entities/locale";
-import { pickMonsterForDepth } from "@/entities/monster";
+import { CROWNED_HOLLOW_WRAITH, pickMonsterForDepth } from "@/entities/monster";
 import {
   BATTLES_PER_BONFIRE,
   canMaintainAtBonfire,
   canRestAtBonfire,
   createBonfireSession,
+  createRunResult,
   getJourneyStatus,
+  isFinalBattleDepth,
   MAX_RUN_POTION_CHARGES,
   markBonfireCooked,
   markBonfireCrafted,
@@ -55,6 +57,7 @@ import {
   type BonfireSession,
   type RunEvent,
   type RunEventResolution,
+  type RunResult,
 } from "@/entities/run";
 import {
   BONFIRE_HP_RECOVERY_RATIO,
@@ -73,6 +76,7 @@ import {
 } from "@/entities/player";
 import BattlePage from "@/pages/battle";
 import PostBattleEvent from "@/pages/post-battle-event";
+import RunResultPage from "@/pages/run-result";
 import BonfireTrailPanel, {
   type BonfireTrailStep,
 } from "@/shared/ui/bonfire-trail";
@@ -290,7 +294,7 @@ export default function App() {
    * 현재 게임 진행 단계를 저장한다.
    */
   const [phase, setPhase] = useState<
-    "text" | "transition" | "battle" | "post-battle-event"
+    "text" | "transition" | "battle" | "post-battle-event" | "run-result"
   >("text");
   /**
    * 사용자 인터페이스의 현재 언어 모드다.
@@ -319,7 +323,11 @@ export default function App() {
   /**
     * 첫 전투 뒤에 노출할 현재 이벤트 정의다.
    */
-    const [activeRunEvent, setActiveRunEvent] = useState<RunEvent | null>(null);
+  const [activeRunEvent, setActiveRunEvent] = useState<RunEvent | null>(null);
+  /**
+   * 최근에 끝난 런의 승패와 진행 기록이다.
+   */
+  const [runResult, setRunResult] = useState<RunResult | null>(null);
   /**
    * 같은 장비가 연속 등장하는 빈도를 줄이기 위해 마지막 제시 장비 ID를 저장한다.
    */
@@ -330,7 +338,9 @@ export default function App() {
   const [learnedLexiconIds] = useState<string[]>(() => getDefaultUnlockedLexiconIds());
 
   const combatStats = applyEquipmentModifiers(runState.progress.baseStats, equippedItems);
-  const currentMonster = pickMonsterForDepth(runState.depth, combatStats.stats);
+  const currentMonster = isFinalBattleDepth(runState.depth)
+    ? CROWNED_HOLLOW_WRAITH
+    : pickMonsterForDepth(runState.depth, combatStats.stats);
   const currentBaseMaxHp = getMaxHp(combatStats.stats) + combatStats.maxHpBonus;
   const currentMaxHp = getRunMaxHp(currentBaseMaxHp, runState.maxHpPenalty);
   const currentMaxMana = getMaxMana(combatStats.stats) + combatStats.maxManaBonus;
@@ -379,6 +389,7 @@ export default function App() {
     setRunState(initialRunState);
     setEquippedItems({});
     setActiveRunEvent(null);
+    setRunResult(null);
     setLastOfferedItemId(null);
     setBonfireCommand("");
     setBonfireFeedback("");
@@ -610,7 +621,18 @@ export default function App() {
    */
   const handleBattleEnd = useCallback((result: BattleResult) => {
     if (!result.won) {
-      resetRun();
+      setActiveRunEvent(null);
+      setBonfireCommand("");
+      setLevelUpPopupOpen(false);
+      setRunResult(
+        createRunResult({
+          clearedBattles: runState.depth,
+          equippedItems,
+          outcome: "defeat",
+          progress: runState.progress,
+        }),
+      );
+      setPhase("run-result");
       return;
     }
 
@@ -655,6 +677,23 @@ export default function App() {
           },
         ),
       );
+    }
+
+    if (isFinalBattleDepth(runState.depth)) {
+      setRunState(nextRunState);
+      setActiveRunEvent(null);
+      setBonfireCommand("");
+      setLevelUpPopupOpen(false);
+      setRunResult(
+        createRunResult({
+          clearedBattles: nextRunState.depth,
+          equippedItems,
+          outcome: "victory",
+          progress: nextRunState.progress,
+        }),
+      );
+      setPhase("run-result");
+      return;
     }
 
     if (nextRunState.depth % BATTLES_PER_BONFIRE === 1) {
@@ -703,7 +742,7 @@ export default function App() {
     setLevelUpPopupOpen(false);
     setActiveRunEvent(null);
     setPhase("transition");
-  }, [combatStats.stats, currentBaseMaxHp, currentMaxHp, currentMaxMana, currentMonster.name, equippedItems, language, lastOfferedItemId, resetRun, runState]);
+  }, [combatStats.stats, currentBaseMaxHp, currentMaxHp, currentMaxMana, currentMonster.name, equippedItems, language, lastOfferedItemId, runState]);
 
   /**
    * 첫 전투 뒤 이벤트 선택 결과를 실행 상태에 반영하고 두 번째 전투로 넘어간다.
@@ -1610,6 +1649,14 @@ export default function App() {
                 onResolve={handleResolveRunEvent}
               />
             </div>
+          )}
+
+          {phase === "run-result" && runResult && (
+            <RunResultPage
+              language={language}
+              result={runResult}
+              onRestart={resetRun}
+            />
           )}
 
           <CrtOverlay />

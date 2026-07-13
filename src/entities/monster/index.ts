@@ -1,5 +1,6 @@
 export {
   ASH_BOAR,
+  CROWNED_HOLLOW_WRAITH,
   getMonsterIntentTelegraph,
   HOLLOW_WRAITH,
   pickMonsterForDepth,

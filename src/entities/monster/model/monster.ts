@@ -1,8 +1,12 @@
+import { CROWNED_HOLLOW_WRAITH_TEXT } from "@/content/glossary/monsters/monsterText";
 import type { PlayerStats } from "@/entities/player";
 import type { Element } from "@/entities/spell";
 
 export type MonsterIntentKind = "attack" | "defend" | "spell" | "heal";
-type IntentTelegraphStages = Record<"en" | "ko", [string, string, string, string, string]>;
+type IntentTelegraphStages = Record<
+  "en" | "ko",
+  readonly [string, string, string, string, string]
+>;
 
 /**
  * 몬스터가 다음 턴에 수행할 의도를 설명한다.
@@ -23,6 +27,7 @@ export interface MonsterDef {
   id: string;
   name: string;
   asciiAssetPath: string;
+  encounterType: "normal" | "boss";
   maxHp: number;
   experienceReward: number;
   element?: Element;
@@ -77,6 +82,7 @@ export const ASH_BOAR: MonsterDef = {
   id: "ash-boar",
   name: "Ash Boar",
   asciiAssetPath: "assets/ash_boar_ascii.md",
+  encounterType: "normal",
   maxHp: 16,
   experienceReward: 10,
   intents: [
@@ -155,6 +161,7 @@ export const HOLLOW_WRAITH: MonsterDef = {
   id: "hollow-wraith",
   name: "Hollow Wraith",
   asciiAssetPath: "assets/new_enemy_ascii.md",
+  encounterType: "normal",
   maxHp: 60,
   experienceReward: 20,
   element: undefined,
@@ -288,6 +295,47 @@ export const HOLLOW_WRAITH: MonsterDef = {
     },
   ],
   revealTurnsAhead: 1,
+};
+
+/**
+ * 여섯 번째 전투를 마무리하는 왕관을 쓴 공허의 망령이다.
+ */
+export const CROWNED_HOLLOW_WRAITH: MonsterDef = {
+  id: "crowned-hollow-wraith",
+  name: CROWNED_HOLLOW_WRAITH_TEXT.name.en,
+  asciiAssetPath: "assets/new_enemy_ascii.md",
+  encounterType: "boss",
+  maxHp: 96,
+  experienceReward: 42,
+  element: "fire",
+  intents: [
+    {
+      kind: "attack",
+      label: CROWNED_HOLLOW_WRAITH_TEXT.intents.blade.label.en,
+      damage: 11,
+      telegraphs: CROWNED_HOLLOW_WRAITH_TEXT.intents.blade.telegraphs,
+    },
+    {
+      kind: "attack",
+      label: CROWNED_HOLLOW_WRAITH_TEXT.intents.charge.label.en,
+      damage: 13,
+      telegraphs: CROWNED_HOLLOW_WRAITH_TEXT.intents.charge.telegraphs,
+    },
+    {
+      kind: "spell",
+      label: CROWNED_HOLLOW_WRAITH_TEXT.intents.fire.label.en,
+      damage: 15,
+      element: "fire",
+      telegraphs: CROWNED_HOLLOW_WRAITH_TEXT.intents.fire.telegraphs,
+    },
+    {
+      kind: "defend",
+      label: CROWNED_HOLLOW_WRAITH_TEXT.intents.defend.label.en,
+      damage: 0,
+      telegraphs: CROWNED_HOLLOW_WRAITH_TEXT.intents.defend.telegraphs,
+    },
+  ],
+  revealTurnsAhead: 2,
 };
 
 /**

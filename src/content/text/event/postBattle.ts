@@ -193,8 +193,8 @@ export const POST_BATTLE_EVENT_TEXT = {
     ko: "효과를 보려면 투구에 마우스를 올린다",
   },
   inactiveLabel: {
-    en: "Tooltip only for now. Combat values stay unchanged in this build.",
-    ko: "지금은 툴팁 전용이다. 이 빌드에서는 전투 수치가 바뀌지 않는다.",
+    en: "Equipping it immediately changes your combat stats.",
+    ko: "장착하면 전투 수치에 즉시 반영된다.",
   },
   invalidApproach: {
     en: "The ash waits for a clearer answer.",

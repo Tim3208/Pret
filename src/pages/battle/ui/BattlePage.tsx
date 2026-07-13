@@ -199,7 +199,13 @@ export default function BattlePage({
         <BattleOutcomePanel
           variant="victory"
           title={victoryBannerText}
-          subtitle={hasPostBattleEvent ? sceneText.victoryEvent : sceneText.victoryReturn}
+          subtitle={
+            activeMonster.encounterType === "boss"
+              ? sceneText.victoryComplete
+              : hasPostBattleEvent
+                ? sceneText.victoryEvent
+                : sceneText.victoryReturn
+          }
         />
       </div>
     ) : null;

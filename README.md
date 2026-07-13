@@ -17,16 +17,21 @@ npm run preview
 
 ```text
 App
- ├─ text / transition shell
- └─ battle
-    └─ BattlePage
-       ├─ pre-combat -> BattleEncounterSequence -> SkullEncounter / intro
-       └─ combat     -> useBattleFlow -> BattleStage
+ ├─ text -> bonfire transition / maintenance
+ ├─ battle -> post-battle event -> battle -> bonfire
+ │  └─ repeats until the sixth battle
+ ├─ sixth battle -> Crowned Hollow Wraith boss
+ └─ run result -> begin a new run
+
+BattlePage
+ ├─ pre-combat -> BattleEncounterSequence -> SkullEncounter / intro
+ └─ combat     -> useBattleFlow -> BattleStage
 ```
 
 ## Combat Architecture
 
 - `BattlePage` owns scene composition, ASCII asset loading, and victory/defeat copy selection.
+- `pages/run-result/ui/RunResultPage.tsx` owns the final victory/defeat record and new-run action after a completed or failed run.
 - `widgets/battle-loading/ui/BattleLoadingPanel.tsx` owns the combat asset loading screen shown before the live battle widget mounts.
 - `widgets/battle-outcome/ui/BattleOutcomePanel.tsx` owns the victory/defeat result screen presentation.
 - `widgets/encounter-scene/ui/BattleEncounterSequence.tsx` owns the pre-combat encounter and intro sequence composition.

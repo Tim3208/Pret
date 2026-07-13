@@ -3,10 +3,11 @@ import {
   type EquippedItems,
   rollEquipmentOffer,
 } from "@/entities/equipment";
-import type { PlayerStats } from "@/entities/player";
+import type { PlayerProgress, PlayerStats } from "@/entities/player";
 
 export const BATTLES_PER_BONFIRE = 2;
 export const MAX_RUN_POTION_CHARGES = 3;
+export const FINAL_BATTLE_NUMBER = 6;
 
 export type BonfireSessionMode = "idle" | "maintenance" | "rested";
 
@@ -43,6 +44,26 @@ export interface JourneyStatus {
   currentScene: JourneyScene;
   nodes: JourneyNode[];
   scenesUntilBonfire: number;
+}
+
+export type RunOutcome = "victory" | "defeat";
+
+/**
+ * 런 종료 화면에 보여 줄 진행 요약이다.
+ */
+export interface RunResult {
+  clearedBattles: number;
+  equippedItems: EquippedItems;
+  experience: number;
+  level: number;
+  outcome: RunOutcome;
+}
+
+export interface CreateRunResultParams {
+  clearedBattles: number;
+  equippedItems: EquippedItems;
+  outcome: RunOutcome;
+  progress: PlayerProgress;
 }
 
 interface BaseRunEvent {
@@ -132,6 +153,37 @@ const JOURNEY_ORDER: readonly JourneyScene[] = [
   "battle-2",
   "bonfire",
 ];
+
+/**
+ * 현재 깊이가 최종 보스전으로 진입할 전투인지 판정한다.
+ *
+ * @param depth 현재까지 승리한 전투 수
+ * @returns 이번 전투가 최종 보스전인지 여부
+ */
+export function isFinalBattleDepth(depth: number): boolean {
+  return Math.max(0, depth) + 1 === FINAL_BATTLE_NUMBER;
+}
+
+/**
+ * 런 종료 시점의 진행 상태를 화면 표시용 요약으로 만든다.
+ *
+ * @param params 승패, 클리어 전투 수, 진행도, 장비 상태
+ * @returns 결과 화면에 사용할 런 요약
+ */
+export function createRunResult({
+  clearedBattles,
+  equippedItems,
+  outcome,
+  progress,
+}: CreateRunResultParams): RunResult {
+  return {
+    clearedBattles: Math.max(0, clearedBattles),
+    equippedItems: { ...equippedItems },
+    experience: progress.experience,
+    level: progress.level,
+    outcome,
+  };
+}
 
 /**
  * 새 모닥불 방문에서 사용할 정비 세션 상태를 만든다.
